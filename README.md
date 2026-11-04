@@ -1,32 +1,132 @@
-# React + TypeScript + Vite
+# AI 작업 승인 플랫폼 (프론트엔드)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+직원이 프롬프트를 입력하면 AI가 작업 단위 Plan으로 나누고 작업별 위험도·연관 부서·승인권자를 보여 줍니다. 권한에 맞는 사람이 승인하면, 내부망 실행기가 승인 서명과 Plan 해시를 다시 검증한 뒤에만 실행합니다.
 
-Currently, two official plugins are available:
+이 저장소는 웹 화면 전체와 목 API를 담고 있어 백엔드 없이 모든 흐름을 시연할 수 있습니다.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 실행
 
-## React Compiler
+Node.js 22 이상이 필요합니다.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev        # http://localhost:5173
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+| 명령 | 하는 일 |
+|---|---|
+| `npm run dev` | 개발 서버 |
+| `npm run build` | 타입 검사 후 빌드 |
+| `npm test` | 승인 규칙과 시연 시나리오 테스트 |
+| `npm run lint` | oxlint |
+
+## 시연 방법
+
+로그인하면 대시보드가 첫 화면입니다. 화면 왼쪽 아래 **개발 도구**를 펼치면 다음을 할 수 있습니다.
+
+- **시연 가이드 열기**: 아래 시나리오와 그 밖의 흐름, 상태 16종을 목록으로 보여 줍니다. 항목을 누르면 그 단계의 사용자와 접속 환경으로 바뀌고 해당 화면이 열립니다. 가이드는 사이드바 자리에 떠서 본문을 가리지 않습니다.
+- **로그인 사용자**: 바로 바꿉니다.
+- **접속 환경 (시연용)**: 외부망 동작을 보려고 내부망과 외부망을 바꿉니다. 실제 서비스에는 이 설정이 없습니다. 서버가 출발지 IP로 판단해 `X-Network` 헤더로 알려 주고, 화면은 기능이 제한되는 외부망일 때만 표시합니다.
+- **Slack 알림**: 보낸 알림 목록입니다. 알림을 누르면 승인 상세로 들어갑니다.
+- **데이터 초기화**: 목 데이터를 처음 상태로 되돌립니다.
+
+로그인 화면을 거치려면 아래 계정을 씁니다. 비밀번호는 모두 `demo1234!`, 외부망 OTP는 `123456`입니다.
+
+| 사번 | 이름 | 역할 | 비고 |
+|---|---|---|---|
+| E0001 | 박CTO | 관리자 | |
+| E1001 | 최팀장 | 부서 관리자 (백엔드) | |
+| E2001 | 정팀장 | 부서 관리자 (인프라) | deploy-pipeline 담당자 |
+| E1101 | 홍길동 | 직원 (백엔드) | 주 요청자 |
+| E1107 | 김담당 | 직원 (백엔드) | auth-service 담당자 |
+| E1109 | 이담당 | 직원 (백엔드) | auth-service 담당자, 승인 키 등록 대기 |
+| E2101 | 오인프라 | 직원 (인프라) | deploy-pipeline 담당자, 승인 키 없음 |
+| E1131 | 강신입 | 직원 (백엔드) | 최초 로그인 비밀번호 변경 |
+
+### 시나리오
+
+1. **홍길동, 내부망**: 작업 요청에서 `로그인 실패 시 에러 메시지를 바꾸고 스테이징에 배포해줘` 입력 → Plan 카드 2개 확인 → 제출. t-1은 제출과 함께 본인 승인됩니다.
+2. **김담당, 외부망**: Slack 알림 링크로 승인 상세에 들어가면 t-2 배포는 "내부망 승인 필요"로 막혀 있습니다.
+3. **김담당, 내부망**: 해시와 실행기 서명 확인 후 t-2를 승인(서명)하면 실행을 요청합니다.
+4. **홍길동**: 요청 상세에서 실행 로그를 실시간으로 보다가 완료를 확인합니다.
+5. **재승인**: 승인 대기 중인 요청의 Plan을 수정하면 재승인필요가 되고 바뀐 작업이 강조됩니다. 시드의 `r-reapproval`에서 바로 볼 수도 있습니다.
+6. **차단**: `r-forbidden`(금지 작업 포함), `r-verify-failed`(검증실패), `r-tampered-hash`·`r-impostor-sign`(무결성 확인 실패로 서명 불가, 김담당으로 승인 대기 목록에서 진입).
+7. **박CTO**: 전사 대시보드 → 감사 로그에서 접속 환경 외부망, 액션 승인 서명 제출로 필터합니다.
+
+### 목 동작 트리거
+
+프롬프트 낱말로 AI 분석을 흉내 냅니다.
+
+| 입력 | 결과 |
+|---|---|
+| `문서`, `README`, `가이드` | 문서 작업 (적용/미적용) |
+| `테스트`, `리팩터` | 코드 수정(경미) |
+| `로그인`+`메시지` | 코드 수정(기능) |
+| `인증`, `토큰`, `세션` 등 | 코드 수정인데 AI가 위험도를 높음으로 올림 |
+| `스키마`, `컬럼`, `마이그레이션`, `DB` | DB 접근 (`운영`이 함께 있으면 금지 작업) |
+| `조회`, `통계` | 데이터 조회 |
+| `데이터`+`수정`·`삭제`, `일괄` | 데이터 수정 |
+| `배포` | 스테이징 배포 (`운영`이 함께 있으면 금지 작업) |
+| `알아서`, `적당히` 또는 아주 짧은 문장 | AI 확인 질문 |
+| `#분석실패` | 분석 실패 (3회 후 재시도 불가) |
+| `#실행실패` | 마지막 작업이 실패해 부분완료 (재시도하면 성공) |
+| 에디터 변경 설명의 `#충돌` | `409 EDIT_CONFLICT` |
+
+## 화면 구성 원칙
+
+화면마다 할 일 하나만 앞에 두고, 나머지는 "자세히", 탭, 모달로 접습니다. 파란 버튼은 화면에 하나입니다.
+
+작업 카드에는 코드 대신 쉬운 말이 먼저 나옵니다. 한 문장 설명과 이전 → 이후를 보여 주고, "자세히 보기"를 펼치면 어디가 바뀌는지, 누가 영향받는지, 되돌릴 수 있는지와 실제 변경 내용이 나옵니다. 쉬운 설명(`Task.explanation`)은 Plan 해시에 포함되지 않으므로 AI 참고 자료로 표시하고, 승인 서명의 기준은 실제 변경 내용입니다. 승인 상세에서는 위험도 높음 작업과 무결성 확인에 실패한 요청의 "자세히 보기"가 처음부터 펼쳐집니다.
+
+## 실제 백엔드로 바꾸기
+
+`VITE_API_BASE_URL`만 지정하면 목 API와 개발 도구가 빠지고 그 주소로 요청합니다. 목 코드는 번들에도 들어가지 않습니다.
+
+```bash
+VITE_API_BASE_URL=https://service.example.com/api/v1 npm run build
+```
+
+## 암호화 구현 범위
+
+| 인터페이스 | 상태 |
+|---|---|
+| `hashService.computePlanHash` | 실제 구현 (RFC 8785 JCS + SHA-256) |
+| `signingService.sign` / `verify*` | 실제 구현 (Ed25519) |
+| `cryptoService.encryptForExecutor` | **목**: HPKE 대신 base64로 감쌉니다. 봉투 모양은 명세와 같습니다 |
+| 기기 키 저장 (`deviceStore`) | **목**: localStorage에 둡니다. 운영에서는 내보낼 수 없는 키로 바꿔야 합니다 |
+| 실행기 (`src/api/mock/executor.ts`) | **목**: 고정 키로 서명하지만, 서명·해시·1회용 ID 검증은 실제로 수행합니다 |
+
+## 폴더 구조
+
+```text
+src/
+  api/          타입, HTTP 클라이언트, 엔드포인트, SSE
+  api/mock/     목 서버 (라우트, 상태 전이, 승인 정책, 실행기, 시드)
+  crypto/       해시·서명·봉투 암호화, 기기 키 저장
+  app/          라우터, 인증, 앱 뼈대, 개발 도구
+  components/   배지, diff 뷰어, 로그 뷰어, 결재란, 작업 카드, 공통 UI
+  features/     화면 (requests, approvals, editor, documents, dashboard, audit, admin, projects, forbidden, auth, me)
+  lib/          접근 규칙, 라벨, 포맷, diff, 공용 쿼리
+```
+
+명세가 비어 있거나 갈리는 곳은 코드에 `// TODO(spec):`으로 남겼습니다. `grep -rn "TODO(spec)" src`로 모아 볼 수 있습니다.
+
+## 화면 ↔ 기능 ID
+
+| 화면 | 경로 | 기능 ID |
+|---|---|---|
+| 로그인 (외부망 OTP, 최초 비밀번호 변경) | `/login` | ADM-01, CORE-10 |
+| 내 정보 / 승인 키 등록 | `/me` | ADM-09, CORE-10, CORE-12, DEP-04 |
+| 작업 요청 (프롬프트 + Plan 카드) | `/requests/new` | EMP-01, EMP-03, CORE-01, CORE-02, CORE-04 |
+| 내 요청 현황 | `/requests` | EMP-02 |
+| 요청 상세 (실행 로그, 킬 스위치, 재시도) | `/requests/:id` | EMP-02, EMP-03, CORE-03, CORE-11 |
+| 승인 대기 목록 | `/approvals` | DEP-02, EMP-04 |
+| 승인 상세 (서명) | `/approvals/:id` | DEP-03, DEP-04, EMP-04, CORE-06, CORE-12 |
+| 웹 코드 에디터 | `/editor` | CORE-05 |
+| 문서 버전·롤백 | `/documents` | CORE-06, CORE-07 |
+| 대시보드 | `/dashboard` | ADM-06, DEP-01, EMP-02 |
+| 감사 로그 | `/audit` | ADM-07, DEP-05, CORE-08 |
+| 프로젝트 기획서 | `/projects` | ADM-08, DEP-07, EMP-05 |
+| 금지 작업 | `/forbidden`, `/settings/forbidden` | DEP-06, ADM-05, CORE-09 |
+| 설정 (계정·권한, 정책·승인 기준표, 승인 키, 프로젝트, Slack, 전사 일괄 중단) | `/settings` | ADM-01~05, ADM-08, ADM-09, DEP-04, CORE-11 |
+| 전 화면 공통 (망 배지, 외부망 제한) | | CORE-10 |
