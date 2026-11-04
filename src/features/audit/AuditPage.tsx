@@ -141,54 +141,58 @@ export default function AuditPage() {
           <EmptyState title={activeFilters > 0 ? '조건에 맞는 기록이 없습니다' : '아직 기록이 없습니다'} />
         )}
         {items.length > 0 && (
-          <table className="sheet-table min-w-[56rem] [&_td]:py-3 [&_th]:sticky [&_th]:top-0 [&_th]:z-10">
-            <thead>
-              <tr>
-                <th scope="col">시각</th>
-                <th scope="col">사용자</th>
-                <th scope="col">액션</th>
-                <th scope="col">대상</th>
-                <th scope="col">접속 환경</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((log) => (
-                <tr
-                  key={log.id}
-                  data-clickable="true"
-                  tabIndex={0}
-                  aria-label={`${log.actor.name} ${AUDIT_ACTION_LABEL[log.action] ?? log.action} 상세 열기`}
-                  onClick={() => setSelectedId(log.id)}
-                  onKeyDown={(event) => {
-                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-                      event.preventDefault()
-                      setSelectedId(log.id)
-                    }
-                  }}
-                >
-                  <td className="whitespace-nowrap text-ink-2 tabular-nums">{formatDateTime(log.at)}</td>
-                  <td className="whitespace-nowrap text-ink">{log.actor.name}</td>
-                  <td>
-                    <AuditActionLabel action={log.action} />
-                  </td>
-                  <td>
-                    <TargetCell log={log} />
-                  </td>
-                  <td>
-                    <span className="inline-flex items-center gap-2.5 whitespace-nowrap">
-                      {/* 대부분이 내부망이라 외부망 기록만 도드라지게 한다 */}
-                      {log.network === 'EXTERNAL' ? (
-                        <NetworkBadge network={log.network} />
-                      ) : (
-                        <span className="text-ink-3">내부망</span>
-                      )}
-                      <span className="font-mono text-xs text-ink-3">{log.ip}</span>
-                    </span>
-                  </td>
+          // 표가 카드 폭에 맞춰 줄어들고, 그래도 안 들어가는 좁은 화면에서만 카드 안에서 옆으로 움직인다.
+          // 스크롤 칸을 항상 두면 머리글이 본문 스크롤을 따라오지 못한다.
+          <div className="max-[1100px]:overflow-x-auto">
+            <table className="sheet-table [&_td]:py-3 [&_th]:sticky [&_th]:top-0 [&_th]:z-10">
+              <thead>
+                <tr>
+                  <th scope="col">시각</th>
+                  <th scope="col">사용자</th>
+                  <th scope="col">액션</th>
+                  <th scope="col">대상</th>
+                  <th scope="col">접속 환경</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((log) => (
+                  <tr
+                    key={log.id}
+                    data-clickable="true"
+                    tabIndex={0}
+                    aria-label={`${log.actor.name} ${AUDIT_ACTION_LABEL[log.action] ?? log.action} 상세 열기`}
+                    onClick={() => setSelectedId(log.id)}
+                    onKeyDown={(event) => {
+                      if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                        event.preventDefault()
+                        setSelectedId(log.id)
+                      }
+                    }}
+                  >
+                    <td className="whitespace-nowrap text-ink-2 tabular-nums">{formatDateTime(log.at)}</td>
+                    <td className="whitespace-nowrap text-ink">{log.actor.name}</td>
+                    <td>
+                      <AuditActionLabel action={log.action} />
+                    </td>
+                    <td>
+                      <TargetCell log={log} />
+                    </td>
+                    <td>
+                      <span className="inline-flex flex-wrap items-center gap-x-2.5">
+                        {/* 대부분이 내부망이라 외부망 기록만 도드라지게 한다 */}
+                        {log.network === 'EXTERNAL' ? (
+                          <NetworkBadge network={log.network} />
+                        ) : (
+                          <span className="text-ink-3">내부망</span>
+                        )}
+                        <span className="font-mono text-xs text-ink-3">{log.ip}</span>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         {logs.hasNextPage && (
           <div className="flex justify-center border-t border-rule p-3">

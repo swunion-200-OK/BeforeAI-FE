@@ -2,6 +2,7 @@ import { lazy } from 'react'
 import { createBrowserRouter } from 'react-router'
 import { AppShell } from './AppShell'
 import { Root } from './Root'
+import { RouteError } from './RouteError'
 import { HomeRedirect, RequireAuth, RequireInternal, RequireRole } from './guards'
 
 const LoginPage = lazy(() => import('../features/auth/LoginPage'))
@@ -22,6 +23,7 @@ const SettingsPage = lazy(() => import('../features/admin/SettingsPage'))
 export const router = createBrowserRouter([
   {
     element: <Root />,
+    errorElement: <RouteError />,
     children: [
       { path: '/login', element: <LoginPage /> },
       {
@@ -30,41 +32,47 @@ export const router = createBrowserRouter([
           {
             element: <AppShell />,
             children: [
-              { index: true, element: <HomeRedirect /> },
-              // 외부망에서도 쓰는 화면 (기능 명세서 3.3)
-              { path: '/requests', element: <RequestListPage /> },
-              { path: '/approvals', element: <PendingListPage />, handle: { fullBleed: true } },
-              { path: '/approvals/:requestId', element: <ApprovalDetailPage />, handle: { fullBleed: true } },
-              { path: '/dashboard', element: <DashboardPage /> },
-              { path: '/audit', element: <AuditPage /> },
-              // 내부망 전용 화면
               {
-                element: <RequireInternal />,
+                // 화면 하나가 잘못돼도 메뉴는 남겨 다른 화면으로 갈 수 있게 한다.
+                errorElement: <RouteError />,
                 children: [
-                  { path: '/requests/new', element: <ComposePage /> },
-                  { path: '/requests/new/:requestId', element: <ComposePage />, handle: { back: { to: '/requests', label: '내 요청' } } },
-                  { path: '/editor', element: <EditorPage />, handle: { fullBleed: true } },
-                  { path: '/editor/:projectId', element: <EditorPage />, handle: { fullBleed: true } },
-                  { path: '/documents', element: <DocumentsPage /> },
-                  { path: '/documents/:documentId', element: <DocumentsPage /> },
-                  { path: '/projects', element: <ProjectsPage /> },
-                  { path: '/projects/:projectId', element: <ProjectsPage />, handle: { back: { to: '/projects', label: '프로젝트 기획서' } } },
-                  { path: '/me', element: <MePage /> },
+                  { index: true, element: <HomeRedirect /> },
+                  // 외부망에서도 쓰는 화면 (기능 명세서 3.3)
+                  { path: '/requests', element: <RequestListPage /> },
+                  { path: '/approvals', element: <PendingListPage />, handle: { fullBleed: true } },
+                  { path: '/approvals/:requestId', element: <ApprovalDetailPage />, handle: { fullBleed: true } },
+                  { path: '/dashboard', element: <DashboardPage /> },
+                  { path: '/audit', element: <AuditPage /> },
+                  // 내부망 전용 화면
                   {
-                    element: <RequireRole roles={['DEPT_MANAGER', 'ADMIN']} />,
-                    children: [{ path: '/forbidden', element: <ForbiddenPage /> }],
-                  },
-                  {
-                    element: <RequireRole roles={['ADMIN']} />,
+                    element: <RequireInternal />,
                     children: [
-                      { path: '/settings', element: <SettingsPage /> },
-                      { path: '/settings/:tab', element: <SettingsPage /> },
+                      { path: '/requests/new', element: <ComposePage /> },
+                      { path: '/requests/new/:requestId', element: <ComposePage />, handle: { back: { to: '/requests', label: '내 요청' } } },
+                      { path: '/editor', element: <EditorPage />, handle: { fullBleed: true } },
+                      { path: '/editor/:projectId', element: <EditorPage />, handle: { fullBleed: true } },
+                      { path: '/documents', element: <DocumentsPage /> },
+                      { path: '/documents/:documentId', element: <DocumentsPage /> },
+                      { path: '/projects', element: <ProjectsPage /> },
+                      { path: '/projects/:projectId', element: <ProjectsPage />, handle: { back: { to: '/projects', label: '프로젝트 기획서' } } },
+                      { path: '/me', element: <MePage /> },
+                      {
+                        element: <RequireRole roles={['DEPT_MANAGER', 'ADMIN']} />,
+                        children: [{ path: '/forbidden', element: <ForbiddenPage /> }],
+                      },
+                      {
+                        element: <RequireRole roles={['ADMIN']} />,
+                        children: [
+                          { path: '/settings', element: <SettingsPage /> },
+                          { path: '/settings/:tab', element: <SettingsPage /> },
+                        ],
+                      },
                     ],
                   },
+                  // /requests/new보다 뒤에 둔다
+                  { path: '/requests/:requestId', element: <RequestDetailPage />, handle: { back: { to: '/requests', label: '내 요청' } } },
                 ],
               },
-              // /requests/new보다 뒤에 둔다
-              { path: '/requests/:requestId', element: <RequestDetailPage />, handle: { back: { to: '/requests', label: '내 요청' } } },
             ],
           },
         ],
