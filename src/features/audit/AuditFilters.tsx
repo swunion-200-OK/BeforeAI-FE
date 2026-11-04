@@ -2,7 +2,7 @@ import type { AuditAction } from '../../api/types'
 import { Field, Select, TextInput } from '../../components/ui'
 import { AUDIT_ACTION_LABEL, NETWORK_LABEL } from '../../lib/labels'
 import { useDepartments, useProjects } from '../../lib/queries'
-import type { FilterKey } from './auditFilters'
+import type { FilterKey } from './auditFilterParams'
 
 const ACTIONS = Object.keys(AUDIT_ACTION_LABEL) as AuditAction[]
 
