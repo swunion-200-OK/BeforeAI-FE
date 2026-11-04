@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { setAccessToken, setSessionExpiredHandler } from '../api/client'
+import { networkStore, setAccessToken, setSessionExpiredHandler } from '../api/client'
 import { authApi, meApi } from '../api/endpoints'
 import type { Me } from '../api/types'
 
@@ -8,6 +8,8 @@ interface AuthValue {
   /** 로그인 전이면 null */
   me: Me | null
   booting: boolean
+  /** 사용자가 직접 로그아웃한 상태 */
+  signedOut: boolean
   /** 토큰을 받은 뒤 부른다 (로그인, OTP 확인, 개발용 사용자 전환) */
   signIn: (accessToken: string) => Promise<void>
   signOut: () => Promise<void>
@@ -19,8 +21,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const client = useQueryClient()
   const [booting, setBooting] = useState(true)
   const [authenticated, setAuthenticated] = useState(false)
+  const [signedOut, setSignedOut] = useState(false)
 
   const meQuery = useQuery({ queryKey: ['me'], queryFn: meApi.get, enabled: authenticated, staleTime: 5_000 })
+
+  // X-Network 헤더를 읽을 수 없는 환경(CORS 미노출 등)에서도 /me 값으로 망을 맞춘다.
+  const serverNetwork = meQuery.data?.network
+  useEffect(() => {
+    if (serverNetwork) networkStore.set(serverNetwork)
+  }, [serverNetwork])
 
   const clearSession = useCallback(() => {
     setAccessToken(null)
@@ -56,6 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // clear()는 구독 중인 화면에 알리지 않아 이전 사용자의 데이터가 남는다. reset은 알리고 다시 읽는다.
       await client.cancelQueries({ predicate: (query) => query.queryKey[0] !== 'me' })
       void client.resetQueries({ predicate: (query) => query.queryKey[0] !== 'me' })
+      setSignedOut(false)
       setAuthenticated(true)
     },
     [client],
@@ -63,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await authApi.logout().catch(() => {})
+    setSignedOut(true)
     clearSession()
   }, [clearSession])
 
@@ -70,10 +81,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       me: authenticated ? (meQuery.data ?? null) : null,
       booting: booting || (authenticated && meQuery.isPending),
+      signedOut,
       signIn,
       signOut,
     }),
-    [authenticated, meQuery.data, meQuery.isPending, booting, signIn, signOut],
+    [authenticated, meQuery.data, meQuery.isPending, booting, signedOut, signIn, signOut],
   )
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

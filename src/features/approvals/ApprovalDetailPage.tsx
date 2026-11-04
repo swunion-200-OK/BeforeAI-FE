@@ -144,7 +144,8 @@ function ApprovalDetail({ requestId }: { requestId: string }) {
   const blocked = context?.blockedTaskIds ?? []
   const selected = approvable.filter((id) => !deselected.has(id))
   const selectedTasks = tasks.filter((t) => selected.includes(t.id))
-  const decisionBase = (selected.length > 0 ? selected : approvable)
+  // 외부망에서 막힌 문서 작업도 버튼 문구는 적용/미적용이어야 해서, 고를 게 없으면 막힌 작업을 기준으로 삼는다.
+  const decisionBase = (selected.length > 0 ? selected : approvable.length > 0 ? approvable : blocked)
     .map((id) => tasks.find((t) => t.id === id))
     .filter((t): t is Task => Boolean(t))
   // 문서 작업이면 적용 = 승인, 미적용 = 거부 (기능 명세서 5.4)

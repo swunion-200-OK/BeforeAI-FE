@@ -243,6 +243,25 @@ export interface RequiredApprovers extends ApproverRequirement {
   additional?: ApproverRequirement[]
 }
 
+/** 어디가 무엇으로 바뀌는지 한 줄 */
+export interface TaskChangeItem {
+  where: string
+  what: string
+  before?: string
+  after?: string
+}
+
+/**
+ * TODO(spec): 명세에 없는 필드. 승인권자가 코드를 읽지 않아도 이해하도록 AI가 풀어 쓴 설명이다.
+ * Plan 해시 대상(명세 2.3)이 아니므로 참고용이고, 서명 기준은 항상 content다.
+ */
+export interface TaskExplanation {
+  summary: string
+  changes: TaskChangeItem[]
+  impact: string[]
+  undo: string
+}
+
 export interface Task {
   id: string
   order: number
@@ -258,6 +277,7 @@ export interface Task {
   /** AI가 기본 위험도보다 올렸을 때만 있음 */
   riskRaised?: { from: Risk; reason: string }
   forbiddenReason?: string
+  explanation?: TaskExplanation
 }
 
 export interface Plan {
@@ -288,6 +308,17 @@ export interface PlanHashTarget {
   }>
 }
 
+/** TODO(spec): 목록에서 한눈에 보려고 넣은 요약. 명세의 Request에는 없어 선택 필드로 둔다. */
+export interface RequestTaskSummary {
+  total: number
+  risks: Record<Risk, number>
+  /** 승인이 필요한 작업 수 (금지 제외) */
+  required: number
+  approved: number
+  succeeded: number
+  failed: number
+}
+
 export interface RequestSummary {
   id: string
   projectId: string
@@ -299,6 +330,7 @@ export interface RequestSummary {
   currentPlanId: string | null
   createdAt: string
   updatedAt: string
+  taskSummary?: RequestTaskSummary
 }
 
 export interface ApprovalRecord {

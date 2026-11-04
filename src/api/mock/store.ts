@@ -121,13 +121,16 @@ export interface MockDb {
 // ── 싱글턴 상태 ────────────────────────────────────────────
 
 const STORAGE_KEY = 'beforeai.mock.db.v1'
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export const mockConfig = {
   latencyMs: 180,
   analysisMs: 1800,
   execStepMs: 650,
 }
+
+type LogListener = { onLine: (line: LogLine) => void; onEnd: () => void }
+const logListeners = new Map<string, Set<LogListener>>()
 
 let current: MockDb | null = null
 /** 초기화할 때마다 올린다. 이전 세대의 타이머는 이 값을 보고 멈춘다. */
@@ -141,6 +144,9 @@ export function db(): MockDb {
 export function setDb(next: MockDb) {
   current = next
   generation++
+  // 초기화하면 이전 로그 구독은 의미가 없다. 끊어야 뷰어가 다시 연결한다.
+  for (const set of logListeners.values()) set.forEach((listener) => listener.onEnd())
+  logListeners.clear()
 }
 
 export function loadPersisted(): MockDb | null {
@@ -270,9 +276,6 @@ export function notify(
 }
 
 // ── 실행 로그 스트림 ───────────────────────────────────────
-
-type LogListener = { onLine: (line: LogLine) => void; onEnd: () => void }
-const logListeners = new Map<string, Set<LogListener>>()
 
 export function subscribeLogs(requestId: string, listener: LogListener) {
   const set = logListeners.get(requestId) ?? new Set<LogListener>()

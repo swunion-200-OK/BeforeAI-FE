@@ -9,7 +9,7 @@ import { TaskCard } from '../../components/TaskCard'
 import { Banner, Button, ErrorState, Mono, PageHeader, ReasonModal, Spinner } from '../../components/ui'
 import { shortHash } from '../../lib/format'
 import { FAILED_CHECK_LABEL } from '../../lib/labels'
-import { useRequest } from '../../lib/queries'
+import { useProjects, useRequest } from '../../lib/queries'
 import { AnalysisFailedPanel, CancelRequestButton, RequestMeta, TaskEditButtons } from './RequestParts'
 import { RequestTimeline } from './RequestTimeline'
 import { useKillRequest, useRetryFailed, useSubmitRequest } from './useRequestActions'
@@ -210,6 +210,7 @@ export default function RequestDetailPage() {
   const me = useMe()
   const navigate = useNavigate()
   const query = useRequest(requestId)
+  const projects = useProjects()
 
   if (query.isPending) return <Spinner />
   if (query.isError) return <ErrorState error={query.error} onRetry={() => query.refetch()} />
@@ -219,8 +220,10 @@ export default function RequestDetailPage() {
   const hasSigned = request.approvalStatus.some((status) =>
     status.requirements.some((requirement) => requirement.approvedBy.some((record) => record.userId === me.id)),
   )
-  // 부서 범위는 서버가 다시 판단한다. 직원은 본인 요청이나 본인이 승인한 작업만 멈출 수 있다 (3.2).
-  const canKill = request.status === 'RUNNING' && (me.role !== 'EMPLOYEE' || isRequester || hasSigned)
+  // 관리자는 전체, 부서 관리자는 소속 부서, 나머지는 본인 요청이나 본인이 승인한 작업만 멈출 수 있다 (3.2).
+  const projectDepartmentId = projects.data?.find((project) => project.id === request.projectId)?.departmentId
+  const managesProject = me.role === 'DEPT_MANAGER' && me.departmentId === projectDepartmentId
+  const canKill = request.status === 'RUNNING' && (me.role === 'ADMIN' || managesProject || isRequester || hasSigned)
   const canEditPlan = isRequester && PLAN_EDITABLE.includes(request.status)
   const hasRun = request.events.some((event) => event.status === 'RUNNING' || event.status === 'ROLLING_BACK')
   const tasks = request.plan?.tasks ?? []

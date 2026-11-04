@@ -3,6 +3,7 @@
  * 시연용 키워드는 README의 "목 동작 트리거"에 정리해 두었다.
  */
 import { makeUnifiedDiff } from '../../lib/diff'
+import { explainTask } from '../../lib/explain'
 import type { Plan, Project, Risk, Task, TaskContent, TaskType, UserRef } from '../types'
 import { buildRequiredApprovers, findForbiddenReason } from './policy'
 import { db, nextId } from './store'
@@ -17,6 +18,7 @@ interface Draft {
   content: TaskContent
   relatedDepartments?: string[]
   raise?: { reason: string }
+  previousBody?: string
 }
 
 export function defaultRisk(type: TaskType): Risk {
@@ -71,6 +73,7 @@ function buildDrafts(prompt: string, project: Project): Draft[] {
       description: 'AI가 문서를 끝까지 작성했습니다. 완성본을 보고 적용 여부를 정합니다.',
       target: path,
       content: { body: `${current}\n\n## 변경 내용\n\n${prompt}\n` },
+      previousBody: current,
     })
   }
   if (/테스트|리팩터/.test(text)) {
@@ -167,6 +170,7 @@ export function toTask(draft: Draft, order: number, project: Project, requester:
     relatedDepartments,
     requiredApprovers: buildRequiredApprovers(project, requester, draft.type, risk),
     status: forbiddenReason ? 'BLOCKED' : 'PENDING',
+    explanation: explainTask({ ...draft, previousBody: draft.previousBody }),
     ...(riskRaised ? { riskRaised } : {}),
     ...(forbiddenReason ? { forbiddenReason } : {}),
   }
@@ -212,6 +216,12 @@ export function applyInstruction(task: Task, instruction: string, project: Proje
     next.risk = 'HIGH'
   }
   next.requiredApprovers = buildRequiredApprovers(project, requester, next.type, next.risk)
+  const base = explainTask(next)
+  next.explanation = {
+    ...base,
+    summary: `${base.summary} 수정 지시도 반영했습니다.`,
+    changes: [...base.changes, { where: '수정 지시', what: instruction }],
+  }
   return next
 }
 

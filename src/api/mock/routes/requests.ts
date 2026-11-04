@@ -1,4 +1,13 @@
-import type { AuditLog, Dashboard, PendingApproval, RequestStatus, RequestSummary, Risk } from '../../types'
+import type {
+  AuditLog,
+  Dashboard,
+  PendingApproval,
+  RequestStatus,
+  RequestSummary,
+  RequestTaskSummary,
+  Risk,
+  Task,
+} from '../../types'
 import {
   approvalContext,
   cancelRequest,
@@ -39,6 +48,22 @@ function toSummary(request: StoredRequest): RequestSummary {
     currentPlanId: request.currentPlanId,
     createdAt: request.createdAt,
     updatedAt: request.updatedAt,
+    taskSummary: request.plan ? summarizeTasks(request) : undefined,
+  }
+}
+
+function summarizeTasks(request: StoredRequest): RequestTaskSummary {
+  const tasks = request.plan?.tasks ?? []
+  const risks: Record<Risk, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, FORBIDDEN: 0 }
+  for (const task of tasks) risks[task.risk] += 1
+  const count = (...statuses: Task['status'][]) => tasks.filter((t) => statuses.includes(t.status)).length
+  return {
+    total: tasks.length,
+    risks,
+    required: tasks.filter((t) => t.status !== 'BLOCKED').length,
+    approved: count('APPROVED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'SKIPPED', 'ROLLED_BACK'),
+    succeeded: count('SUCCEEDED', 'ROLLED_BACK'),
+    failed: count('FAILED'),
   }
 }
 
@@ -57,8 +82,12 @@ function inScope(request: StoredRequest, user: StoredUser): boolean {
 }
 
 function canView(request: StoredRequest, user: StoredUser): boolean {
+  // 제출 전의 Plan은 아직 승인 대상이 아니므로 승인 후보에게 보이지 않는다.
+  const submitted = Boolean(request.plan?.planHash)
   return (
-    inScope(request, user) || isCandidate(user, request) || request.approvals.some((a) => a.userId === user.id)
+    inScope(request, user) ||
+    (submitted && isCandidate(user, request)) ||
+    request.approvals.some((a) => a.userId === user.id)
   )
 }
 
@@ -68,7 +97,8 @@ function viewable(ctx: Ctx): StoredRequest {
   return request
 }
 
-const TERMINAL: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
+/** 로그가 더 나올 수 있는 상태 */
+const LIVE_STATUSES: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
 
 function logStream(ctx: Ctx): Response {
   const request = viewable(ctx)
@@ -86,8 +116,12 @@ function logStream(ctx: Ctx): Response {
       const send = (value: unknown) => {
         if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`))
       }
+      if (ctx.signal?.aborted) {
+        close()
+        return
+      }
       for (const line of db().logs[request.id] ?? []) send(line)
-      if (!TERMINAL.includes(request.status)) {
+      if (!LIVE_STATUSES.includes(request.status)) {
         close()
         return
       }

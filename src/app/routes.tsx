@@ -33,8 +33,8 @@ export const router = createBrowserRouter([
               { index: true, element: <HomeRedirect /> },
               // 외부망에서도 쓰는 화면 (기능 명세서 3.3)
               { path: '/requests', element: <RequestListPage /> },
-              { path: '/approvals', element: <PendingListPage /> },
-              { path: '/approvals/:requestId', element: <ApprovalDetailPage /> },
+              { path: '/approvals', element: <PendingListPage />, handle: { fullBleed: true } },
+              { path: '/approvals/:requestId', element: <ApprovalDetailPage />, handle: { fullBleed: true } },
               { path: '/dashboard', element: <DashboardPage /> },
               { path: '/audit', element: <AuditPage /> },
               // 내부망 전용 화면
@@ -43,8 +43,8 @@ export const router = createBrowserRouter([
                 children: [
                   { path: '/requests/new', element: <ComposePage /> },
                   { path: '/requests/new/:requestId', element: <ComposePage /> },
-                  { path: '/editor', element: <EditorPage /> },
-                  { path: '/editor/:projectId', element: <EditorPage /> },
+                  { path: '/editor', element: <EditorPage />, handle: { fullBleed: true } },
+                  { path: '/editor/:projectId', element: <EditorPage />, handle: { fullBleed: true } },
                   { path: '/documents', element: <DocumentsPage /> },
                   { path: '/documents/:documentId', element: <DocumentsPage /> },
                   { path: '/projects', element: <ProjectsPage /> },

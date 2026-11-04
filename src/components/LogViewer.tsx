@@ -20,8 +20,12 @@ export function LogViewer({ requestId, live }: { requestId: string; live: boolea
   const bodyRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
 
+  // 스트림이 끊기면(초기화·네트워크) 처음부터 다시 받는다. 서버가 지난 로그를 다시 보내 준다.
+  const [attempt, setAttempt] = useState(0)
+
   useEffect(() => {
     const controller = new AbortController()
+    let retry: ReturnType<typeof setTimeout> | undefined
     setLines([])
     setError(null)
     setStreaming(true)
@@ -35,11 +39,16 @@ export function LogViewer({ requestId, live }: { requestId: string; live: boolea
         if (!controller.signal.aborted) setError(errorMessage(reason))
       })
       .finally(() => {
-        if (!controller.signal.aborted) setStreaming(false)
+        if (controller.signal.aborted) return
+        setStreaming(false)
+        if (live) retry = setTimeout(() => setAttempt((n) => n + 1), 1500)
       })
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      clearTimeout(retry)
+    }
     // 실행이 시작되면(live) 다시 연결해 이어 받는다.
-  }, [requestId, live])
+  }, [requestId, live, attempt])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -47,7 +56,7 @@ export function LogViewer({ requestId, live }: { requestId: string; live: boolea
   }, [lines])
 
   return (
-    <div className="overflow-hidden rounded-md bg-terminal">
+    <div className="overflow-hidden rounded-xl bg-terminal">
       <div className="flex items-center justify-between border-b border-terminal-2 px-3 py-1.5 text-xs text-terminal-dim">
         <span>실행 로그 (읽기 전용)</span>
         {streaming && live && <span className="text-[#7ddc9f]">실시간 수신 중</span>}
@@ -61,7 +70,7 @@ export function LogViewer({ requestId, live }: { requestId: string; live: boolea
           const el = event.currentTarget
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
         }}
-        className="h-80 overflow-y-auto p-3 font-mono text-xs leading-5"
+        className="quiet-scroll h-80 overflow-y-auto p-3 font-mono text-xs leading-5"
       >
         {lines.length === 0 && !error && <p className="text-terminal-dim">아직 실행 로그가 없습니다.</p>}
         {lines.map((line) => (

@@ -9,6 +9,7 @@ import { deviceStore } from '../../crypto/deviceStore'
 import { bytesToBase64 } from '../../crypto/encoding'
 import { signingService } from '../../crypto/signingService'
 import { makeUnifiedDiff } from '../../lib/diff'
+import { explainTask } from '../../lib/explain'
 import type {
   AuditAction,
   AuditLog,
@@ -233,6 +234,7 @@ interface SeedTask {
   riskRaised?: Task['riskRaised']
   forbiddenReason?: string
   relatedDepartments?: string[]
+  previousBody?: string
 }
 
 const PATHS: Partial<Record<RequestStatus, RequestStatus[]>> = {
@@ -292,6 +294,7 @@ function addRequest(seed: SeedRequest): StoredRequest {
       relatedDepartments: task.relatedDepartments ?? [project.departmentId],
       requiredApprovers: buildRequiredApprovers(project, requester, task.type, risk),
       status: task.status,
+      explanation: explainTask(task),
       ...(task.riskRaised ? { riskRaised: task.riskRaised } : {}),
       ...(task.forbiddenReason ? { forbiddenReason: task.forbiddenReason } : {}),
     }
@@ -455,6 +458,7 @@ const docTask = (status: TaskStatus, body: string): SeedTask => ({
   target: 'docs/README.md',
   content: { body },
   status,
+  previousBody: AUTH_FILES['docs/README.md'],
 })
 
 function seedRequests() {
@@ -770,6 +774,7 @@ function seedRequests() {
         content: {
           body: `${AUTH_FILES['docs/api-guide.md']}\n## 오류 응답\n\n| 코드 | 뜻 |\n|---|---|\n| 401 | 사번 또는 비밀번호가 맞지 않음 |\n`,
         },
+        previousBody: AUTH_FILES['docs/api-guide.md'],
         status: 'PENDING',
       },
     ],

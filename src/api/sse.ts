@@ -29,7 +29,7 @@ export async function streamEvents<T>(
           .filter((line) => line.startsWith('data:'))
           .map((line) => line.slice(5).trim())
           .join('\n')
-        if (data) onEvent(JSON.parse(data) as T)
+        if (data && !signal.aborted) onEvent(JSON.parse(data) as T)
         boundary = buffer.indexOf('\n\n')
       }
     }

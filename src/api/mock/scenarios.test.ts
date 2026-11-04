@@ -444,3 +444,60 @@ describe('규칙', () => {
     expect(items.every((l) => l.target.requestId && allowed.has(l.target.requestId))).toBe(true)
   })
 })
+
+describe('쉬운 설명', () => {
+  it('로그인 메시지 작업은 어디가 무엇에서 무엇으로 바뀌는지 알려 준다', async () => {
+    const { plan } = await requestsApi.get('r-main')
+    const explanation = plan!.tasks[0].explanation!
+    expect(explanation.summary).toContain('로그인 API')
+    expect(explanation.changes[0]).toMatchObject({
+      where: '로그인 API (POST /login)',
+      before: 'Invalid credentials',
+      after: '아이디 또는 비밀번호가 올바르지 않습니다',
+    })
+    expect(explanation.undo).toContain('되돌리기 기능이 없습니다')
+  })
+
+  it('배포·DB·조회·문서도 말로 풀어 쓴다', async () => {
+    const deploy = (await requestsApi.get('r-main')).plan!.tasks[1].explanation!
+    expect(deploy.summary).toContain('스테이징 서버')
+    expect(deploy.impact.join()).toContain('운영 서비스에는 영향이 없습니다')
+    const db = (await requestsApi.get('r-running')).plan!.tasks[1].explanation!
+    expect(db.summary).toContain('last_login_at')
+    const doc = (await requestsApi.get('r-completed')).plan!.tasks[0].explanation!
+    expect(doc.undo).toContain('되돌릴 수 있습니다')
+    expect(doc.changes[0].after).toBe('장애 대응')
+  })
+
+  it('설명은 해시 대상이 아니어서 바뀌어도 해시가 그대로다', async () => {
+    const { plan } = await requestsApi.get('r-main')
+    const hash = hashService.computePlanHash(plan!)
+    const changed = { ...plan!, tasks: plan!.tasks.map((t) => ({ ...t, explanation: undefined })) }
+    expect(hashService.computePlanHash(changed)).toBe(hash)
+  })
+
+  it('목록에 작업 요약이 함께 온다', async () => {
+    const { items } = await requestsApi.list({ mine: true })
+    const main = items.find((r) => r.id === 'r-main')!
+    expect(main.taskSummary).toMatchObject({ total: 2, required: 2, approved: 1 })
+    expect(main.taskSummary!.risks.HIGH).toBe(1)
+  })
+
+  it('담당자를 비활성화해 활성 담당자가 2명 아래로 내려가면 막는다', async () => {
+    asUser('u-admin')
+    await expectError(adminApi.updateUser('u-07', { active: false }), 'OWNER_MINIMUM')
+  })
+
+  it('다른 부서 직원은 제출 전 Plan을 볼 수 없다', async () => {
+    asUser('u-21')
+    await expectError(requestsApi.get('r-reviewing'), 'NOT_FOUND')
+  })
+
+  it('부분완료에서 실패 작업을 모두 지우고 제출하면 승인대기에 멈추지 않고 끝난다', async () => {
+    const before = await requestsApi.get('r-partial')
+    await requestsApi.patchPlan('r-partial', { basePlanId: before.currentPlanId!, changes: [{ op: 'DELETE', taskId: 't-2' }] })
+    await waitForStatus('r-partial', notAnalyzing)
+    const submitted = await requestsApi.submit('r-partial')
+    expect(submitted.status).toBe('COMPLETED')
+  })
+})

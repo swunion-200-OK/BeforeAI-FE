@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { documentsApi, requestsApi } from '../../api/endpoints'
+import { ApiError, errorMessage } from '../../api/errors'
 import type { DocumentSummary, DocumentVersionSummary } from '../../api/types'
 import { DiffViewer } from '../../components/DiffViewer'
 import { toast } from '../../components/toast'
@@ -78,6 +79,7 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
   const refreshAll = useRefreshAll()
   const [searchParams, setSearchParams] = useSearchParams()
   const [confirming, setConfirming] = useState(false)
+  const [rollbackBlocked, setRollbackBlocked] = useState(false)
 
   const versions = useQuery({
     queryKey: ['document-versions', document.id],
@@ -91,7 +93,14 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
   const isCurrent = selected === document.currentVersion
 
   const rollback = useMutation({
+    meta: { silent: true },
     mutationFn: () => requestsApi.rollback(appliedBy as string, { documentId: document.id, version: selected }),
+    onError: (error) => {
+      // TODO(spec): 명세 6장은 ROLLED_BACK 상태에서 다시 롤백을 허용하지 않는다.
+      // 문서 버전이 요청에 묶여 있어 한 번 되돌린 문서는 새 문서 작업이 적용되기 전까지 다시 되돌릴 수 없다.
+      if (error instanceof ApiError && error.code === 'INVALID_STATE') setRollbackBlocked(true)
+      else toast.error(errorMessage(error))
+    },
     onSuccess: async ({ id }) => {
       await refreshAll()
       toast.success('롤백 Plan을 만들었습니다. 승인하면 문서가 되돌아갑니다')
@@ -118,6 +127,15 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {rollbackBlocked && appliedBy && (
+        <Banner tone="warning" title="지금은 이 문서를 롤백할 수 없습니다">
+          이 문서를 마지막으로 적용한{' '}
+          <Link to={`/requests/${appliedBy}`} className="underline">
+            요청
+          </Link>
+          이 이미 롤백을 마쳤거나 진행 중입니다. 이전 내용으로 되돌리려면 작업 요청에서 문서 수정을 새 요청으로 만들어 주세요.
+        </Banner>
+      )}
       <Sheet
         title={
           <>

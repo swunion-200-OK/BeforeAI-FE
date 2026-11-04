@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { INTERNAL_ONLY_MESSAGE } from '../api/errors'
 import { useIsExternal } from '../lib/queries'
+import { refreshToastHost } from './toast'
 
 // ── 버튼 ───────────────────────────────────────────────────
 
@@ -73,11 +74,11 @@ export function Button({
 /** disabled 버튼은 포커스를 못 받으므로 감싸는 span이 포커스를 받는다. */
 export function Tooltip({ text, children }: { text: string; children: ReactNode }) {
   return (
-    <span className="group/tooltip relative inline-flex" tabIndex={0} aria-label={text}>
+    <span className="group/tooltip relative inline-flex" tabIndex={0} role="group" aria-label={text}>
       {children}
       <span
         role="tooltip"
-        className="pointer-events-none invisible absolute bottom-full left-1/2 z-50 mb-1.5 w-max max-w-64 -translate-x-1/2 rounded bg-ink px-2 py-1 text-xs font-normal text-white opacity-0 transition-opacity group-hover/tooltip:visible group-hover/tooltip:opacity-100 group-focus/tooltip:visible group-focus/tooltip:opacity-100"
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden w-max max-w-64 -translate-x-1/2 rounded bg-ink px-2 py-1 text-xs font-normal text-white group-hover/tooltip:block group-focus/tooltip:block"
       >
         {text}
       </span>
@@ -202,10 +203,10 @@ export function PageHeader({
   meta?: ReactNode
 }) {
   return (
-    <header className="mb-5 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+    <header className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-[1.375rem]">{title}</h1>
-        {description && <p className="mt-1 max-w-[70ch] text-sm text-ink-2">{description}</p>}
+        <h1 className="text-[1.5rem] font-bold tracking-tight">{title}</h1>
+        {description && <p className="mt-0.5 max-w-[80ch] text-sm text-ink-2">{description}</p>}
         {meta && <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.8125rem] text-ink-2">{meta}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -216,22 +217,30 @@ export function PageHeader({
 /** 흰 서류 한 장. 안쪽 여백을 직접 정하고 싶으면 flush를 준다. */
 export function Sheet({
   title,
+  icon,
   actions,
   children,
   flush,
   className = '',
 }: {
   title?: ReactNode
+  /** 제목 앞 아이콘 */
+  icon?: ReactNode
   actions?: ReactNode
   children: ReactNode
   flush?: boolean
   className?: string
 }) {
   return (
-    <section className={`rounded-md border border-rule bg-sheet ${className}`}>
+    <section className={`rounded-xl border border-rule bg-sheet shadow-card ${className}`}>
       {(title || actions) && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-4 py-2.5">
-          {title && <h2 className="text-[0.9375rem]">{title}</h2>}
+          {title && (
+            <h2 className="flex items-center gap-2 text-[0.9375rem] font-semibold">
+              {icon && <span className="text-ink-3">{icon}</span>}
+              {title}
+            </h2>
+          )}
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
       )}
@@ -293,12 +302,13 @@ export function Modal({
     if (!dialog) return
     if (open && !dialog.open) dialog.showModal()
     if (!open && dialog.open) dialog.close()
+    refreshToastHost()
   }, [open])
   return (
     <dialog
       ref={ref}
       onClose={onClose}
-      className={`m-auto w-[calc(100%-2rem)] rounded-lg bg-sheet p-0 text-ink shadow-xl ${wide ? 'max-w-3xl' : 'max-w-md'}`}
+      className={`m-auto w-[calc(100%-2rem)] rounded-xl bg-sheet p-0 text-ink shadow-xl ${wide ? 'max-w-3xl' : 'max-w-md'}`}
     >
       {open && (
         <>
@@ -430,6 +440,7 @@ export function Drawer({
     if (!dialog) return
     if (open && !dialog.open) dialog.showModal()
     if (!open && dialog.open) dialog.close()
+    refreshToastHost()
   }, [open])
   return (
     <dialog

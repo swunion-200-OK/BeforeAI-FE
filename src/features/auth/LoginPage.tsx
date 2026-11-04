@@ -56,7 +56,7 @@ export default function LoginPage() {
 
   if (me) {
     const from = (location.state as { from?: string } | null)?.from
-    return <Navigate to={from ?? homePath(network)} replace />
+    return <Navigate to={from ?? homePath()} replace />
   }
   if (booting && !login.isPending && !verify.isPending) return <Spinner label="세션을 확인하는 중" />
 

@@ -286,6 +286,13 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
   if (plan.tasks.every((t) => t.status === 'BLOCKED') || plan.tasks.length === 0) {
     throw new HttpError(422, 'FORBIDDEN_TASK', '금지 작업만 남아 있습니다')
   }
+  // 부분완료에서 실패 작업을 모두 지웠다면 승인받을 작업이 없다. 승인대기에 멈추지 않고 그대로 끝낸다.
+  if (plan.tasks.every((t) => t.status === 'BLOCKED' || t.status === 'SUCCEEDED')) {
+    registerPlan(plan)
+    setStatus(request, 'COMPLETED', user.name)
+    audit(user, 'SUBMITTED', { requestId: request.id }, { planHash: plan.planHash, nothingLeft: true })
+    return submitResponse(request)
+  }
   const project = requireProject(request.projectId)
   for (const task of plan.tasks) {
     task.requiredApprovers = buildRequiredApprovers(project, request.requester, task.type, task.risk)

@@ -1,5 +1,6 @@
 import { CircleAlert, CircleCheck, Info, X } from 'lucide-react'
 import { useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 
 type ToastKind = 'success' | 'error' | 'info'
 interface ToastItem {
@@ -43,6 +44,18 @@ const STYLE: Record<ToastKind, { className: string; Icon: typeof Info }> = {
   info: { className: 'border-seal text-seal', Icon: Info },
 }
 
+const hostListeners = new Set<() => void>()
+let host: HTMLElement | null = null
+
+/** 모달 밖의 요소는 비활성(inert)이 되므로, 모달이 열려 있으면 그 안에 토스트를 그린다. */
+export function refreshToastHost() {
+  const dialogs = document.querySelectorAll<HTMLElement>('dialog[open]')
+  const next = dialogs.length ? dialogs[dialogs.length - 1] : null
+  if (next === host) return
+  host = next
+  hostListeners.forEach((listener) => listener())
+}
+
 export function Toaster() {
   const current = useSyncExternalStore(
     (listener) => {
@@ -51,7 +64,14 @@ export function Toaster() {
     },
     () => items,
   )
-  return (
+  const target = useSyncExternalStore(
+    (listener) => {
+      hostListeners.add(listener)
+      return () => hostListeners.delete(listener)
+    },
+    () => host,
+  )
+  return createPortal(
     <div
       className="pointer-events-none fixed top-4 left-1/2 z-[60] flex w-full max-w-md -translate-x-1/2 flex-col gap-2 px-4"
       role="status"
@@ -77,6 +97,7 @@ export function Toaster() {
           </div>
         )
       })}
-    </div>
+    </div>,
+    target ?? document.body,
   )
 }

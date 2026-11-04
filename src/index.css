@@ -7,39 +7,48 @@
 @import '@fontsource/ibm-plex-mono/500.css';
 
 /*
- * 결재 서류의 어휘로 만든 토큰.
- * 서류(paper·sheet)와 먹(ink), 군청 인주(seal). 빨강은 위험도·오류에만 쓴다.
+ * 토큰 이름은 결재 서류의 어휘를 유지한다: 서류(paper·sheet), 먹(ink), 군청 인주(seal).
+ * 빨강은 위험·오류에만, 보라(ai)는 AI가 쓴 내용에만 쓴다.
  */
 @theme {
   --font-sans: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
 
-  --color-paper: #edf0f4;
+  --color-paper: #f2f4f9;
   --color-sheet: #ffffff;
-  --color-sheet-alt: #f6f8fa;
-  --color-ink: #172033;
-  --color-ink-2: #48546a;
-  --color-ink-3: #667286;
-  --color-rule: #d5dbe4;
-  --color-rule-strong: #aeb9c8;
+  --color-sheet-alt: #f7f9fc;
+  --color-ink: #101a2e;
+  --color-ink-2: #435069;
+  --color-ink-3: #667389;
+  --color-rule: #e2e7ef;
+  --color-rule-strong: #c5cedb;
 
-  --color-seal: #2743b8;
-  --color-seal-dark: #1c3190;
-  --color-seal-soft: #e4e9fa;
+  --color-seal: #2b45d4;
+  --color-seal-dark: #1d33a6;
+  --color-seal-soft: #e8ecff;
 
-  --color-low: #17703f;
-  --color-low-soft: #e1f3e8;
-  --color-medium: #a24f00;
-  --color-medium-soft: #fcebd6;
-  --color-high: #be2318;
-  --color-high-soft: #fbe6e4;
-  --color-forbidden: #535c6a;
-  --color-forbidden-soft: #e6e8ec;
+  --color-ai: #6b3fd4;
+  --color-ai-dark: #4f2aa8;
+  --color-ai-soft: #f1ebff;
 
-  --color-internal: #0b6b6b;
-  --color-internal-soft: #ddf1f0;
-  --color-external: #9a4a00;
-  --color-external-soft: #fdebd0;
+  --color-low: #0f7a55;
+  --color-low-soft: #dcf6ea;
+  --color-medium: #b25a00;
+  --color-medium-soft: #ffefd6;
+  --color-high: #d02b20;
+  --color-high-soft: #fde6e4;
+  --color-forbidden: #4d5768;
+  --color-forbidden-soft: #e9ebef;
+
+  --color-internal: #08707a;
+  --color-internal-soft: #d8f3f5;
+  --color-external: #b45309;
+  --color-external-soft: #fff0d4;
+
+  --color-nav: #141c36;
+  --color-nav-2: #1f2a4d;
+  --color-nav-ink: #c2cbe4;
+  --color-nav-dim: #8390b3;
 
   --color-terminal: #0e1726;
   --color-terminal-2: #18243a;
@@ -48,6 +57,9 @@
 
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
+
+  --shadow-card: 0 1px 2px rgb(16 26 46 / 0.05), 0 1px 1px rgb(16 26 46 / 0.03);
+  --shadow-raised: 0 8px 24px rgb(16 26 46 / 0.12);
 
   --animate-stamp: stamp 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
   --animate-toast: toast 180ms ease-out;
@@ -121,7 +133,7 @@
 }
 
 @layer components {
-  /* 표: 서류의 칸처럼 가로줄만 긋는다 */
+  /* 표: 머리글에 옅은 바탕을 깔고 행은 가로줄로 나눈다 */
   .sheet-table {
     width: 100%;
     border-collapse: collapse;
@@ -131,21 +143,31 @@
     text-align: left;
     font-weight: 500;
     color: var(--color-ink-3);
-    font-size: 0.8125rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--color-rule-strong);
+    font-size: 0.75rem;
+    padding: 0.5rem 0.875rem;
+    background: var(--color-sheet-alt);
+    border-bottom: 1px solid var(--color-rule);
     white-space: nowrap;
   }
   .sheet-table td {
-    padding: 0.625rem 0.75rem;
+    padding: 0.625rem 0.875rem;
     border-bottom: 1px solid var(--color-rule);
     vertical-align: middle;
+  }
+  .sheet-table tbody tr:last-child td {
+    border-bottom: 0;
   }
   .sheet-table tbody tr[data-clickable='true'] {
     cursor: pointer;
   }
   .sheet-table tbody tr[data-clickable='true']:hover {
-    background: var(--color-sheet-alt);
+    background: var(--color-seal-soft);
+  }
+
+  /* 여러 칸이 각자 스크롤하는 화면의 스크롤바를 얌전하게 */
+  .quiet-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-rule-strong) transparent;
   }
 
   /* 외부망 띠 */

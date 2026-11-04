@@ -19,7 +19,6 @@ async function bootstrap() {
     defaultOptions: {
       queries: {
         retry: (count, error) => !(error instanceof ApiError) && count < 2,
-        refetchOnWindowFocus: false,
       },
     },
     queryCache: new QueryCache({

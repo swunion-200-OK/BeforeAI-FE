@@ -95,16 +95,24 @@ export async function rawFetch(method: string, path: string, options: RequestOpt
   return response
 }
 
-async function tryRefresh(): Promise<boolean> {
-  try {
-    const res = await transport(`${API_BASE_URL}/auth/refresh`, { method: 'POST' })
-    if (!res.ok) return false
-    const data = (await res.json()) as TokenResponse
-    setAccessToken(data.accessToken)
-    return true
-  } catch {
-    return false
-  }
+let refreshing: Promise<boolean> | null = null
+
+/** 동시에 401이 나도 재발급은 한 번만 한다. 리프레시 토큰을 교체하는 서버에서 세션이 끊기지 않게 한다. */
+function tryRefresh(): Promise<boolean> {
+  refreshing ??= (async () => {
+    try {
+      const res = await transport(`${API_BASE_URL}/auth/refresh`, { method: 'POST' })
+      if (!res.ok) return false
+      const data = (await res.json()) as TokenResponse
+      setAccessToken(data.accessToken)
+      return true
+    } catch {
+      return false
+    } finally {
+      refreshing = null
+    }
+  })()
+  return refreshing
 }
 
 export async function toApiError(response: Response): Promise<ApiError> {

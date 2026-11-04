@@ -4,9 +4,9 @@ import { networkStore } from '../api/client'
 import { approvalsApi, orgApi, projectsApi, requestsApi } from '../api/endpoints'
 import type { Network, RequestStatus } from '../api/types'
 
-/** 응답 헤더 X-Network로 받은 현재 접속 환경 */
+/** 응답 헤더 X-Network로 받은 현재 접속 환경. 모르면 더 좁은 쪽(외부망)으로 본다. */
 export function useNetwork(): Network {
-  return useSyncExternalStore(networkStore.subscribe, networkStore.get) ?? 'INTERNAL'
+  return useSyncExternalStore(networkStore.subscribe, networkStore.get) ?? 'EXTERNAL'
 }
 
 export function useIsExternal(): boolean {
@@ -36,8 +36,10 @@ export function useDepartmentNames(): (id: string | null | undefined) => string 
 }
 
 const LIVE_STATUSES: RequestStatus[] = ['ANALYZING', 'RUNNING', 'ROLLING_BACK']
+/** 다른 사람의 승인·수정으로 바뀔 수 있는 상태 */
+const WAITING_STATUSES: RequestStatus[] = ['PENDING_APPROVAL', 'REAPPROVAL_REQUIRED']
 
-/** 분석·실행 중에는 1초마다 다시 읽어 상태 변화를 따라간다. */
+/** 분석·실행 중에는 1초, 승인을 기다리는 동안에는 3초마다 다시 읽어 상태 변화를 따라간다. */
 export function useRequest(requestId: string | undefined) {
   return useQuery({
     queryKey: ['request', requestId],
@@ -45,7 +47,8 @@ export function useRequest(requestId: string | undefined) {
     enabled: Boolean(requestId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status && LIVE_STATUSES.includes(status) ? 1000 : false
+      if (status && LIVE_STATUSES.includes(status)) return 1000
+      return status && WAITING_STATUSES.includes(status) ? 3000 : false
     },
   })
 }
@@ -54,6 +57,7 @@ export function usePendingApprovals() {
   return useQuery({
     queryKey: ['approvals', 'pending'],
     queryFn: async () => (await approvalsApi.pending()).items,
+    refetchInterval: 5000,
   })
 }
 

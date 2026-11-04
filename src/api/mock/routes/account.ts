@@ -209,6 +209,19 @@ export const accountRoutes: Route[] = [
     '/admin/users/:userId',
     ({ me, params, body }) => {
       const user = requireUser(params.userId)
+      if (body.active === false) {
+        // 담당자를 비활성화해서 활성 담당자가 2명 아래로 내려가면 승인할 사람이 없어질 수 있다 (5.8).
+        const stranded = db().projects.find(
+          (project) =>
+            project.owners.some((owner) => owner.id === user.id) &&
+            project.owners.filter((owner) => owner.id !== user.id && requireUser(owner.id).active).length < 2,
+        )
+        if (stranded) {
+          throw new HttpError(409, 'OWNER_MINIMUM', `${stranded.name} 담당자를 먼저 바꿔 주세요`, {
+            projectId: stranded.id,
+          })
+        }
+      }
       Object.assign(user, body)
       audit(me, 'ACCOUNT_CHANGED', { label: `계정 변경 ${user.name}` }, body)
       return publicUser(user)

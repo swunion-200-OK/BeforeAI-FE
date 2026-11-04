@@ -5,15 +5,17 @@ import type { Role } from '../api/types'
 import { Spinner } from '../components/ui'
 import { ForcePasswordPage } from '../features/auth/ForcePasswordPage'
 import { homePath } from '../lib/access'
-import { useIsExternal, useNetwork } from '../lib/queries'
+import { useIsExternal } from '../lib/queries'
 import { useAuth } from './AuthProvider'
 
 export function RequireAuth() {
-  const { me, booting } = useAuth()
+  const { me, booting, signedOut } = useAuth()
   const location = useLocation()
   if (booting) return <Spinner label="세션을 확인하는 중" />
   if (!me) {
-    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
+    // 직접 로그아웃했으면 돌아갈 곳을 남기지 않는다. 다음 사람이 이전 사용자의 화면으로 가면 안 된다.
+    const state = signedOut ? undefined : { from: location.pathname + location.search }
+    return <Navigate to="/login" replace state={state} />
   }
   if (me.mustChangePassword) return <ForcePasswordPage />
   return <Outlet />
@@ -39,5 +41,5 @@ export function RequireRole({ roles }: { roles: Role[] }) {
 }
 
 export function HomeRedirect() {
-  return <Navigate to={homePath(useNetwork())} replace />
+  return <Navigate to={homePath()} replace />
 }

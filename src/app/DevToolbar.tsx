@@ -21,7 +21,8 @@ const subscribe = (listener: () => void) =>
 /** 시연용 개발 툴바: 사용자(역할) 전환, 내부망/외부망 전환, 목 데이터 초기화 */
 export default function DevToolbar() {
   const state = useSyncExternalStore(subscribe, () => snapshot)
-  const [open, setOpen] = useState(true)
+  // 자동화 테스트에서는 펼쳐 두고, 사람이 볼 때는 화면을 가리지 않게 접어 둔다.
+  const [open, setOpen] = useState(() => navigator.webdriver)
   const [slackOpen, setSlackOpen] = useState(false)
   const { me, signIn } = useAuth()
   const client = useQueryClient()
@@ -55,10 +56,11 @@ export default function DevToolbar() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed right-4 bottom-4 z-40 flex items-center gap-1.5 rounded-full bg-ink px-3 py-2 text-xs font-medium text-white shadow-lg"
+        className="fixed bottom-[68px] left-2.5 z-40 flex w-[212px] items-center gap-1.5 rounded-lg bg-nav-2 px-2.5 py-1.5 text-xs font-medium text-nav-ink shadow-raised ring-1 ring-white/15 hover:text-white"
       >
         <Wrench size={14} aria-hidden />
         개발 도구
+        <span className="ml-auto text-nav-dim">{NETWORK_LABEL[network]}</span>
       </button>
     )
   }
@@ -66,7 +68,7 @@ export default function DevToolbar() {
   return (
     <aside
       aria-label="개발용 전환 툴바"
-      className="fixed right-4 bottom-4 z-40 w-64 rounded-lg bg-ink p-3 text-xs text-white shadow-xl"
+      className="fixed bottom-[68px] left-2.5 z-40 w-[212px] rounded-lg bg-nav-2 p-3 text-xs text-white shadow-raised ring-1 ring-white/15"
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 font-semibold">
