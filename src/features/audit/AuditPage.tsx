@@ -19,7 +19,7 @@ import {
   toAuditQuery,
   toggleQuickFilter,
   type FilterKey,
-} from './auditFilters'
+} from './auditFilterParams'
 
 const PAGE_SIZE = 30
 
