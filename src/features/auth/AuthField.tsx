@@ -18,7 +18,7 @@ export function AuthField({
   const id = useId()
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-[0.9375rem] font-medium text-ink">
+      <label htmlFor={id} className="text-base font-medium text-ink">
         {label}
       </label>
       <input id={id} {...input} className={`${INPUT_CLASS} ${className}`} />

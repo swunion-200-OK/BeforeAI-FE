@@ -253,7 +253,7 @@ function MatrixSection() {
                 <tr key={row.taskType}>
                   <td className="font-medium whitespace-nowrap">
                     {row.label}
-                    {changed(row) && <span className="ml-2 text-[0.8125rem] font-medium text-seal">바뀜</span>}
+                    {changed(row) && <span className="ml-2 text-[0.875rem] font-medium text-seal">바뀜</span>}
                   </td>
                   <td className="text-ink-2">{row.examples}</td>
                   <td>

@@ -80,7 +80,7 @@ export default function LoginPage() {
       <section className="rounded-2xl border border-rule bg-sheet p-8 shadow-card">
         <header className="mb-6 flex items-center justify-between gap-3">
           <h1 className="text-[2rem] leading-tight font-bold tracking-tight">{tempToken === null ? '로그인' : 'OTP 확인'}</h1>
-          <NetworkBadge network={network} />
+          {network === 'EXTERNAL' && <NetworkBadge network={network} />}
         </header>
 
         {tempToken === null ? (
@@ -100,7 +100,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
             {error && (
-              <p className="text-[0.9375rem] text-high" role="alert">
+              <p className="text-base text-high" role="alert">
                 {error}
               </p>
             )}
@@ -115,7 +115,7 @@ export default function LoginPage() {
               로그인
             </Button>
             {network === 'EXTERNAL' && (
-              <p className="text-[0.9375rem] text-ink-2">외부망에서는 비밀번호 확인 뒤 OTP를 한 번 더 입력합니다.</p>
+              <p className="text-base text-ink-2">외부망에서는 비밀번호 확인 뒤 OTP를 한 번 더 입력합니다.</p>
             )}
           </form>
         ) : (
@@ -132,7 +132,7 @@ export default function LoginPage() {
               className="font-mono text-xl tracking-[0.4em]"
             />
             {error && (
-              <p className="text-[0.9375rem] text-high" role="alert">
+              <p className="text-base text-high" role="alert">
                 {error}
               </p>
             )}
@@ -162,7 +162,7 @@ export default function LoginPage() {
 
       {USE_MOCK && (
         <section aria-label="시연 계정">
-          <p className="mb-2 text-[0.9375rem] text-ink-2">
+          <p className="mb-2 text-base text-ink-2">
             시연 계정을 고르면 입력해 줍니다. 비밀번호 <code className="font-mono text-ink">{DEMO_PASSWORD}</code>, OTP{' '}
             <code className="font-mono text-ink">{DEMO_OTP}</code>
           </p>
@@ -182,10 +182,10 @@ export default function LoginPage() {
                 >
                   <Avatar name={account.name} />
                   <span className="min-w-0 leading-snug">
-                    <span className="block text-[0.9375rem] font-semibold text-ink">
-                      {account.name} <code className="ml-0.5 font-mono text-[0.8125rem] font-normal text-ink-3">{account.employeeNo}</code>
+                    <span className="block text-base font-semibold text-ink">
+                      {account.name} <code className="ml-0.5 font-mono text-[0.875rem] font-normal text-ink-3">{account.employeeNo}</code>
                     </span>
-                    <span className="block truncate text-[0.8125rem] text-ink-2">{account.role}</span>
+                    <span className="block truncate text-[0.875rem] text-ink-2">{account.role}</span>
                   </span>
                 </button>
               </li>

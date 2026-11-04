@@ -112,7 +112,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
           </Field>
         </div>
         <fieldset className="col-span-2">
-          <legend className="mb-1 text-[0.8125rem] font-medium text-ink-2">담당자 (2명 이상)</legend>
+          <legend className="mb-1 text-[0.875rem] font-medium text-ink-2">담당자 (2명 이상)</legend>
           {users.isPending && <Spinner />}
           {users.isError && <ErrorState error={users.error} onRetry={() => users.refetch()} />}
           <div className="grid grid-cols-3 gap-1">
@@ -141,7 +141,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
                 )
               })}
           </div>
-          <p className="mt-1.5 text-[0.8125rem] text-ink-3">{ownerIds.length}명 선택함</p>
+          <p className="mt-1.5 text-[0.875rem] text-ink-3">{ownerIds.length}명 선택함</p>
         </fieldset>
         <div className="col-span-2">
           <Field label="초기 기획서" hint="AI가 이 프로젝트를 분석할 때 컨텍스트로 씁니다">

@@ -44,7 +44,7 @@ export function DiffViewer({ diff }: { diff: string }) {
   }
   return (
     <div className="overflow-x-auto rounded-md border border-rule bg-sheet">
-      <table className="w-full min-w-[640px] table-fixed border-collapse font-mono text-xs leading-5">
+      <table className="w-full min-w-[40rem] table-fixed border-collapse font-mono text-[0.875rem] leading-6">
         <colgroup>
           <col className="w-10" />
           <col />

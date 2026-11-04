@@ -55,7 +55,7 @@ export function KillAllTab() {
                       <Link to={`/requests/${request.id}`} className="font-medium text-ink hover:text-seal hover:underline">
                         {request.prompt}
                       </Link>
-                      <p className="mt-0.5 text-[0.8125rem] text-ink-3">{projectName(request.projectId)}</p>
+                      <p className="mt-0.5 text-[0.875rem] text-ink-3">{projectName(request.projectId)}</p>
                     </td>
                     <td className="whitespace-nowrap">{request.requester.name}</td>
                     <td>{request.taskSummary ? <TaskProgress summary={request.taskSummary} /> : '-'}</td>

@@ -22,8 +22,7 @@ function hash(text: string) {
 }
 
 function initials(name: string) {
-  // 세 글자 한글 이름은 이름 두 글자로, 그 밖에는 첫 글자로 쓴다.
-  return /^[가-힣]{3}$/.test(name) ? name.slice(1) : name.slice(0, 1)
+  return name.slice(0, 1)
 }
 
 export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
@@ -45,7 +44,7 @@ export function UserChip({ name, sub, size = 'sm' }: { name: string; sub?: React
     <span className="inline-flex min-w-0 items-center gap-2">
       <Avatar name={name} size={size} />
       <span className="min-w-0 leading-tight">
-        <span className="block truncate text-[0.8125rem] font-medium text-ink">{name}</span>
+        <span className="block truncate text-[0.875rem] font-medium text-ink">{name}</span>
         {sub && <span className="block truncate text-xs text-ink-3">{sub}</span>}
       </span>
     </span>
@@ -91,7 +90,7 @@ export function SegmentedTabs<T extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(id)}
-            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[0.8125rem] font-medium whitespace-nowrap ${
+            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[0.875rem] font-medium whitespace-nowrap ${
               active ? 'bg-sheet text-ink shadow-card' : 'text-ink-2 hover:text-ink'
             }`}
           >
@@ -156,7 +155,7 @@ export function Timeline({
             <span aria-hidden className="absolute top-3 bottom-0 left-[4.5px] w-px bg-rule-strong" />
           )}
           <span aria-hidden className={`relative mt-1.5 size-2.5 shrink-0 rounded-full ${DOT[item.tone ?? 'done']}`} />
-          <div className="min-w-0 text-[0.8125rem]">
+          <div className="min-w-0 text-[0.875rem]">
             <div className="font-medium text-ink">{item.title}</div>
             {item.meta && <div className="text-xs text-ink-3">{item.meta}</div>}
           </div>
@@ -168,7 +167,7 @@ export function Timeline({
 
 export function KeyValues({ items }: { items: Array<{ label: string; value: ReactNode }> }) {
   return (
-    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[0.8125rem]">
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[0.875rem]">
       {items.map((item) => (
         <div key={item.label} className="contents">
           <dt className="text-ink-3">{item.label}</dt>

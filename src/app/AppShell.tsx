@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   BookText,
   ClipboardCheck,
   Code2,
@@ -15,7 +16,7 @@ import {
   UserRound,
   type LucideIcon,
 } from 'lucide-react'
-import { NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
+import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { INTERNAL_ONLY_MESSAGE } from '../api/errors'
 import { NetworkBadge } from '../components/badges'
 import { Avatar } from '../components/rich'
@@ -51,10 +52,10 @@ function Sidebar() {
   const pendingCount = new Set(pending.data?.map((item) => item.requestId)).size
   const isOwner = projects.data?.some((p) => p.owners.some((o) => o.id === me.id)) ?? false
   const groups = menuFor(me.role, { canApprove: pendingCount > 0 || isOwner })
-  const base = 'flex h-10 items-center gap-3 rounded-lg px-3 text-[0.9375rem]'
+  const base = 'flex h-10 items-center gap-3 rounded-lg px-3 text-base'
 
   return (
-    <aside className="flex w-[232px] shrink-0 flex-col bg-nav text-nav-ink">
+    <aside className="flex w-[15rem] shrink-0 flex-col bg-nav text-nav-ink">
       <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
         <span className="inline-flex size-8 items-center justify-center rounded-lg bg-seal text-white">
           <Stamp size={17} aria-hidden />
@@ -132,16 +133,36 @@ function Sidebar() {
   )
 }
 
+/** 경로별 화면 설정. back: 상세 화면에서 목록으로 돌아가는 링크 */
+interface RouteHandle {
+  fullBleed?: boolean
+  back?: { to: string; label: string }
+}
+
 function TopBar() {
   const network = useNetwork()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   // 파란 버튼은 화면의 할 일 하나에만 쓴다. 이미 작업 요청 화면이면 이 버튼은 필요 없다.
-  const composing = pathname.startsWith('/requests/new')
+  const composing = pathname === '/requests/new'
+  const back = useMatches()
+    .map((match) => (match.handle as RouteHandle | undefined)?.back)
+    .find(Boolean)
   return (
     <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b border-rule bg-sheet px-5">
-      {network === 'EXTERNAL' && <span className="text-sm text-external">승인과 조회 위주로 쓸 수 있습니다</span>}
-      <NetworkBadge network={network} />
+      {back && (
+        <Link to={back.to} className="mr-auto inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-ink-2 hover:bg-paper hover:text-ink">
+          <ArrowLeft size={17} aria-hidden />
+          {back.label}
+        </Link>
+      )}
+      {/* 접속 위치는 서버가 판단한다. 평소에는 표시하지 않고, 쓸 수 있는 기능이 줄어드는 외부망일 때만 알린다. */}
+      {network === 'EXTERNAL' && (
+        <>
+          <span className="text-sm text-external">승인과 조회 위주로 쓸 수 있습니다</span>
+          <NetworkBadge network={network} />
+        </>
+      )}
       {!composing && (
         <Button internalOnly onClick={() => navigate('/requests/new')}>
           <Plus size={16} aria-hidden />새 작업 요청
@@ -153,16 +174,13 @@ function TopBar() {
 
 export function AppShell() {
   const network = useNetwork()
-  const fullBleed = useMatches().some((match) => (match.handle as { fullBleed?: boolean } | undefined)?.fullBleed)
+  const fullBleed = useMatches().some((match) => (match.handle as RouteHandle | undefined)?.fullBleed)
   return (
     <div className="flex h-dvh">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* 지금 어느 망에 있는지 화면 어디서나 보이게 하는 띠 */}
-        <div
-          className={`h-1 shrink-0 ${network === 'EXTERNAL' ? 'band-external' : 'bg-internal'}`}
-          role="presentation"
-        />
+        {/* 기능이 제한되는 외부망임을 화면 어디서나 알아보게 하는 띠 */}
+        {network === 'EXTERNAL' && <div className="band-external h-1 shrink-0" role="presentation" />}
         <TopBar />
         {fullBleed ? (
           <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -170,7 +188,7 @@ export function AppShell() {
           </main>
         ) : (
           <main className="quiet-scroll min-w-0 flex-1 overflow-y-auto">
-            <div className="mx-auto max-w-[1400px] px-8 py-6 pb-16">
+            <div className="mx-auto max-w-[80rem] px-8 py-8 pb-20">
               <Outlet />
             </div>
           </main>

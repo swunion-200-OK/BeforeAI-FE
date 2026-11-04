@@ -35,7 +35,7 @@ export function TaskApprovalLine({ status }: { status: TaskApprovalStatus }) {
   return (
     <p className="flex items-center gap-2.5 text-sm text-ink-2">
       {signer ? (
-        <span className="inline-flex size-9 shrink-0 -rotate-6 items-center justify-center rounded-full border-2 border-seal text-[0.625rem] leading-none font-bold tracking-tight text-seal">
+        <span className="inline-flex size-9 shrink-0 -rotate-6 items-center justify-center rounded-full border-2 border-seal text-[0.65rem] leading-none font-bold tracking-tight text-seal">
           {signer.name}
         </span>
       ) : (
@@ -120,7 +120,7 @@ export function MoreDetails({ request }: { request: RequestDetail }) {
             <ul className="flex flex-wrap gap-x-6 gap-y-4">
               {stamps.map(({ task, status }) => (
                 <li key={task.id}>
-                  <p className="mb-1.5 text-[0.8125rem] font-medium">
+                  <p className="mb-1.5 text-sm font-medium">
                     <span className="mr-1.5 font-mono text-xs text-ink-3">{task.id}</span>
                     {task.title}
                   </p>

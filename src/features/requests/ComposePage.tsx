@@ -25,17 +25,17 @@ function RecentRequests() {
   })
   if (!recent.data?.length) return null
   return (
-    <section aria-label="최근 내 요청" className="mt-8">
-      <h2 className="mb-1 px-2 text-[0.8125rem] text-ink-3">최근 내 요청</h2>
+    <section aria-label="최근 내 요청" className="mt-10">
+      <h2 className="mb-2 px-2 text-sm font-semibold text-ink-2">최근 내 요청</h2>
       <ul>
         {recent.data.map((request) => (
           <li key={request.id}>
             <Link
               to={pathFor(request, external)}
-              className="flex items-baseline gap-4 rounded-md px-2 py-1.5 text-sm text-ink-2 hover:bg-sheet hover:text-ink"
+              className="flex items-baseline gap-4 rounded-md px-2 py-2 text-base text-ink-2 hover:bg-sheet hover:text-ink"
             >
               <span className="min-w-0 flex-1 truncate">{request.prompt}</span>
-              <span className="shrink-0 text-[0.8125rem] text-ink-3">
+              <span className="shrink-0 text-sm text-ink-3">
                 {REQUEST_STATUS_LABEL[request.status]}, {formatElapsed(request.createdAt)} 전
               </span>
             </Link>
@@ -64,7 +64,7 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
   })
 
   return (
-    <div className="mx-auto max-w-[860px] pt-[10vh]">
+    <div className="mx-auto max-w-[54rem] pt-[10vh]">
       <h1 className="mb-7 text-center text-[2rem] font-bold tracking-tight">AI에게 무엇을 맡길까요?</h1>
       <form
         className="rounded-2xl border border-rule-strong bg-sheet shadow-card focus-within:border-seal focus-within:ring-1 focus-within:ring-seal"
@@ -140,7 +140,7 @@ function ClarificationForm({ request }: { request: RequestDetail }) {
           if (answer.trim()) patch.mutate({ answer: answer.trim() })
         }}
       >
-        <p className="text-[0.9375rem] text-ink">{request.clarification?.question}</p>
+        <p className="text-base text-ink">{request.clarification?.question}</p>
         <Field label="답변">
           {(id) => <TextArea id={id} rows={4} value={answer} onChange={(event) => setAnswer(event.target.value)} />}
         </Field>
@@ -160,21 +160,13 @@ function ClarificationForm({ request }: { request: RequestDetail }) {
   )
 }
 
-/** 분석 결과가 오기 전에 자리를 잡아 둔다. 화면이 갑자기 튀지 않게 한다. */
+/** 분석 결과가 오기 전에 기다리는 이유와 다음에 볼 것을 알려 준다. 움직임은 돌아가는 표시 하나뿐이다. */
 function AnalyzingPlaceholder() {
   return (
-    <div className="flex flex-col gap-3">
-      <p className="flex items-center gap-2 text-sm text-ink-2" role="status">
-        <Loader2 size={16} className="animate-spin text-seal" aria-hidden />
-        AI가 프롬프트를 작업 단위로 나누고 위험도를 매기는 중입니다.
-      </p>
-      {[0, 1].map((key) => (
-        <div key={key} aria-hidden className="flex animate-pulse flex-col gap-2.5 rounded-xl border border-rule bg-sheet p-4">
-          <div className="h-4 w-1/3 rounded bg-paper" />
-          <div className="h-3 w-1/2 rounded bg-paper" />
-          <div className="h-20 rounded-lg bg-paper" />
-        </div>
-      ))}
+    <div role="status" className="flex flex-col items-center gap-3 rounded-xl border border-rule bg-sheet px-8 py-16 text-center">
+      <Loader2 size={40} className="animate-spin text-seal" aria-hidden />
+      <p className="mt-2 text-xl font-semibold">AI가 프롬프트를 작업 단위로 나누고 위험도를 매기는 중입니다.</p>
+      <p className="text-base text-ink-2">끝나면 이 화면에 작업 목록이 나타납니다. 제출하기 전에 하나씩 확인하고 고칠 수 있습니다.</p>
     </div>
   )
 }
@@ -212,7 +204,7 @@ function ReviewStep({ requestId }: { requestId: string }) {
   return (
     // 작업이 적어도 제출 막대가 화면 바닥에 붙도록 본문 높이를 채운다.
     // 84px = 망 띠 4px + 상단 바 56px + 본문 위 여백 24px. 아래 여백(pb-16)은 음수 여백으로 상쇄한다.
-    <div className={`mx-auto flex max-w-[1040px] flex-col ${reviewing ? '-mb-16 min-h-[calc(100dvh-84px)]' : ''}`}>
+    <div className={`flex flex-col ${reviewing ? '-mb-16 min-h-[calc(100dvh-84px)]' : ''}`}>
       <PageHeader title={request.prompt} meta={<RequestMeta request={request} />} />
       <div className="flex-1">
         {request.status === 'ANALYZING' && <AnalyzingPlaceholder />}

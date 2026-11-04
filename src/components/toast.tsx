@@ -39,9 +39,9 @@ export const toast = {
 }
 
 const STYLE: Record<ToastKind, { className: string; Icon: typeof Info }> = {
-  success: { className: 'border-low text-low', Icon: CircleCheck },
-  error: { className: 'border-high text-high', Icon: CircleAlert },
-  info: { className: 'border-seal text-seal', Icon: Info },
+  success: { className: 'text-low', Icon: CircleCheck },
+  error: { className: 'text-high', Icon: CircleAlert },
+  info: { className: 'text-seal', Icon: Info },
 }
 
 const hostListeners = new Set<() => void>()
@@ -73,7 +73,7 @@ export function Toaster() {
   )
   return createPortal(
     <div
-      className="pointer-events-none fixed top-4 left-1/2 z-[60] flex w-full max-w-md -translate-x-1/2 flex-col gap-2 px-4"
+      className="pointer-events-none fixed top-4 left-1/2 z-[60] flex w-full max-w-lg -translate-x-1/2 flex-col gap-2 px-4"
       role="status"
       aria-live="polite"
     >
@@ -82,9 +82,9 @@ export function Toaster() {
         return (
           <div
             key={item.id}
-            className={`animate-toast pointer-events-auto flex items-start gap-2 rounded-md border-l-4 bg-sheet px-3 py-2.5 text-sm shadow-lg ${className}`}
+            className={`animate-toast pointer-events-auto flex items-start gap-2.5 rounded-xl border border-rule bg-sheet px-4 py-3 text-base font-medium shadow-raised ${className}`}
           >
-            <Icon size={18} className="mt-0.5 shrink-0" aria-hidden />
+            <Icon size={20} className="mt-0.5 shrink-0" aria-hidden />
             <span className="flex-1 text-ink">{item.message}</span>
             <button
               type="button"

@@ -88,7 +88,7 @@ export default function DevToolbar() {
     return (
       <aside
         aria-label="시연 가이드"
-        className="quiet-scroll fixed top-0 bottom-0 left-0 z-40 w-[232px] overflow-y-auto bg-nav-2 p-3 text-xs text-white shadow-raised"
+        className="quiet-scroll fixed top-0 bottom-0 left-0 z-40 w-[15rem] overflow-y-auto bg-nav-2 p-3 text-xs text-white shadow-raised"
       >
         <div className="mb-3 flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-sm font-semibold">
@@ -126,7 +126,8 @@ export default function DevToolbar() {
                     >
                       <span className="block">{step.label}</span>
                       <span className={`mt-0.5 block ${activeStep === key ? 'text-white/80' : 'text-white/55'}`}>
-                        {userName(step.userId)}, {NETWORK_LABEL[step.network]}
+                        {userName(step.userId)}
+                        {step.network === 'EXTERNAL' && `, ${NETWORK_LABEL.EXTERNAL}에서`}
                       </span>
                     </button>
                   </li>
@@ -160,11 +161,11 @@ export default function DevToolbar() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-[68px] left-2.5 z-40 flex w-[212px] items-center gap-1.5 rounded-lg bg-nav-2 px-2.5 py-1.5 text-xs font-medium text-nav-ink shadow-raised ring-1 ring-white/15 hover:text-white"
+        className="fixed bottom-[4.25rem] left-2.5 z-40 flex w-[13.75rem] items-center gap-1.5 rounded-lg bg-nav-2 px-2.5 py-1.5 text-xs font-medium text-nav-ink shadow-raised ring-1 ring-white/15 hover:text-white"
       >
         <Wrench size={14} aria-hidden />
         개발 도구
-        <span className="ml-auto text-nav-dim">{NETWORK_LABEL[network]}</span>
+        {network === 'EXTERNAL' && <span className="ml-auto text-nav-dim">{NETWORK_LABEL.EXTERNAL}</span>}
       </button>
     )
   }
@@ -172,7 +173,7 @@ export default function DevToolbar() {
   return (
     <aside
       aria-label="개발용 전환 툴바"
-      className="fixed bottom-[68px] left-2.5 z-40 w-[212px] rounded-lg bg-nav-2 p-3 text-xs text-white shadow-raised ring-1 ring-white/15"
+      className="fixed bottom-[4.25rem] left-2.5 z-40 w-[13.75rem] rounded-lg bg-nav-2 p-3 text-xs text-white shadow-raised ring-1 ring-white/15"
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 font-semibold">
@@ -211,21 +212,6 @@ export default function DevToolbar() {
         ))}
       </select>
 
-      <p className="mb-1 text-white/70">접속 환경</p>
-      <div className="mb-2.5 grid grid-cols-2 gap-1 rounded bg-white/10 p-0.5" role="group" aria-label="접속 환경">
-        {(['INTERNAL', 'EXTERNAL'] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            aria-pressed={network === value}
-            onClick={() => switchNetwork(value)}
-            className={`rounded py-1 font-medium ${network === value ? 'bg-white text-ink' : 'text-white/80 hover:text-white'}`}
-          >
-            {NETWORK_LABEL[value]}
-          </button>
-        ))}
-      </div>
-
       <div className="flex gap-1.5">
         <button
           type="button"
@@ -244,6 +230,25 @@ export default function DevToolbar() {
           <RotateCcw size={13} aria-hidden />
           데이터 초기화
         </button>
+      </div>
+
+      {/* 실제 서비스에서는 서버가 접속 IP로 판단하므로 이런 설정이 없다. 목 서버에서 외부망 동작을 보기 위한 전환이다. */}
+      <div className="mt-2.5 border-t border-white/15 pt-2.5">
+        <p className="mb-1 text-white/70">접속 환경 (시연용)</p>
+        <div className="grid grid-cols-2 gap-1 rounded bg-white/10 p-0.5" role="group" aria-label="접속 환경">
+          {(['INTERNAL', 'EXTERNAL'] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={network === value}
+              onClick={() => switchNetwork(value)}
+              className={`rounded py-1 font-medium ${network === value ? 'bg-white text-ink' : 'text-white/80 hover:text-white'}`}
+            >
+              {NETWORK_LABEL[value]}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-white/55">실제로는 서버가 접속 위치로 자동 판단합니다</p>
       </div>
 
       {slackOpen && (

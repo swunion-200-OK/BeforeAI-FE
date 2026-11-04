@@ -29,7 +29,7 @@ function Toolbar({
       <h1 className="sr-only">웹 코드 에디터</h1>
       <div className="w-48 shrink-0">{projectSelect}</div>
       {baseCommit && (
-        <span className="shrink-0 text-[0.8125rem] text-ink-3">
+        <span className="shrink-0 text-[0.875rem] text-ink-3">
           기준 커밋 <Mono className="text-ink-2">{baseCommit}</Mono>
         </span>
       )}
@@ -40,7 +40,7 @@ function Toolbar({
 
 function LineStats({ added, removed }: { added: number; removed: number }) {
   return (
-    <span className="flex shrink-0 items-center gap-1.5 text-[0.8125rem] tabular-nums">
+    <span className="flex shrink-0 items-center gap-1.5 text-[0.875rem] tabular-nums">
       <span className="font-medium text-low">+{added}</span>
       <span className="font-medium text-high">−{removed}</span>
     </span>
@@ -101,14 +101,14 @@ function SaveModal({
           )}
         </Field>
         <div>
-          <p className="mb-1 flex items-center justify-between gap-2 text-[0.8125rem] font-medium text-ink-2">
+          <p className="mb-1 flex items-center justify-between gap-2 text-[0.875rem] font-medium text-ink-2">
             바뀐 파일 {patches.length}개
             <LineStats {...totals} />
           </p>
           <ul aria-label="바뀐 파일">
             {patches.map(({ path, stats }) => (
               <li key={path} className="flex items-center justify-between gap-3 py-1">
-                <span className="min-w-0 truncate font-mono text-[0.8125rem] text-ink" title={path}>
+                <span className="min-w-0 truncate font-mono text-[0.875rem] text-ink" title={path}>
                   {path}
                 </span>
                 <LineStats {...stats} />
@@ -277,7 +277,7 @@ function Workspace({
   return (
     <>
       <Toolbar projectSelect={projectSelect} baseCommit={baseCommit}>
-        <span className="text-[0.8125rem] text-ink-3 tabular-nums">
+        <span className="text-[0.875rem] text-ink-3 tabular-nums">
           {changedPaths.length > 0 ? `바뀐 파일 ${changedPaths.length}개` : '바뀐 파일 없음'}
         </span>
         <Button
@@ -306,7 +306,7 @@ function Workspace({
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-[250px_minmax(0,1fr)] bg-sheet">
+      <div className="grid min-h-0 flex-1 grid-cols-[15.5rem_minmax(0,1fr)] bg-sheet">
         <aside aria-label="파일" className="quiet-scroll min-h-0 overflow-y-auto border-r border-rule">
           <FileTree
             projectId={projectId}
@@ -323,7 +323,7 @@ function Workspace({
               {openPaths.map((path) => (
                 <div
                   key={path}
-                  className={`flex shrink-0 items-center text-[0.8125rem] ${
+                  className={`flex shrink-0 items-center text-[0.875rem] ${
                     path === activePath ? 'font-medium text-ink shadow-[inset_0_-2px_0_var(--color-seal)]' : 'text-ink-3'
                   }`}
                 >
@@ -368,7 +368,9 @@ function Workspace({
             ) : loadingCount > 0 ? (
               <Spinner label="파일을 여는 중" />
             ) : (
-              <EmptyState title="왼쪽에서 수정할 파일을 고르세요">여러 파일을 고쳐도 작업 하나로 묶여 승인받습니다.</EmptyState>
+              <div className="flex h-full items-center justify-center pb-24 text-[1.125rem]">
+                <EmptyState title="왼쪽에서 수정할 파일을 고르세요">여러 파일을 고쳐도 작업 하나로 묶여 승인받습니다.</EmptyState>
+              </div>
             )}
           </div>
         </section>
@@ -412,7 +414,7 @@ function ProjectPicker() {
                     className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left hover:bg-sheet-alt"
                   >
                     <span className="text-sm font-medium">{project.name}</span>
-                    <span className="text-[0.8125rem] text-ink-3">{departmentName(project.departmentId)}</span>
+                    <span className="text-[0.875rem] text-ink-3">{departmentName(project.departmentId)}</span>
                   </button>
                 </li>
               ))}

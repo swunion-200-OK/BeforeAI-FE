@@ -29,7 +29,9 @@ export function ApprovalWorkspace({ requestId }: { requestId?: string }) {
       <ApprovalQueue selectedId={requestId} />
       {requestId ? (
         // 다른 요청으로 옮겨 가면 선택·서명 진행 상태를 새로 시작한다.
-        <ApprovalDetail key={requestId} requestId={requestId} nextRequestId={nextRequestId} />
+        <ApprovalDetail key={requestId} requestId={requestId} nextRequestId={nextRequestId}
+          otherCount={groups.filter((g) => g.requestId !== requestId).length}
+        />
       ) : (
         <div className="min-w-0 flex-1 bg-paper" />
       )}

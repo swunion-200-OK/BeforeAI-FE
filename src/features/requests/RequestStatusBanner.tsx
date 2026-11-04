@@ -1,8 +1,10 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import type { RequestDetail, RequestStatus } from '../../api/types'
+import { approvalSummary } from '../../components/ApprovalStamps'
 import { Banner, Button, Mono, ReasonModal } from '../../components/ui'
 import { FAILED_CHECK_LABEL } from '../../lib/labels'
+import { approvalToShow } from './requestPaths'
 import { AnalysisFailedPanel, CancelRequestButton } from './RequestParts'
 import { useKillRequest, useRetryFailed, useSubmitRequest } from './useRequestActions'
 
@@ -27,6 +29,26 @@ function KillSwitch({ requestId }: { requestId: string }) {
         onConfirm={(reason) => kill.mutate(reason)}
       />
     </>
+  )
+}
+
+/** 아직 승인이 덜 모인 작업마다 누구를 기다리는지 보여 준다. */
+function WaitingFor({ request }: { request: RequestDetail }) {
+  const rows = (request.plan?.tasks ?? []).flatMap((task) => {
+    const status = approvalToShow(request, task)
+    if (!status || status.requirements.every((item) => item.satisfied)) return []
+    return [{ id: task.id, title: task.title, text: approvalSummary(status) }]
+  })
+  if (rows.length === 0) return null
+  return (
+    <ul className="mt-2 mb-1 flex flex-col gap-1.5 text-base text-ink">
+      {rows.map((row) => (
+        <li key={row.id}>
+          <span className="font-semibold">{row.title}</span>
+          <span className="ml-2 text-ink-2">{row.text}</span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -89,7 +111,11 @@ export function RequestStatusBanner({
 
   switch (request.status) {
     case 'ANALYZING':
-      return <Banner tone="info" title="AI가 Plan을 분석하는 중입니다" />
+      return (
+        <Banner tone="info" title="AI가 Plan을 분석하는 중입니다">
+          끝나면 작업 목록이 나타납니다.
+        </Banner>
+      )
     case 'ANALYSIS_FAILED':
       return <AnalysisFailedPanel request={request} isRequester={isRequester} />
     case 'REVIEWING':
@@ -105,7 +131,8 @@ export function RequestStatusBanner({
           title={request.plan?.kind === 'ROLLBACK' ? '문서 롤백 승인을 기다립니다' : '승인권자의 승인을 기다립니다'}
           action={action}
         >
-          승인이 모두 모이면 실행기가 서명과 해시를 다시 검증한 뒤 실행합니다.
+          <WaitingFor request={request} />
+          <p className="text-ink-2">승인이 모두 모이면 실행기가 서명과 해시를 다시 검증한 뒤 실행합니다.</p>
         </Banner>
       )
     case 'REAPPROVAL_REQUIRED':

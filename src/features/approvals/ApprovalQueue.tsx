@@ -28,16 +28,16 @@ function QueueItem({ group, selected }: { group: QueueGroup; selected: boolean }
         to={`/approvals/${group.requestId}`}
         aria-current={selected ? 'true' : undefined}
         title={group.tasks.map((task) => task.taskTitle).join(', ')}
-        className={`block rounded-lg px-3 py-2.5 ${selected ? 'bg-seal-soft' : 'hover:bg-sheet-alt'}`}
+        className={`block rounded-lg px-3 py-3 ${selected ? 'bg-seal-soft ring-1 ring-seal/40' : 'hover:bg-sheet-alt'}`}
       >
-        <div className="flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+        <div className="flex items-start gap-2">
+          <span className="line-clamp-2 min-w-0 flex-1 text-base font-semibold text-ink">
             {top.taskTitle}
             {others > 0 && ` 외 ${others}건`}
           </span>
           <RiskBadge risk={top.risk} />
         </div>
-        <div className="mt-1 flex items-center justify-between gap-2 text-[0.8125rem] text-ink-3">
+        <div className="mt-1 flex items-center justify-between gap-2 text-sm text-ink-3">
           <span className="min-w-0 truncate">
             {group.requester.name}, <span className="sr-only">대기 시간 </span>
             <span className={isOverdue(group.requestedAt) ? 'font-medium text-medium' : ''}>
@@ -64,9 +64,9 @@ export function ApprovalQueue({ selectedId }: { selectedId?: string }) {
   const visible = groups.filter(FILTERS[filter].match)
 
   return (
-    <div className="flex w-[288px] shrink-0 flex-col border-r border-rule bg-sheet">
+    <div className="flex w-[18rem] shrink-0 flex-col border-r border-rule bg-sheet">
       <div className="flex flex-col gap-3 px-5 pt-5 pb-3">
-        <h1 className="text-lg font-bold tracking-tight">승인 대기</h1>
+        <h1 className="text-xl font-bold tracking-tight">승인 대기</h1>
         {groups.length > 0 && (
           <div>
             <SegmentedTabs

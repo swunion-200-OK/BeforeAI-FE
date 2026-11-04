@@ -107,7 +107,7 @@ export function PasswordForm({
         )}
       </div>
       {error && (
-        <p className={`${large ? 'text-[0.9375rem]' : 'text-sm'} text-high`} role="alert">
+        <p className={`${large ? 'text-base' : 'text-sm'} text-high`} role="alert">
           {error}
         </p>
       )}

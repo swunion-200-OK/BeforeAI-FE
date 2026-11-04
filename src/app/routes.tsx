@@ -42,13 +42,13 @@ export const router = createBrowserRouter([
                 element: <RequireInternal />,
                 children: [
                   { path: '/requests/new', element: <ComposePage /> },
-                  { path: '/requests/new/:requestId', element: <ComposePage /> },
+                  { path: '/requests/new/:requestId', element: <ComposePage />, handle: { back: { to: '/requests', label: '내 요청' } } },
                   { path: '/editor', element: <EditorPage />, handle: { fullBleed: true } },
                   { path: '/editor/:projectId', element: <EditorPage />, handle: { fullBleed: true } },
                   { path: '/documents', element: <DocumentsPage /> },
                   { path: '/documents/:documentId', element: <DocumentsPage /> },
                   { path: '/projects', element: <ProjectsPage /> },
-                  { path: '/projects/:projectId', element: <ProjectsPage /> },
+                  { path: '/projects/:projectId', element: <ProjectsPage />, handle: { back: { to: '/projects', label: '프로젝트 기획서' } } },
                   { path: '/me', element: <MePage /> },
                   {
                     element: <RequireRole roles={['DEPT_MANAGER', 'ADMIN']} />,
@@ -64,7 +64,7 @@ export const router = createBrowserRouter([
                 ],
               },
               // /requests/new보다 뒤에 둔다
-              { path: '/requests/:requestId', element: <RequestDetailPage /> },
+              { path: '/requests/:requestId', element: <RequestDetailPage />, handle: { back: { to: '/requests', label: '내 요청' } } },
             ],
           },
         ],

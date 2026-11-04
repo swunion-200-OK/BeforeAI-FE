@@ -34,7 +34,7 @@ export function AuthFrame({ children }: { children: ReactNode }) {
   const network = useNetwork()
   return (
     <div className="flex h-dvh flex-col bg-paper">
-      <div className={`h-1 shrink-0 ${network === 'EXTERNAL' ? 'band-external' : 'bg-internal'}`} role="presentation" />
+      {network === 'EXTERNAL' && <div className="band-external h-1 shrink-0" role="presentation" />}
       <div className="flex min-h-0 flex-1">
         <BrandPanel />
         <main className="quiet-scroll flex min-w-0 flex-1 flex-col items-center overflow-y-auto px-10 py-8">

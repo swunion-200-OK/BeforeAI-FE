@@ -71,7 +71,7 @@ function VersionView({
   return (
     <>
       {stats && (
-        <p className="mb-2 flex items-center gap-1.5 text-[0.8125rem] text-ink-3 tabular-nums">
+        <p className="mb-2 flex items-center gap-1.5 text-[0.875rem] text-ink-3 tabular-nums">
           v{version - 1}에서 v{version}으로
           <span className="font-medium text-low">+{stats.added}</span>
           <span className="font-medium text-high">−{stats.removed}</span>
@@ -178,7 +178,7 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
         </div>
         {canCompare ? compareToggle : <Tooltip text="첫 버전이라 비교할 이전 버전이 없습니다">{compareToggle}</Tooltip>}
         {selectedItem && (
-          <span className="text-[0.8125rem] text-ink-3">
+          <span className="text-[0.875rem] text-ink-3">
             {selectedItem.createdBy.name}, {formatDateTime(selectedItem.createdAt)},{' '}
             {selectedItem.requestId ? (
               <>

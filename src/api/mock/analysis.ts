@@ -90,7 +90,7 @@ function buildDrafts(prompt: string, project: Project): Draft[] {
       description: '인증과 관련된 코드를 수정합니다.',
       target: path,
       content: { diff: makeUnifiedDiff(path, before, `${before}\n// ${prompt.slice(0, 60)}\n`) },
-      raise: { reason: '인증 로직을 건드리는 변경이라 위험도를 올렸습니다' },
+      raise: { reason: '인증 로직을 건드리는 변경입니다' },
     })
   } else if (/기능|버그|추가|에러|오류|수정해|고쳐|바꿔|변경/.test(text) && !/데이터|레코드|컬럼|스키마|마이그레이션|\bDB\b/i.test(text)) {
     drafts.push(genericCodeDraft(project, 'CODE_FEATURE', '기능 코드 수정', prompt))
@@ -131,7 +131,7 @@ function buildDrafts(prompt: string, project: Project): Draft[] {
       description: `${target} 환경에 배포합니다.`,
       target,
       content: { command: `./deploy.sh ${target}` },
-      relatedDepartments: [project.departmentId, 'd-infra'],
+      relatedDepartments: [...new Set([project.departmentId, 'd-infra'])],
     })
   }
   if (drafts.length === 0) {
@@ -212,7 +212,7 @@ export function applyInstruction(task: Task, instruction: string, project: Proje
   if (next.content.query !== undefined) next.content.query += `\n-- ${instruction}`
   if (next.content.body !== undefined) next.content.body += `\n\n${instruction}\n`
   if (SENSITIVE.test(instruction) && (next.risk === 'LOW' || next.risk === 'MEDIUM')) {
-    next.riskRaised = { from: next.risk, reason: '수정 지시가 인증 로직을 건드려 위험도를 올렸습니다' }
+    next.riskRaised = { from: next.risk, reason: '수정 지시가 인증 로직을 건드립니다' }
     next.risk = 'HIGH'
   }
   next.requiredApprovers = buildRequiredApprovers(project, requester, next.type, next.risk)
@@ -241,7 +241,7 @@ export function editorTask(
       description: '웹 코드 에디터에서 저장한 변경입니다.',
       target,
       content: { diff: files.map((f) => f.patch).join('\n') },
-      ...(sensitive ? { raise: { reason: '인증 로직을 건드리는 변경이라 위험도를 올렸습니다' } } : {}),
+      ...(sensitive ? { raise: { reason: '인증 로직을 건드리는 변경입니다' } } : {}),
     },
     1,
     project,

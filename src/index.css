@@ -18,8 +18,8 @@
   --color-sheet: #ffffff;
   --color-sheet-alt: #f7f9fc;
   --color-ink: #101a2e;
-  --color-ink-2: #435069;
-  --color-ink-3: #667389;
+  --color-ink-2: #3a465c;
+  --color-ink-3: #5a667c;
   --color-rule: #e2e7ef;
   --color-rule-strong: #c5cedb;
 
@@ -55,8 +55,15 @@
   --color-terminal-ink: #c9d4e3;
   --color-terminal-dim: #7f8ea6;
 
-  --text-2xs: 0.6875rem;
+  /* 작은 글자도 편하게 읽히도록 기본 크기를 한 단계씩 올린다 */
+  --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6rem;
 
   --shadow-card: 0 1px 2px rgb(16 26 46 / 0.05), 0 1px 1px rgb(16 26 46 / 0.03);
   --shadow-raised: 0 8px 24px rgb(16 26 46 / 0.12);
@@ -92,8 +99,12 @@
     font-family: var(--font-sans);
     color: var(--color-ink);
     background: var(--color-paper);
-    font-size: 16px;
+    /* 글자·간격·버튼이 모두 rem이라 이 값 하나로 화면 전체 크기가 함께 움직인다 */
+    font-size: 17px;
     line-height: 1.55;
+    /* 한글이 "있습니/다"처럼 낱말 중간에서 갈라지지 않게 한다 */
+    word-break: keep-all;
+    overflow-wrap: break-word;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -130,6 +141,33 @@
   dialog::backdrop {
     background: rgb(23 32 51 / 0.45);
   }
+
+  /* 운영체제 기본 모양 대신 앱의 입력칸과 같은 모양으로 맞춘다 */
+  select {
+    appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23778399' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+  }
+}
+
+/* "자세히"를 펼칠 때 내용이 갑자기 튀어나오지 않고 아래로 열린다 */
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+  details::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size 200ms ease,
+      content-visibility 200ms allow-discrete;
+  }
+  details[open]::details-content {
+    block-size: auto;
+    overflow: visible;
+  }
 }
 
 @layer components {
@@ -137,20 +175,20 @@
   .sheet-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
   }
   .sheet-table th {
     text-align: left;
     font-weight: 500;
     color: var(--color-ink-3);
-    font-size: 0.75rem;
-    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+    padding: 0.625rem 1rem;
     background: var(--color-sheet-alt);
     border-bottom: 1px solid var(--color-rule);
     white-space: nowrap;
   }
   .sheet-table td {
-    padding: 0.625rem 0.875rem;
+    padding: 0.875rem 1rem;
     border-bottom: 1px solid var(--color-rule);
     vertical-align: middle;
   }
@@ -160,8 +198,11 @@
   .sheet-table tbody tr[data-clickable='true'] {
     cursor: pointer;
   }
+  .sheet-table tbody tr[data-clickable='true'] {
+    transition: background-color 120ms;
+  }
   .sheet-table tbody tr[data-clickable='true']:hover {
-    background: var(--color-seal-soft);
+    background: var(--color-sheet-alt);
   }
 
   /* 여러 칸이 각자 스크롤하는 화면의 스크롤바를 얌전하게 */

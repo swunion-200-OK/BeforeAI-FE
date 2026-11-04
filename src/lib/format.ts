@@ -1,13 +1,15 @@
-const dateTime = new Intl.DateTimeFormat('ko-KR', {
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
+const clockTime = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
-export function formatDateTime(iso: string): string {
-  return dateTime.format(new Date(iso))
+/** 읽기 쉽게 "오늘 14:30", "어제 09:05", "11월 3일 15:28"로 쓴다. 다른 해면 연도를 붙인다. */
+export function formatDateTime(iso: string, now = new Date()): string {
+  const date = new Date(iso)
+  const clock = clockTime.format(date)
+  const startOfDay = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime()
+  const daysAgo = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000)
+  if (daysAgo === 0) return `오늘 ${clock}`
+  if (daysAgo === 1) return `어제 ${clock}`
+  const monthDay = `${date.getMonth() + 1}월 ${date.getDate()}일 ${clock}`
+  return date.getFullYear() === now.getFullYear() ? monthDay : `${date.getFullYear()}년 ${monthDay}`
 }
 
 /** "3시간 12분", "2일 4시간"처럼 경과 시간을 짧게 쓴다. */

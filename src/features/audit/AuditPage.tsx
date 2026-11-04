@@ -37,7 +37,7 @@ function TargetCell({ log }: { log: AuditLog }) {
         <Link
           to={`/requests/${requestId}`}
           onClick={(event) => event.stopPropagation()}
-          className="font-mono text-[0.8125rem] text-seal hover:underline"
+          className="font-mono text-[0.875rem] text-seal hover:underline"
         >
           {requestId}
         </Link>
@@ -176,7 +176,12 @@ export default function AuditPage() {
                   </td>
                   <td>
                     <span className="inline-flex items-center gap-2.5 whitespace-nowrap">
-                      <NetworkBadge network={log.network} />
+                      {/* 대부분이 내부망이라 외부망 기록만 도드라지게 한다 */}
+                      {log.network === 'EXTERNAL' ? (
+                        <NetworkBadge network={log.network} />
+                      ) : (
+                        <span className="text-ink-3">내부망</span>
+                      )}
                       <span className="font-mono text-xs text-ink-3">{log.ip}</span>
                     </span>
                   </td>

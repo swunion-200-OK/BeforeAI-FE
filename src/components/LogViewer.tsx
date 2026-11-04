@@ -57,7 +57,7 @@ export function LogViewer({ requestId, live }: { requestId: string; live: boolea
 
   return (
     <div className="overflow-hidden rounded-xl bg-terminal">
-      <div className="flex items-center justify-between border-b border-terminal-2 px-3 py-1.5 text-xs text-terminal-dim">
+      <div className="flex items-center justify-between border-b border-terminal-2 px-4 py-2 text-sm text-terminal-dim">
         <span>실행 로그 (읽기 전용)</span>
         {streaming && live && <span className="text-[#7ddc9f]">실시간 수신 중</span>}
       </div>
@@ -70,7 +70,7 @@ export function LogViewer({ requestId, live }: { requestId: string; live: boolea
           const el = event.currentTarget
           stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
         }}
-        className="quiet-scroll h-80 overflow-y-auto p-3 font-mono text-xs leading-5"
+        className="quiet-scroll max-h-96 min-h-32 overflow-y-auto p-4 font-mono text-sm leading-6"
       >
         {lines.length === 0 && !error && <p className="text-terminal-dim">아직 실행 로그가 없습니다.</p>}
         {lines.map((line) => (

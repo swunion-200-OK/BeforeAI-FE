@@ -39,8 +39,8 @@ export default function CodeEditor({
       options={{
         minimap: { enabled: false },
         fontFamily: "'IBM Plex Mono', ui-monospace, monospace",
-        fontSize: 13,
-        lineHeight: 21,
+        fontSize: 15,
+        lineHeight: 24,
         padding: { top: 10, bottom: 10 },
         renderLineHighlight: 'all',
         scrollBeyondLastLine: false,

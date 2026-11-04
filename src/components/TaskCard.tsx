@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, Lock } from 'lucide-react'
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { requestsApi } from '../api/endpoints'
 import type { RequiredApprovers, Task } from '../api/types'
 import { makeUnifiedDiff } from '../lib/diff'
 import { RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL } from '../lib/labels'
 import { useDepartmentNames } from '../lib/queries'
 import { RiskBadge, TaskStatusBadge } from './badges'
-import { ChangeDetails, ChangeStats, ChangeSummary } from './ChangeExplanation'
+import { ChangeDetails, ChangeStats, ChangeSummary, ImpactLine } from './ChangeExplanation'
 import { DiffViewer } from './DiffViewer'
 import { Banner, CodeBlock, Spinner } from './ui'
 
@@ -61,6 +61,16 @@ export function TaskContentView({ task, requestId }: { task: Task; requestId?: s
   )
 }
 
+/** 작업 유형과 대상. 사람이 판단할 때는 보조 정보다. */
+function TaskMeta({ task }: { task: Task }) {
+  return (
+    <>
+      <span>{TASK_TYPE_LABEL[task.type]}</span>
+      <span className="font-mono break-all">{task.target}</span>
+    </>
+  )
+}
+
 /**
  * Plan 작업 카드. 작업 요청·요청 상세·승인 상세가 같이 쓴다.
  * 위험도, 제목, 쉬운 설명 한 문장만 먼저 보여 주고 나머지는 "자세히"에 접어 둔다.
@@ -91,6 +101,7 @@ export function TaskCard({
 }) {
   const departmentName = useDepartmentNames()
   const forbidden = task.risk === 'FORBIDDEN'
+  const [open, setOpen] = useState(defaultOpen)
   return (
     <article
       className={`rounded-xl border ${
@@ -101,13 +112,13 @@ export function TaskCard({
             : 'border-rule bg-sheet'
       }`}
     >
-      <div className="flex gap-3 p-4">
+      <div className="flex gap-3 p-5">
         {leading && <div className="pt-1">{leading}</div>}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <RiskBadge risk={task.risk} />
-              <h3 className={`text-base font-semibold ${forbidden ? 'text-forbidden' : ''}`}>
+              <h3 className={`text-lg font-semibold ${forbidden ? 'text-forbidden' : ''}`}>
                 {forbidden && <Lock size={14} className="mr-1 inline-block align-[-2px]" aria-hidden />}
                 {task.title}
               </h3>
@@ -131,7 +142,11 @@ export function TaskCard({
               </div>
             )
           ) : (
-            <ChangeSummary task={task} />
+            <>
+              {/* 펼치면 이전 → 이후와 영향이 아래 칸에 크게 나오므로 위에서는 뺀다 */}
+              <ChangeSummary task={task} showPairs={!open} />
+              {!open && <ImpactLine task={task} />}
+            </>
           )}
 
           {task.riskRaised && (
@@ -140,26 +155,39 @@ export function TaskCard({
             </p>
           )}
 
-          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-3">
-            <span>{TASK_TYPE_LABEL[task.type]}</span>
-            <span className="font-mono break-all">{task.target}</span>
-            <span>{task.relatedDepartments.map(departmentName).join(', ')}</span>
-            <span>승인: {forbidden ? '승인 불가 (실행 차단)' : approversText(task.requiredApprovers)}</span>
-          </p>
+          {forbidden && (
+            <p className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-ink-3">
+              <TaskMeta task={task} />
+              <span>{task.relatedDepartments.map(departmentName).join(', ')}</span>
+              <span>승인 불가 (실행 차단)</span>
+            </p>
+          )}
 
           {!forbidden && (
-            <details className="group mt-2" open={defaultOpen}>
-              <summary className="inline-flex list-none items-center gap-1.5 rounded text-sm font-medium text-seal hover:underline [&::-webkit-details-marker]:hidden">
-                자세히 보기
-                <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+            <details className="group mt-3" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+              <summary className="flex list-none flex-wrap items-center gap-x-4 gap-y-1.5 [&::-webkit-details-marker]:hidden">
+                <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-sheet px-3 text-sm font-medium text-ink transition-colors hover:border-seal hover:text-seal">
+                  <span className="group-open:hidden">자세히 보기</span>
+                  <span className="hidden group-open:inline">접기</span>
+                  <ChevronDown size={15} className="transition-transform group-open:rotate-180" aria-hidden />
+                </span>
                 <ChangeStats task={task} />
+                <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-ink-3">
+                  <TaskMeta task={task} />
+                  <span>승인: {approversText(task.requiredApprovers)}</span>
+                </span>
               </summary>
-              <div className="mt-2.5 flex flex-col gap-3">
+              <div className="mt-4 flex flex-col gap-4">
                 <ChangeDetails task={task} />
-                <TaskContentView task={task} requestId={requestId} />
-                <p className="text-xs text-ink-3">
-                  한 문장 설명은 AI가 쓴 참고 자료입니다. 승인 서명의 기준은 이 실제 변경 내용입니다.
-                </p>
+                <section aria-label="실제 변경 내용" className="flex flex-col gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-ink-2">실제 변경 내용</h4>
+                    <p className="text-xs text-ink-3">
+                      위 설명은 AI가 쓴 참고 자료입니다. 승인 서명의 기준은 이 실제 변경 내용입니다.
+                    </p>
+                  </div>
+                  <TaskContentView task={task} requestId={requestId} />
+                </section>
               </div>
             </details>
           )}

@@ -109,11 +109,11 @@ function ProposalTable({
               </td>
               <td className="min-w-40">
                 {proposal.reason}
-                {proposal.rejectReason && <p className="mt-0.5 text-[0.8125rem] text-high">반려 사유: {proposal.rejectReason}</p>}
+                {proposal.rejectReason && <p className="mt-0.5 text-[0.875rem] text-high">반려 사유: {proposal.rejectReason}</p>}
               </td>
               <td className="whitespace-nowrap">
                 {proposal.proposer.name}
-                <p className="mt-0.5 text-[0.8125rem] text-ink-3">
+                <p className="mt-0.5 text-[0.875rem] text-ink-3">
                   {departmentName(proposal.departmentId)}, {formatDateTime(proposal.createdAt)}
                 </p>
               </td>

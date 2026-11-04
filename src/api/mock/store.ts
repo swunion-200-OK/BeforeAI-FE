@@ -121,7 +121,7 @@ export interface MockDb {
 // ── 싱글턴 상태 ────────────────────────────────────────────
 
 const STORAGE_KEY = 'beforeai.mock.db.v1'
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 6
 
 export const mockConfig = {
   latencyMs: 180,

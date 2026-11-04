@@ -96,7 +96,7 @@ export function SpecTab({
 
   return (
     <>
-      <p className="mb-3 text-[0.8125rem] text-ink-3">
+      <p className="mb-3 text-[0.875rem] text-ink-3">
         현재 버전 v{spec.data.version}, {spec.data.updatedBy.name}, {formatDateTime(spec.data.updatedAt)}
       </p>
       <Sheet flush>
@@ -273,7 +273,7 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
             <li key={item.id} data-change-request>
               <Sheet>
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[0.8125rem] text-ink-3">
+                  <p className="text-[0.875rem] text-ink-3">
                     <span className="font-medium text-ink">{item.requester.name}</span>, {formatDateTime(item.createdAt)},{' '}
                     <span className={`font-medium ${CR_STATUS_COLOR[item.status]}`}>{CR_STATUS_LABEL[item.status]}</span>
                   </p>

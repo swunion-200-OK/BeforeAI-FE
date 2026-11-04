@@ -53,7 +53,7 @@ export function IntegrityCheck({
   if (result.ok) {
     return (
       <details className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-medium text-low [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-base font-medium text-low [&::-webkit-details-marker]:hidden">
           Plan 무결성 확인됨
           <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
         </summary>

@@ -21,10 +21,11 @@ function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPla
   if (tasks.length === 0) return null
   return (
     <section aria-label="작업 목록" className="flex flex-col gap-3">
-      <h2 className="text-[0.9375rem] font-semibold">작업 {tasks.length}개</h2>
+      <h2 className="text-base font-semibold">작업 {tasks.length}개</h2>
       {tasks.map((task) => {
         const approval = approvalToShow(request, task)
-        return (
+        const spotlight = (request.status === 'RUNNING' && task.status === 'RUNNING') || (request.status === 'PARTIALLY_COMPLETED' && task.status === 'FAILED')
+        const card = (
           <TaskCard
             key={task.id}
             task={task}
@@ -38,6 +39,13 @@ function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPla
             }
             footer={approval && <TaskApprovalLine status={approval} />}
           />
+        )
+        if (!spotlight) return card
+        const ring = task.status === 'FAILED' ? 'ring-high' : 'ring-seal'
+        return (
+          <div key={task.id} className={`rounded-xl ring-2 ring-offset-2 ring-offset-paper ${ring}`}>
+            {card}
+          </div>
         )
       })}
     </section>
@@ -67,7 +75,7 @@ export default function RequestDetailPage() {
   const hasRun = request.events.some((event) => event.status === 'RUNNING' || event.status === 'ROLLING_BACK')
 
   return (
-    <div className="mx-auto flex max-w-[1040px] flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <PageHeader
         title={request.prompt}
         meta={

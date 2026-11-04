@@ -18,7 +18,7 @@ export function ForcePasswordPage() {
       <section className="rounded-2xl border border-rule bg-sheet p-8 shadow-card">
         <header className="mb-3 flex items-center justify-between gap-3">
           <h1 className="text-[2rem] leading-tight font-bold tracking-tight">비밀번호를 바꿔 주세요</h1>
-          <NetworkBadge network={network} />
+          {network === 'EXTERNAL' && <NetworkBadge network={network} />}
         </header>
         <p className="mb-5 text-base text-ink-2">
           {me.name}님은 처음 로그인했습니다. 관리자가 발급한 초기 비밀번호를 바꿔야 서비스를 쓸 수 있습니다.

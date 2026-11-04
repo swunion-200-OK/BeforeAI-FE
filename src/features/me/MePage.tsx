@@ -208,7 +208,7 @@ export default function MePage() {
   const me = useMe()
   const departmentName = useDepartmentNames()
   return (
-    <div className="mx-auto max-w-[760px]">
+    <div className="max-w-[54rem]">
       <PageHeader
         title="내 정보"
         description={`${me.name}, ${ROLE_LABEL[me.role]}, ${departmentName(me.departmentId)}, 사번 ${me.employeeNo}`}

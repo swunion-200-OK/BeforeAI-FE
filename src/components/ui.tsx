@@ -1,4 +1,4 @@
-import { CircleAlert, Info, Loader2, ShieldAlert, TriangleAlert, X } from 'lucide-react'
+import { CircleAlert, Inbox, Info, Loader2, ShieldAlert, TriangleAlert, X } from 'lucide-react'
 import {
   useEffect,
   useId,
@@ -17,17 +17,17 @@ import { refreshToastHost } from './toast'
 // ── 버튼 ───────────────────────────────────────────────────
 
 const BUTTON_VARIANT = {
-  primary: 'bg-seal text-white hover:bg-seal-dark disabled:bg-rule-strong',
+  primary: 'bg-seal text-white hover:bg-seal-dark active:bg-seal-dark disabled:bg-rule disabled:text-ink-3',
   secondary: 'border border-rule-strong bg-sheet text-ink hover:bg-sheet-alt disabled:text-ink-3 disabled:bg-sheet-alt',
-  danger: 'bg-high text-white hover:brightness-90 disabled:bg-rule-strong',
+  danger: 'bg-high text-white hover:brightness-90 disabled:bg-rule disabled:text-ink-3',
   'danger-outline': 'border border-high bg-sheet text-high hover:bg-high-soft disabled:border-rule-strong disabled:text-ink-3',
   ghost: 'text-ink-2 hover:bg-paper disabled:text-ink-3',
 } as const
 
 const BUTTON_SIZE = {
-  sm: 'h-8 px-2.5 text-[0.8125rem] gap-1',
-  md: 'h-9 px-3.5 text-sm gap-1.5',
-  lg: 'h-11 px-5 text-[0.9375rem] gap-2',
+  sm: 'h-9 px-3 text-[0.875rem] gap-1.5',
+  md: 'h-10 px-4 text-sm gap-1.5',
+  lg: 'h-12 px-6 text-base gap-2',
 } as const
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -59,7 +59,7 @@ export function Button({
     <button
       type={type}
       disabled={disabled || loading || blockedByNetwork}
-      className={`inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-lg font-medium whitespace-nowrap transition-colors ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]} ${className}`}
       {...rest}
     >
       {loading && <Loader2 size={15} className="animate-spin" aria-hidden />}
@@ -73,12 +73,43 @@ export function Button({
 
 /** disabled 버튼은 포커스를 못 받으므로 감싸는 span이 포커스를 받는다. */
 export function Tooltip({ text, children }: { text: string; children: ReactNode }) {
+  // 스크롤 영역에 잘리지 않도록 화면 기준으로 띄운다. 위에 자리가 없으면 아래로 연다.
+  const [position, setPosition] = useState<{ left: number; top: number; below: boolean } | null>(null)
+  const show = (target: HTMLElement) => {
+    const box = target.getBoundingClientRect()
+    const below = box.top < 48
+    setPosition({
+      left: Math.min(Math.max(box.left + box.width / 2, 136), window.innerWidth - 136),
+      top: below ? box.bottom + 6 : box.top - 6,
+      below,
+    })
+  }
   return (
-    <span className="group/tooltip relative inline-flex" tabIndex={0} role="group" aria-label={text}>
+    <span
+      className="relative inline-flex"
+      tabIndex={0}
+      role="group"
+      aria-label={text}
+      onMouseEnter={(event) => show(event.currentTarget)}
+      onMouseLeave={() => setPosition(null)}
+      onFocus={(event) => show(event.currentTarget)}
+      onBlur={() => setPosition(null)}
+    >
       {children}
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden w-max max-w-64 -translate-x-1/2 rounded bg-ink px-2 py-1 text-xs font-normal text-white group-hover/tooltip:block group-focus/tooltip:block"
+        style={
+          position
+            ? {
+                left: position.left,
+                top: position.top,
+                transform: position.below ? 'translateX(-50%)' : 'translate(-50%, -100%)',
+              }
+            : undefined
+        }
+        className={`pointer-events-none fixed z-50 w-max max-w-64 rounded-md bg-ink px-2.5 py-1.5 text-xs font-normal text-white ${
+          position ? 'block' : 'hidden'
+        }`}
       >
         {text}
       </span>
@@ -89,7 +120,7 @@ export function Tooltip({ text, children }: { text: string; children: ReactNode 
 // ── 입력 ───────────────────────────────────────────────────
 
 const INPUT_CLASS =
-  'w-full rounded-md border border-rule-strong bg-sheet px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-3 focus:border-seal focus:outline-none focus:ring-1 focus:ring-seal disabled:bg-sheet-alt disabled:text-ink-3'
+  'w-full rounded-lg border border-rule-strong bg-sheet px-3 py-2 text-sm text-ink transition-shadow placeholder:text-ink-3 focus:border-seal focus:ring-3 focus:ring-seal/15 focus:outline-none disabled:bg-sheet-alt disabled:text-ink-3'
 
 export function Field({
   label,
@@ -104,8 +135,8 @@ export function Field({
 }) {
   const id = useId()
   return (
-    <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-[0.8125rem] font-medium text-ink-2">
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm font-medium text-ink-2">
         {label}
       </label>
       {children(id)}
@@ -149,7 +180,7 @@ export function Banner({
 }) {
   const { box, Icon } = BANNER_TONE[tone]
   return (
-    <div className={`flex items-start gap-2.5 rounded-md border px-3.5 py-2.5 text-sm ${box}`} role={tone === 'danger' ? 'alert' : undefined}>
+    <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${box}`} role={tone === 'danger' ? 'alert' : undefined}>
       <Icon size={18} className="mt-0.5 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
         {title && <p className="font-semibold">{title}</p>}
@@ -160,7 +191,18 @@ export function Banner({
   )
 }
 
-export function Spinner({ label = '불러오는 중' }: { label?: string }) {
+/** 글자로 안내할 일이 있으면 label을 준다. 없으면 내용 자리에 옅은 막대를 그려 화면이 덜 튄다. */
+export function Spinner({ label }: { label?: string }) {
+  if (!label) {
+    return (
+      <div className="flex animate-pulse flex-col gap-3 px-5 py-6" role="status">
+        <span className="sr-only">불러오는 중</span>
+        <div className="h-5 w-2/5 rounded-md bg-rule" />
+        <div className="h-5 w-full rounded-md bg-rule/70" />
+        <div className="h-5 w-4/5 rounded-md bg-rule/70" />
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-center gap-2 py-12 text-sm text-ink-3" role="status">
       <Loader2 size={18} className="animate-spin" aria-hidden />
@@ -181,9 +223,12 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 
 export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
-      <p className="font-medium text-ink-2">{title}</p>
-      {children && <p className="max-w-md text-sm text-ink-3">{children}</p>}
+    <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+      <span className="mb-1 inline-flex size-12 items-center justify-center rounded-full bg-paper text-ink-3">
+        <Inbox size={22} aria-hidden />
+      </span>
+      <p className="text-lg font-semibold text-ink">{title}</p>
+      {children && <p className="max-w-md text-base text-ink-2">{children}</p>}
       {action && <div className="mt-2">{action}</div>}
     </div>
   )
@@ -203,11 +248,11 @@ export function PageHeader({
   meta?: ReactNode
 }) {
   return (
-    <header className="mb-4 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+    <header className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-[1.5rem] font-bold tracking-tight">{title}</h1>
-        {description && <p className="mt-0.5 max-w-[80ch] text-sm text-ink-2">{description}</p>}
-        {meta && <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.8125rem] text-ink-2">{meta}</div>}
+        <h1 className="text-[1.75rem] leading-tight font-bold tracking-tight">{title}</h1>
+        {description && <p className="mt-1.5 max-w-[80ch] text-base text-ink-2">{description}</p>}
+        {meta && <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-ink-2">{meta}</div>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>
@@ -234,9 +279,9 @@ export function Sheet({
   return (
     <section className={`rounded-xl border border-rule bg-sheet shadow-card ${className}`}>
       {(title || actions) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-4 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-4 py-3">
           {title && (
-            <h2 className="flex items-center gap-2 text-[0.9375rem] font-semibold">
+            <h2 className="flex items-center gap-2 text-base font-semibold">
               {icon && <span className="text-ink-3">{icon}</span>}
               {title}
             </h2>
@@ -268,7 +313,7 @@ export function Tabs<T extends string>({
           aria-selected={tab.id === value}
           disabled={tab.disabled}
           onClick={() => onChange(tab.id)}
-          className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
+          className={`-mb-px border-b-2 px-3.5 py-2.5 text-sm font-medium ${
             tab.id === value ? 'border-seal text-seal' : 'border-transparent text-ink-2 hover:text-ink'
           }`}
         >
@@ -310,18 +355,18 @@ export function Modal({
     <dialog
       ref={ref}
       onClose={onClose}
-      className={`m-auto w-[calc(100%-2rem)] rounded-xl bg-sheet p-0 text-ink shadow-xl ${wide ? 'max-w-3xl' : 'max-w-md'}`}
+      className={`m-auto w-[calc(100%-2rem)] rounded-2xl bg-sheet p-0 text-ink shadow-xl ${wide ? 'max-w-3xl' : 'max-w-[30rem]'}`}
     >
       {open && (
         <>
-          <div className="flex items-center justify-between border-b border-rule px-4 py-3">
-            <h2 className="text-base">{title}</h2>
-            <button type="button" onClick={onClose} aria-label="닫기" className="text-ink-3 hover:text-ink">
-              <X size={18} />
+          <div className="flex items-center justify-between border-b border-rule px-5 py-4">
+            <h2 className="text-lg">{title}</h2>
+            <button type="button" onClick={onClose} aria-label="닫기" className="-mr-1 rounded-lg p-1.5 text-ink-3 hover:bg-paper hover:text-ink">
+              <X size={20} />
             </button>
           </div>
-          <div className="max-h-[70vh] overflow-y-auto p-4">{children}</div>
-          {footer && <div className="flex justify-end gap-2 border-t border-rule px-4 py-3">{footer}</div>}
+          <div className="max-h-[70vh] overflow-y-auto p-5">{children}</div>
+          {footer && <div className="flex justify-end gap-2 border-t border-rule px-5 py-4">{footer}</div>}
         </>
       )}
     </dialog>
@@ -454,13 +499,13 @@ export function Drawer({
     >
       {open && (
         <div className="flex h-full flex-col">
-          <div className="flex items-center justify-between border-b border-rule px-4 py-3">
-            <h2 className="text-base">{title}</h2>
-            <button type="button" onClick={onClose} aria-label="닫기" className="text-ink-3 hover:text-ink">
-              <X size={18} />
+          <div className="flex items-center justify-between border-b border-rule px-5 py-4">
+            <h2 className="text-lg">{title}</h2>
+            <button type="button" onClick={onClose} aria-label="닫기" className="-mr-1 rounded-lg p-1.5 text-ink-3 hover:bg-paper hover:text-ink">
+              <X size={20} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4">{children}</div>
+          <div className="flex-1 overflow-y-auto p-5">{children}</div>
         </div>
       )}
     </dialog>
@@ -468,14 +513,14 @@ export function Drawer({
 }
 
 export function Mono({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <code className={`font-mono text-[0.8125rem] break-all ${className}`}>{children}</code>
+  return <code className={`font-mono text-[0.875rem] break-all ${className}`}>{children}</code>
 }
 
 export function CodeBlock({ children, label }: { children: string; label?: string }) {
   return (
     <div className="overflow-hidden rounded-md border border-rule">
       {label && <div className="border-b border-rule bg-sheet-alt px-3 py-1.5 text-xs text-ink-3">{label}</div>}
-      <pre className="overflow-x-auto bg-sheet-alt p-3 font-mono text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-ink">
+      <pre className="overflow-x-auto bg-sheet-alt p-3 font-mono text-[0.875rem] leading-relaxed whitespace-pre-wrap text-ink">
         {children}
       </pre>
     </div>

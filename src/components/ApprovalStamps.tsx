@@ -9,17 +9,17 @@ import { NETWORK_LABEL, RULE_LABEL } from '../lib/labels'
 function Seal({ name, animate }: { name: string; animate?: boolean }) {
   return (
     <span
-      className={`inline-flex size-14 -rotate-6 items-center justify-center rounded-full border-2 border-seal text-seal outline-1 outline-offset-2 outline-seal/60 ${
+      className={`inline-flex size-16 -rotate-6 items-center justify-center rounded-full border-2 border-seal text-seal outline-1 outline-offset-2 outline-seal/60 ${
         animate ? 'animate-stamp' : ''
       }`}
     >
-      <span className="text-[0.8125rem] leading-tight font-bold tracking-tight">{name}</span>
+      <span className="text-sm leading-tight font-bold tracking-tight">{name}</span>
     </span>
   )
 }
 
 function EmptySeal() {
-  return <span className="inline-flex size-14 rounded-full border-2 border-dashed border-rule-strong" aria-hidden />
+  return <span className="inline-flex size-16 rounded-full border-2 border-dashed border-rule-strong" aria-hidden />
 }
 
 function candidatesText(requirement: RequirementStatus): string {
@@ -52,29 +52,34 @@ export function ApprovalStamps({
   justStampedBy?: string
 }) {
   return (
-    <div className="flex w-fit overflow-hidden rounded border border-rule-strong">
+    <div className="flex w-full overflow-hidden rounded border border-rule-strong">
       {status.requirements.map((requirement, index) => {
         const record = requirement.approvedBy[0]
         return (
           <div
             key={`${requirement.rule}-${index}`}
-            className="flex w-28 flex-col border-r border-rule-strong last:border-r-0"
+            className="flex min-w-0 flex-1 flex-col border-r border-rule-strong last:border-r-0"
           >
-            <div className="border-b border-rule-strong bg-sheet-alt px-1.5 py-1 text-center text-2xs font-medium text-ink-2">
+            <div className="border-b border-rule-strong bg-sheet-alt px-1.5 py-1.5 text-center text-xs font-medium text-ink-2">
               {RULE_LABEL[requirement.rule]}
             </div>
-            <div className="flex flex-1 flex-col items-center gap-1 px-1.5 py-2 text-center">
+            <div className="flex flex-1 flex-col items-center gap-1.5 px-1.5 py-3 text-center">
               {record ? (
                 <Seal name={record.name} animate={justStampedBy === record.userId} />
               ) : (
                 <EmptySeal />
               )}
-              <p className="text-2xs leading-tight text-ink-3">
+              <p className="text-xs leading-snug break-keep text-ink-3">
                 {record ? (
                   <>
                     {record.self ? '본인 승인' : formatDateTime(record.at)}
-                    <br />
-                    {NETWORK_LABEL[record.network]}
+                    {/* 평소에는 내부망이므로 외부망에서 서명한 경우만 적는다. 전체 기록은 감사 로그에 있다. */}
+                    {record.network === 'EXTERNAL' && (
+                      <>
+                        <br />
+                        {NETWORK_LABEL.EXTERNAL}
+                      </>
+                    )}
                   </>
                 ) : (
                   <>

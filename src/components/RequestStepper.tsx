@@ -43,7 +43,7 @@ export function Stepper({ steps }: { steps: Step[] }) {
             )}
           </span>
           <span
-            className={`mt-1 text-[0.8125rem] ${
+            className={`mt-1.5 text-base ${
               step.state === 'todo' ? 'text-ink-3' : 'font-semibold text-ink'
             } ${step.state === 'error' ? 'text-high' : ''}`}
           >

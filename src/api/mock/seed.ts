@@ -496,7 +496,7 @@ function seedRequests() {
         content: { diff: sessionDiff() },
         status: 'PENDING',
         risk: 'HIGH',
-        riskRaised: { from: 'MEDIUM', reason: '인증 로직을 건드리는 변경이라 위험도를 올렸습니다' },
+        riskRaised: { from: 'MEDIUM', reason: '인증 로직을 건드리는 변경입니다' },
       },
     ],
   })
@@ -558,7 +558,7 @@ function seedRequests() {
         content: { diff: makeUnifiedDiff('src/auth/token.ts', AUTH_FILES['src/auth/token.ts'], `${AUTH_FILES['src/auth/token.ts']}\n// rotate key\n`) },
         status: 'APPROVED',
         risk: 'HIGH',
-        riskRaised: { from: 'MEDIUM', reason: '인증 로직을 건드리는 변경이라 위험도를 올렸습니다' },
+        riskRaised: { from: 'MEDIUM', reason: '인증 로직을 건드리는 변경입니다' },
       },
       deployTask('APPROVED'),
     ],
@@ -778,7 +778,7 @@ function seedRequests() {
         },
         status: 'PENDING',
         risk: 'HIGH',
-        riskRaised: { from: 'MEDIUM', reason: '인증 로직을 건드리는 변경이라 위험도를 올렸습니다' },
+        riskRaised: { from: 'MEDIUM', reason: '인증 로직을 건드리는 변경입니다' },
       },
     ],
   })
@@ -810,7 +810,7 @@ function seedRequests() {
     prompt: '스테이징에 배포해줘',
     status: 'PENDING_APPROVAL',
     ageMinutes: 22,
-    tasks: [deployTask('PENDING')],
+    tasks: [{ ...deployTask('PENDING'), title: '인증 서비스 스테이징 배포' }],
   })
   tamperedHash.plan!.tasks[0].content = { command: './deploy.sh production --force' }
 
@@ -821,7 +821,7 @@ function seedRequests() {
     prompt: '스테이징 재배포해줘',
     status: 'PENDING_APPROVAL',
     ageMinutes: 16,
-    tasks: [deployTask('PENDING')],
+    tasks: [{ ...deployTask('PENDING'), title: '스테이징 재배포' }],
   })
   impostor.plan!.executorSignature = impostorSignature(impostor.plan!.planHash as string)
 }

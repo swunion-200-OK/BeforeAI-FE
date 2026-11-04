@@ -24,7 +24,7 @@ function ProjectList() {
   const specs = useQueries({ queries: list.map((project) => specQuery(project.id)) })
 
   return (
-    <div className="mx-auto max-w-5xl pt-2">
+    <div>
       <PageHeader title="프로젝트 기획서" description="AI 분석과 담당자 지정의 기준이 되는 문서입니다." />
       {projects.isPending ? (
         <Spinner />
@@ -102,7 +102,7 @@ function ProjectBody({ project }: { project: Project }) {
   const editing = draft !== null
 
   return (
-    <div className="mx-auto max-w-5xl pt-2">
+    <div>
       <PageHeader
         title={project.name}
         meta={
@@ -173,7 +173,7 @@ function ProjectBody({ project }: { project: Project }) {
               },
             ]}
           />
-          <p className="mt-2 text-[0.8125rem] text-ink-3">
+          <p className="mt-2 text-[0.875rem] text-ink-3">
             담당자는 모두 같은 권한으로 DB 접근·데이터 수정·배포 작업을 승인합니다.
           </p>
         </div>
