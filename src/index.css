@@ -1,111 +1,168 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+@import 'tailwindcss';
+@import '@fontsource/ibm-plex-sans-kr/400.css';
+@import '@fontsource/ibm-plex-sans-kr/500.css';
+@import '@fontsource/ibm-plex-sans-kr/600.css';
+@import '@fontsource/ibm-plex-sans-kr/700.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+/*
+ * 결재 서류의 어휘로 만든 토큰.
+ * 서류(paper·sheet)와 먹(ink), 군청 인주(seal). 빨강은 위험도·오류에만 쓴다.
+ */
+@theme {
+  --font-sans: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Code', monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --color-paper: #edf0f4;
+  --color-sheet: #ffffff;
+  --color-sheet-alt: #f6f8fa;
+  --color-ink: #172033;
+  --color-ink-2: #48546a;
+  --color-ink-3: #667286;
+  --color-rule: #d5dbe4;
+  --color-rule-strong: #aeb9c8;
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
+  --color-seal: #2743b8;
+  --color-seal-dark: #1c3190;
+  --color-seal-soft: #e4e9fa;
+
+  --color-low: #17703f;
+  --color-low-soft: #e1f3e8;
+  --color-medium: #a24f00;
+  --color-medium-soft: #fcebd6;
+  --color-high: #be2318;
+  --color-high-soft: #fbe6e4;
+  --color-forbidden: #535c6a;
+  --color-forbidden-soft: #e6e8ec;
+
+  --color-internal: #0b6b6b;
+  --color-internal-soft: #ddf1f0;
+  --color-external: #9a4a00;
+  --color-external-soft: #fdebd0;
+
+  --color-terminal: #0e1726;
+  --color-terminal-2: #18243a;
+  --color-terminal-ink: #c9d4e3;
+  --color-terminal-dim: #7f8ea6;
+
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  --animate-stamp: stamp 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-toast: toast 180ms ease-out;
+}
+
+@keyframes stamp {
+  from {
+    transform: rotate(-6deg) scale(1.5);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(-6deg) scale(1);
+    opacity: 1;
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+@keyframes toast {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
   }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  to {
+    transform: translateY(0);
+    opacity: 1;
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-}
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: var(--color-paper);
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
 
-body {
-  margin: 0;
-}
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--color-paper);
+  }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
-}
+  h1,
+  h2,
+  h3 {
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+  }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+  button,
+  [role='button'],
+  summary,
+  label[for] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-seal);
+    outline-offset: 2px;
+  }
+
+  dialog::backdrop {
+    background: rgb(23 32 51 / 0.45);
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+@layer components {
+  /* 표: 서류의 칸처럼 가로줄만 긋는다 */
+  .sheet-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+  }
+  .sheet-table th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--color-ink-3);
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--color-rule-strong);
+    white-space: nowrap;
+  }
+  .sheet-table td {
+    padding: 0.625rem 0.75rem;
+    border-bottom: 1px solid var(--color-rule);
+    vertical-align: middle;
+  }
+  .sheet-table tbody tr[data-clickable='true'] {
+    cursor: pointer;
+  }
+  .sheet-table tbody tr[data-clickable='true']:hover {
+    background: var(--color-sheet-alt);
+  }
+
+  /* 외부망 띠 */
+  .band-external {
+    background: repeating-linear-gradient(
+      -45deg,
+      #d97706 0 10px,
+      #fbbf24 10px 20px
+    );
   }
 }
-p {
-  margin: 0;
-}
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
 }
