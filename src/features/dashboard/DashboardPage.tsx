@@ -5,6 +5,7 @@ import type { DashboardScope, RequestStatus, Role } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useDepartmentNames, usePendingApprovals } from '../../lib/queries'
+import { groupByRequest } from '../approvals/queueGroups'
 import { DashboardDetails, RunningPanel, TodoPanel } from './DashboardPanels'
 import { ATTENTION_STATUSES } from './statusGroups'
 
@@ -57,12 +58,12 @@ export default function DashboardPage() {
   const count = (status: RequestStatus) => data?.statusCounts[status] ?? 0
   const attention = ATTENTION_STATUSES.filter((status) => count(status) > 0)
   const attentionTotal = attention.reduce((sum, status) => sum + count(status), 0)
-  const myPending = pending.data?.length ?? 0
+  const myPending = groupByRequest(pending.data ?? []).length
 
   const scopeName = { COMPANY: '회사 전체', DEPARTMENT: departmentName(me.departmentId), ME: '내 요청' }[scope]
   const headline =
     myPending > 0
-      ? `승인할 작업 ${myPending}건이 있습니다.`
+      ? `승인할 요청 ${myPending}건이 있습니다.`
       : attentionTotal > 0
         ? `확인이 필요한 요청 ${attentionTotal}건이 있습니다.`
         : `${scopeName} 현황입니다.`

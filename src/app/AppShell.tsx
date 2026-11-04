@@ -47,7 +47,8 @@ function Sidebar() {
   const departmentName = useDepartmentNames()
   const pending = usePendingApprovals()
   const projects = useProjects()
-  const pendingCount = pending.data?.length ?? 0
+  // 목록에서 한 줄로 보이는 단위인 요청 수를 센다. 작업 수를 세면 눌렀을 때 숫자가 달라 보인다.
+  const pendingCount = new Set(pending.data?.map((item) => item.requestId)).size
   const isOwner = projects.data?.some((p) => p.owners.some((o) => o.id === me.id)) ?? false
   const groups = menuFor(me.role, { canApprove: pendingCount > 0 || isOwner })
   const base = 'flex h-10 items-center gap-3 rounded-lg px-3 text-[0.9375rem]'

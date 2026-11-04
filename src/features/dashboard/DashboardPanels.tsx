@@ -10,6 +10,7 @@ import { Button, ErrorState, Sheet, Spinner } from '../../components/ui'
 import { formatElapsed } from '../../lib/format'
 import { usePendingApprovals } from '../../lib/queries'
 import { KillAllDialog } from '../admin/KillAllDialog'
+import { groupByRequest, riskiestTask } from '../approvals/queueGroups'
 import { ATTENTION_STATUSES } from './statusGroups'
 
 function SeeAll({ to, count }: { to: string; count: number }) {
@@ -26,7 +27,8 @@ const PENDING_LIMIT = 7
 
 export function TodoPanel({ emptyText, className }: { emptyText: string; className?: string }) {
   const pending = usePendingApprovals()
-  const items = pending.data ?? []
+  // 승인 대기 목록과 같게 요청 하나를 한 줄로 보여 준다.
+  const items = groupByRequest(pending.data ?? [])
   return (
     <Sheet
       title="내가 지금 할 일"
@@ -39,30 +41,39 @@ export function TodoPanel({ emptyText, className }: { emptyText: string; classNa
       {pending.isSuccess && items.length === 0 && <p className="px-4 py-5 text-sm text-ink-2">{emptyText}</p>}
       {items.length > 0 && (
         <ul className="divide-y divide-rule">
-          {items.slice(0, PENDING_LIMIT).map((item) => (
-            <li key={`${item.requestId}-${item.taskId}`}>
-              <Link
-                to={`/approvals/${item.requestId}`}
-                className="grid grid-cols-[4.25rem_minmax(0,1fr)_12rem_7.5rem] items-center gap-x-4 px-4 py-3.5 hover:bg-seal-soft/40"
-              >
-                <span>
-                  <RiskBadge risk={item.risk} />
-                </span>
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="truncate text-[0.9375rem] font-medium text-ink">{item.taskTitle}</span>
-                  {item.blockedReason && (
-                    <span className="shrink-0 text-xs font-medium text-external">내부망 승인 필요</span>
-                  )}
-                </span>
-                <span className="truncate text-sm text-ink-2">
-                  {item.requester.name}, {item.projectName}
-                </span>
-                <span className="text-right text-sm whitespace-nowrap text-ink-3 tabular-nums">
-                  {formatElapsed(item.requestedAt)} 대기
-                </span>
-              </Link>
-            </li>
-          ))}
+          {items.slice(0, PENDING_LIMIT).map((group) => {
+            const top = riskiestTask(group)
+            const blocked = group.tasks.filter((task) => task.blockedReason).length
+            return (
+              <li key={group.requestId}>
+                <Link
+                  to={`/approvals/${group.requestId}`}
+                  className="grid grid-cols-[4.25rem_minmax(0,1fr)_12rem_7.5rem] items-center gap-x-4 px-4 py-3.5 hover:bg-seal-soft/40"
+                >
+                  <span>
+                    <RiskBadge risk={top.risk} />
+                  </span>
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="truncate text-[0.9375rem] font-medium text-ink">
+                      {top.taskTitle}
+                      {group.tasks.length > 1 && ` 외 ${group.tasks.length - 1}건`}
+                    </span>
+                    {blocked > 0 && (
+                      <span className="shrink-0 text-xs font-medium text-external">
+                        {blocked < group.tasks.length ? '일부 내부망 승인 필요' : '내부망 승인 필요'}
+                      </span>
+                    )}
+                  </span>
+                  <span className="truncate text-sm text-ink-2">
+                    {group.requester.name}, {group.projectName}
+                  </span>
+                  <span className="text-right text-sm whitespace-nowrap text-ink-3 tabular-nums">
+                    {formatElapsed(group.requestedAt)} 대기
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       )}
     </Sheet>
