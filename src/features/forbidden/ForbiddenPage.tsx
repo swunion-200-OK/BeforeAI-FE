@@ -1,14 +1,33 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { Send, ShieldBan } from 'lucide-react'
 import { useState } from 'react'
 import { useMe } from '../../app/AuthProvider'
 import { forbiddenApi, type ForbiddenInput } from '../../api/endpoints'
 import type { ForbiddenProposal } from '../../api/types'
+import { Stepper } from '../../components/RequestStepper'
 import { Banner, Button, ErrorState, Mono, PageHeader, Sheet, Spinner } from '../../components/ui'
 import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames, useRefreshAll } from '../../lib/queries'
 import { ForbiddenAdminPanel } from './ForbiddenAdminPanel'
-import { EMPTY_FORBIDDEN_INPUT, ForbiddenFields, isForbiddenInputComplete } from './ForbiddenFields'
+import { ForbiddenFields } from './ForbiddenFields'
+import { EMPTY_FORBIDDEN_INPUT, isForbiddenInputComplete } from './forbiddenInput'
 import { ForbiddenRuleTable } from './ForbiddenRuleTable'
+
+/** 제안이 실제 차단이 되기까지의 순서 (기능 명세서 5.7) */
+function ProposalFlow({ submitted }: { submitted: boolean }) {
+  return (
+    <Sheet className="mb-4">
+      <Stepper
+        steps={[
+          { key: 'propose', label: '팀장 제안', hint: '자기 부서 금지 사항을 제안합니다', state: submitted ? 'done' : 'current' },
+          { key: 'confirm', label: '관리자 확정', hint: '확정하거나 사유를 적어 반려합니다', state: submitted ? 'current' : 'todo' },
+          { key: 'plan', label: 'Plan 단계 차단', hint: '금지로 표시하고 승인을 막습니다', state: 'todo' },
+          { key: 'run', label: '실행 직전 차단', hint: '실행기 로컬 정책으로 다시 막습니다', state: 'todo' },
+        ]}
+      />
+    </Sheet>
+  )
+}
 
 function ManagerView({ departmentId }: { departmentId: string }) {
   const refresh = useRefreshAll()
@@ -30,40 +49,47 @@ function ManagerView({ departmentId }: { departmentId: string }) {
   })
 
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <Sheet title={`${departmentName(departmentId)} 확정 규칙`} flush>
-        {rules.isPending && <Spinner />}
-        {rules.isError && <ErrorState error={rules.error} onRetry={() => rules.refetch()} />}
-        {rules.data && <ForbiddenRuleTable rules={rules.data} />}
-      </Sheet>
-      <div className="flex flex-col gap-4">
-        <Sheet title="금지 작업 제안">
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(event) => {
-              event.preventDefault()
-              propose.mutate()
-            }}
-          >
-            <ForbiddenFields value={input} onChange={setInput} />
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!isForbiddenInputComplete(input)}
-              disabledReason="대상과 사유를 입력해 주세요"
-              loading={propose.isPending}
+    <>
+      <ProposalFlow submitted={Boolean(submitted)} />
+      <div className="grid items-start gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
+        <div className="flex flex-col gap-4">
+          <Sheet title="금지 작업 제안" icon={<Send size={16} aria-hidden />}>
+            <form
+              className="flex flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (isForbiddenInputComplete(input)) propose.mutate()
+              }}
             >
-              제안 보내기
-            </Button>
-          </form>
+              <ForbiddenFields value={input} onChange={setInput} />
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={!isForbiddenInputComplete(input)}
+                disabledReason="대상과 사유를 입력해 주세요"
+                loading={propose.isPending}
+              >
+                제안 보내기
+              </Button>
+            </form>
+          </Sheet>
+          {submitted && (
+            <Banner tone="info" title="제안을 보냈습니다">
+              {TASK_TYPE_LABEL[submitted.taskType]}, <Mono>{submitted.target}</Mono>. 관리자가 확정하면 적용됩니다.
+            </Banner>
+          )}
+        </div>
+        <Sheet
+          title={`${departmentName(departmentId)} 확정 규칙${rules.data ? ` ${rules.data.length}건` : ''}`}
+          icon={<ShieldBan size={16} aria-hidden />}
+          flush
+        >
+          {rules.isPending && <Spinner />}
+          {rules.isError && <ErrorState error={rules.error} onRetry={() => rules.refetch()} />}
+          {rules.data && <ForbiddenRuleTable rules={rules.data} />}
         </Sheet>
-        {submitted && (
-          <Banner tone="info" title="제안을 보냈습니다">
-            {TASK_TYPE_LABEL[submitted.taskType]}, <Mono>{submitted.target}</Mono>. 관리자가 확정하면 적용됩니다.
-          </Banner>
-        )}
       </div>
-    </div>
+    </>
   )
 }
 

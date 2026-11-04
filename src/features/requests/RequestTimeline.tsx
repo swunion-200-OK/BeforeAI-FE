@@ -1,5 +1,5 @@
-import { Check, X } from 'lucide-react'
 import type { RequestDetail, RequestStatus } from '../../api/types'
+import { Stepper, type Step } from '../../components/RequestStepper'
 import { formatDateTime } from '../../lib/format'
 import { REQUEST_STATUS_LABEL } from '../../lib/labels'
 
@@ -56,48 +56,33 @@ export function RequestTimeline({ request }: { request: RequestDetail }) {
   const current = currentStage(request)
   const stopped = STOPPED.includes(request.status)
   const finished = FINISHED.includes(request.status)
-  const partial = request.status === 'PARTIALLY_COMPLETED'
+
+  const steps: Step[] = STAGES.map((stage, index) => {
+    const isCurrent = index === current
+    const at =
+      index <= current
+        ? [...request.events].reverse().find((event) => STAGE_EVENTS[index].includes(event.status))?.at
+        : undefined
+    return {
+      key: stage,
+      label: stage,
+      state: isCurrent && stopped ? 'error' : index < current || (isCurrent && finished) ? 'done' : isCurrent ? 'current' : 'todo',
+      hint: (
+        <>
+          {isCurrent && (
+            <span className={`block font-medium ${stopped ? 'text-high' : 'text-ink-2'}`}>
+              {REQUEST_STATUS_LABEL[request.status]}
+            </span>
+          )}
+          {at && <span className="block">{formatDateTime(at)}</span>}
+        </>
+      ),
+    }
+  })
 
   return (
-    <ol className="mb-5 grid grid-cols-6 overflow-x-auto rounded-md border border-rule bg-sheet px-2 py-3" aria-label="요청 진행 단계">
-      {STAGES.map((stage, index) => {
-        const isCurrent = index === current
-        const done = index < current || (isCurrent && finished)
-        const failed = isCurrent && stopped
-        const at =
-          index <= current
-            ? [...request.events].reverse().find((event) => STAGE_EVENTS[index].includes(event.status))?.at
-            : undefined
-        const marker = failed
-          ? 'border-high bg-high text-white'
-          : done
-            ? 'border-seal bg-seal text-white'
-            : isCurrent
-              ? partial
-                ? 'border-medium bg-medium-soft text-medium'
-                : 'border-seal bg-seal-soft text-seal'
-              : 'border-rule-strong bg-sheet text-ink-3'
-        return (
-          <li key={stage} className="relative min-w-20 px-1 text-center" aria-current={isCurrent ? 'step' : undefined}>
-            {index > 0 && (
-              <span
-                aria-hidden
-                className={`absolute top-3 right-1/2 h-px w-full ${index <= current ? 'bg-seal' : 'bg-rule-strong'}`}
-              />
-            )}
-            <span
-              className={`relative mx-auto flex size-6 items-center justify-center rounded-full border-2 text-xs font-semibold ${marker}`}
-            >
-              {failed ? <X size={13} aria-hidden /> : done ? <Check size={13} aria-hidden /> : index + 1}
-            </span>
-            <p className={`mt-1 text-[0.8125rem] ${isCurrent ? 'font-semibold text-ink' : index < current ? 'text-ink-2' : 'text-ink-3'}`}>
-              {stage}
-            </p>
-            {isCurrent && <p className={`text-xs ${failed ? 'text-high' : 'text-ink-2'}`}>{REQUEST_STATUS_LABEL[request.status]}</p>}
-            {at && <p className="text-2xs text-ink-3">{formatDateTime(at)}</p>}
-          </li>
-        )
-      })}
-    </ol>
+    <section aria-label="요청 진행 단계" className="rounded-xl border border-rule bg-sheet px-4 py-3 shadow-card">
+      <Stepper steps={steps} />
+    </section>
   )
 }

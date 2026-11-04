@@ -4,9 +4,9 @@ import type { IntegrityResult } from './approvalFlow'
 
 function CheckRow({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <li className={`flex items-center justify-between gap-2 text-sm ${ok ? 'text-ink' : 'font-medium text-high'}`}>
+    <li className={`flex items-center justify-between gap-2 text-[0.8125rem] ${ok ? 'text-ink' : 'font-medium text-high'}`}>
       <span>{label}</span>
-      <span>{ok ? '✅ 확인' : '❌ 실패'}</span>
+      <span className={ok ? 'font-medium text-low' : ''}>{ok ? '✅ 확인' : '❌ 실패'}</span>
     </li>
   )
 }
@@ -14,12 +14,12 @@ function CheckRow({ ok, label }: { ok: boolean; label: string }) {
 /** 받은 Plan으로 다시 계산한 해시와 실행기 서명의 확인 결과. 실패하면 서명할 수 없다. */
 export function IntegrityCheck({ result, receivedHash }: { result: IntegrityResult; receivedHash: string }) {
   return (
-    <div className="flex flex-col gap-3">
-      <ul className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2.5">
+      <ul className={`flex flex-col gap-1 rounded-lg px-2.5 py-2 ${result.ok ? 'bg-low-soft/60' : 'bg-high-soft'}`}>
         <CheckRow ok={result.hashOk} label="Plan 해시 일치" />
         <CheckRow ok={result.signatureOk} label="실행기 서명 확인" />
       </ul>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-ink-2">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-ink-2">
         <dt className="text-ink-3">계산값</dt>
         <dd title={result.computedHash}>
           <Mono className={result.hashOk ? 'text-xs' : 'text-xs text-high'}>

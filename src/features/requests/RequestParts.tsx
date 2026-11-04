@@ -3,20 +3,29 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { RequestDetail, Task } from '../../api/types'
 import { RequestStatusBadge } from '../../components/badges'
+import { Avatar, ProjectTag } from '../../components/rich'
 import { Banner, Button, ConfirmModal, ReasonModal } from '../../components/ui'
-import { formatDateTime } from '../../lib/format'
+import { formatDateTime, formatElapsed } from '../../lib/format'
 import { SOURCE_LABEL } from '../../lib/labels'
+import { useDepartmentNames } from '../../lib/queries'
 import { useCancelRequest, usePatchPlan, useRetryAnalysis } from './useRequestActions'
 
 const MAX_ANALYSIS_ATTEMPTS = 3
 
 export function RequestMeta({ request }: { request: RequestDetail }) {
+  const departmentName = useDepartmentNames()
   return (
     <>
       <RequestStatusBadge status={request.status} />
-      <span>{request.projectName}</span>
-      <span className="text-ink-3">요청자 {request.requester.name}</span>
-      <span className="text-ink-3">{formatDateTime(request.createdAt)}</span>
+      <ProjectTag name={request.projectName} />
+      <span className="inline-flex items-center gap-1.5">
+        <Avatar name={request.requester.name} size="sm" />
+        요청자 {request.requester.name}
+        <span className="text-ink-3">{departmentName(request.requester.departmentId)}</span>
+      </span>
+      <span className="text-ink-3">
+        {formatDateTime(request.createdAt)} ({formatElapsed(request.createdAt)} 전)
+      </span>
       {request.source !== 'PROMPT' && <span className="text-ink-3">{SOURCE_LABEL[request.source]}에서 만듦</span>}
     </>
   )
@@ -87,12 +96,20 @@ export function TaskEditButtons({
   )
 }
 
-export function CancelRequestButton({ requestId, onDone }: { requestId: string; onDone?: () => void }) {
+export function CancelRequestButton({
+  requestId,
+  onDone,
+  fullWidth,
+}: {
+  requestId: string
+  onDone?: () => void
+  fullWidth?: boolean
+}) {
   const [open, setOpen] = useState(false)
   const cancel = useCancelRequest(requestId, onDone)
   return (
     <>
-      <Button variant="danger-outline" onClick={() => setOpen(true)}>
+      <Button variant="danger-outline" className={fullWidth ? 'w-full' : ''} onClick={() => setOpen(true)}>
         요청 취소
       </Button>
       <ConfirmModal
@@ -116,26 +133,28 @@ export function AnalysisFailedPanel({ request, isRequester }: { request: Request
   const navigate = useNavigate()
   const remaining = Math.max(0, MAX_ANALYSIS_ATTEMPTS - request.analysisAttempts)
   return (
-    <Banner tone="danger" title="AI 분석에 실패했습니다">
+    <Banner
+      tone="danger"
+      title="AI 분석에 실패했습니다"
+      action={
+        isRequester &&
+        (remaining > 0 ? (
+          <Button variant="primary" internalOnly loading={retry.isPending} onClick={() => retry.mutate()}>
+            다시 분석
+          </Button>
+        ) : (
+          <Button variant="primary" internalOnly onClick={() => navigate('/requests/new')}>
+            새로 요청
+          </Button>
+        ))
+      }
+    >
       <p>{request.analysisError ?? 'AI 분석 엔진에서 결과를 받지 못했습니다.'}</p>
       <p className="mt-1">
         {remaining > 0
           ? `남은 재시도 ${remaining}회`
           : '재시도 횟수(3회)를 모두 썼습니다. 프롬프트를 고쳐 새로 요청해 주세요.'}
       </p>
-      {isRequester && (
-        <div className="mt-2.5 flex flex-wrap gap-2">
-          {remaining > 0 ? (
-            <Button variant="primary" internalOnly loading={retry.isPending} onClick={() => retry.mutate()}>
-              다시 분석
-            </Button>
-          ) : (
-            <Button variant="primary" internalOnly onClick={() => navigate('/requests/new')}>
-              새로 요청
-            </Button>
-          )}
-        </div>
-      )}
     </Banner>
   )
 }

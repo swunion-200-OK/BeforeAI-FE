@@ -92,7 +92,7 @@
     font-family: var(--font-sans);
     color: var(--color-ink);
     background: var(--color-paper);
-    font-size: 15px;
+    font-size: 16px;
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }

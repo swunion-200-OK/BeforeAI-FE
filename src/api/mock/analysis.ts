@@ -216,7 +216,8 @@ export function applyInstruction(task: Task, instruction: string, project: Proje
     next.risk = 'HIGH'
   }
   next.requiredApprovers = buildRequiredApprovers(project, requester, next.type, next.risk)
-  const base = explainTask(next)
+  // 수정 지시는 아래에 따로 적으므로 요약에는 원래 설명을 쓴다.
+  const base = explainTask({ ...next, description: task.description })
   next.explanation = {
     ...base,
     summary: `${base.summary} 수정 지시도 반영했습니다.`,

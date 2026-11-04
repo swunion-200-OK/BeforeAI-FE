@@ -141,7 +141,9 @@ export const projectRoutes: Route[] = [
       const project = requireProject(params.projectId)
       assertSpecEditor(me, project)
       const ownerIds: string[] = body.ownerIds ?? []
-      if (new Set(ownerIds).size < MIN_OWNERS) {
+      // 비활성 계정은 승인할 수 없으므로 담당자 수에 넣지 않는다.
+      const activeOwners = new Set(ownerIds.filter((id) => requireUser(id).active))
+      if (activeOwners.size < MIN_OWNERS) {
         throw new HttpError(409, 'OWNER_MINIMUM', '담당자는 2명 이상이어야 합니다')
       }
       const removed = project.owners.map((o) => o.id).filter((id) => !ownerIds.includes(id))

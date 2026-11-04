@@ -29,7 +29,7 @@ function initials(name: string) {
 }
 
 export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
-  const dimension = { sm: 'size-6 text-[0.625rem]', md: 'size-8 text-xs', lg: 'size-10 text-sm' }[size]
+  const dimension = { sm: 'size-7 text-[0.6875rem] tracking-tighter', md: 'size-8 text-xs', lg: 'size-10 text-sm' }[size]
   return (
     <span
       aria-hidden
@@ -60,7 +60,7 @@ export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number 
   return (
     <span className="inline-flex items-center" aria-label={names.join(', ')}>
       {shown.map((name, index) => (
-        <span key={name} className={`rounded-full ring-2 ring-sheet ${index > 0 ? '-ml-1.5' : ''}`}>
+        <span key={name} className={`rounded-full ring-2 ring-sheet ${index > 0 ? '-ml-1' : ''}`}>
           <Avatar name={name} size="sm" />
         </span>
       ))}

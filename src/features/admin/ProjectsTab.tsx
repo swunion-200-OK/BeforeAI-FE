@@ -1,10 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { BookText, FolderPlus } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { adminApi } from '../../api/endpoints'
+import { Avatar, UserChip } from '../../components/rich'
 import { toast } from '../../components/toast'
 import { EmptyState, Button, ErrorState, Field, Mono, Select, Sheet, Spinner, TextArea, TextInput } from '../../components/ui'
 import { useDepartmentNames, useDepartments, useProjects, useRefreshAll } from '../../lib/queries'
+import { usersQuery } from './adminQueries'
 
 const MIN_OWNERS = 2
 
@@ -12,7 +15,7 @@ function CreateProjectForm() {
   const refresh = useRefreshAll()
   const departments = useDepartments()
   const departmentName = useDepartmentNames()
-  const users = useQuery({ queryKey: ['admin', 'users'], queryFn: async () => (await adminApi.users()).items })
+  const users = useQuery(usersQuery)
   const [name, setName] = useState('')
   const [departmentId, setDepartmentId] = useState('')
   const [repository, setRepository] = useState('')
@@ -55,9 +58,9 @@ function CreateProjectForm() {
   }
 
   return (
-    <Sheet title="프로젝트 생성">
+    <Sheet title="프로젝트 생성" icon={<FolderPlus size={16} aria-hidden />}>
       <form
-        className="grid gap-4 md:grid-cols-2"
+        className="grid gap-3 md:grid-cols-2"
         onSubmit={(event) => {
           event.preventDefault()
           if (!blockedReason) create.mutate()
@@ -93,21 +96,32 @@ function CreateProjectForm() {
           <legend className="mb-1 text-[0.8125rem] font-medium text-ink-2">담당자 (2명 이상)</legend>
           {users.isPending && <Spinner />}
           {users.isError && <ErrorState error={users.error} onRetry={() => users.refetch()} />}
-          <div className="grid gap-x-3 gap-y-1 rounded-md border border-rule p-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-1 sm:grid-cols-2">
             {users.data
               ?.filter((user) => user.active)
-              .map((user) => (
-                <label key={user.id} className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    className="accent-seal"
-                    checked={ownerIds.includes(user.id)}
-                    onChange={(event) => toggleOwner(user.id, event.target.checked)}
-                  />
-                  {user.name}
-                  <span className="text-xs text-ink-3">{departmentName(user.departmentId)}</span>
-                </label>
-              ))}
+              .map((user) => {
+                const checked = ownerIds.includes(user.id)
+                return (
+                  <label
+                    key={user.id}
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-sm ${
+                      checked ? 'border-seal bg-seal-soft/40' : 'border-rule hover:bg-sheet-alt'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="accent-seal"
+                      checked={checked}
+                      onChange={(event) => toggleOwner(user.id, event.target.checked)}
+                    />
+                    <Avatar name={user.name} size="sm" />
+                    <span className="min-w-0 truncate">
+                      {user.name}
+                      <span className="ml-1.5 text-xs text-ink-3">{departmentName(user.departmentId)}</span>
+                    </span>
+                  </label>
+                )
+              })}
           </div>
           <p className={`mt-1 text-xs ${lackingOwners ? 'text-high' : 'text-ink-3'}`}>
             {ownerIds.length}명 선택함. 담당자는 데이터 수정·DB 접근·배포 작업을 승인합니다.
@@ -115,7 +129,7 @@ function CreateProjectForm() {
         </fieldset>
         <div className="md:col-span-2">
           <Field label="초기 기획서" hint="AI가 이 프로젝트를 분석할 때 컨텍스트로 씁니다">
-            {(id) => <TextArea id={id} rows={6} value={specBody} onChange={(event) => setSpecBody(event.target.value)} />}
+            {(id) => <TextArea id={id} rows={5} value={specBody} onChange={(event) => setSpecBody(event.target.value)} />}
           </Field>
         </div>
         <div className="md:col-span-2">
@@ -137,11 +151,16 @@ function CreateProjectForm() {
 function ProjectList() {
   const projects = useProjects()
   const departmentName = useDepartmentNames()
+  const count = projects.data?.length
   return (
-    <Sheet title="등록된 프로젝트" flush>
+    <Sheet
+      title={count === undefined ? '등록된 프로젝트' : `등록된 프로젝트 ${count}개`}
+      icon={<BookText size={16} aria-hidden />}
+      flush
+    >
       {projects.isPending && <Spinner />}
       {projects.isError && <ErrorState error={projects.error} onRetry={() => projects.refetch()} />}
-      {projects.data?.length === 0 && <EmptyState title="등록된 프로젝트가 없습니다" />}
+      {projects.data?.length === 0 && <EmptyState title="등록된 프로젝트가 없습니다">왼쪽 폼에서 첫 프로젝트를 만드세요.</EmptyState>}
       {projects.data && projects.data.length > 0 && (
         <div className="overflow-x-auto">
           <table className="sheet-table">
@@ -149,23 +168,28 @@ function ProjectList() {
               <tr>
                 <th>프로젝트</th>
                 <th>담당 부서</th>
-                <th>저장소</th>
                 <th>담당자</th>
               </tr>
             </thead>
             <tbody>
               {projects.data.map((project) => (
                 <tr key={project.id}>
-                  <td className="font-medium whitespace-nowrap">
-                    <Link to={`/projects/${project.id}`} className="text-seal hover:underline">
+                  <td>
+                    <Link to={`/projects/${project.id}`} className="font-medium text-seal hover:underline">
                       {project.name}
                     </Link>
+                    <div className="mt-0.5">
+                      <Mono className="text-ink-3">{project.repository}</Mono>
+                    </div>
                   </td>
                   <td className="whitespace-nowrap">{departmentName(project.departmentId)}</td>
                   <td>
-                    <Mono>{project.repository}</Mono>
+                    <span className="flex flex-wrap gap-x-3 gap-y-1">
+                      {project.owners.map((owner) => (
+                        <UserChip key={owner.id} name={owner.name} />
+                      ))}
+                    </span>
                   </td>
-                  <td>{project.owners.map((owner) => owner.name).join(', ')}</td>
                 </tr>
               ))}
             </tbody>
@@ -178,7 +202,7 @@ function ProjectList() {
 
 export function ProjectsTab() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="grid items-start gap-4 xl:grid-cols-2">
       <CreateProjectForm />
       <ProjectList />
     </div>

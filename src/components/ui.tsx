@@ -303,6 +303,8 @@ export function Modal({
     if (open && !dialog.open) dialog.showModal()
     if (!open && dialog.open) dialog.close()
     refreshToastHost()
+    // 창이 열린 채 화면을 떠나면 토스트가 사라진 창 안에 남지 않게 다시 찾는다.
+    return () => refreshToastHost()
   }, [open])
   return (
     <dialog
@@ -441,6 +443,8 @@ export function Drawer({
     if (open && !dialog.open) dialog.showModal()
     if (!open && dialog.open) dialog.close()
     refreshToastHost()
+    // 창이 열린 채 화면을 떠나면 토스트가 사라진 창 안에 남지 않게 다시 찾는다.
+    return () => refreshToastHost()
   }, [open])
   return (
     <dialog

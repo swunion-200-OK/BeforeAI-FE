@@ -3,8 +3,6 @@ import type { TaskType } from '../../api/types'
 import { Field, Select, TextArea, TextInput } from '../../components/ui'
 import { TASK_TYPES, TASK_TYPE_LABEL } from '../../lib/labels'
 
-export const EMPTY_FORBIDDEN_INPUT: ForbiddenInput = { taskType: 'DEPLOY', target: '', reason: '' }
-
 /** 금지 작업 입력 칸: 작업 유형, 대상, 사유 (팀장 제안과 관리자 직접 추가가 같이 쓴다) */
 export function ForbiddenFields({
   value,
@@ -47,8 +45,4 @@ export function ForbiddenFields({
       </Field>
     </>
   )
-}
-
-export function isForbiddenInputComplete(value: ForbiddenInput): boolean {
-  return Boolean(value.target.trim() && value.reason.trim())
 }

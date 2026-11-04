@@ -449,7 +449,7 @@ describe('쉬운 설명', () => {
   it('로그인 메시지 작업은 어디가 무엇에서 무엇으로 바뀌는지 알려 준다', async () => {
     const { plan } = await requestsApi.get('r-main')
     const explanation = plan!.tasks[0].explanation!
-    expect(explanation.summary).toContain('로그인 API')
+    expect(explanation.summary).toContain('로그인 실패')
     expect(explanation.changes[0]).toMatchObject({
       where: '로그인 API (POST /login)',
       before: 'Invalid credentials',

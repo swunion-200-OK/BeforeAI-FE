@@ -81,7 +81,10 @@ function describeFileChange(
   return { where, what: `코드 ${added.length + removed}줄이 바뀝니다 (추가 ${added.length}, 삭제 ${removed})` }
 }
 
-function explainCode(title: string, target: string, diff: string): TaskExplanation {
+/** 어떤 작업에나 붙는 설명은 요약으로 쓰지 않는다. */
+const GENERIC_DESCRIPTION = /요청 내용에 맞춰|웹 코드 에디터에서 저장한|인증과 관련된 코드를/
+
+function explainCode(title: string, target: string, diff: string, description?: string): TaskExplanation {
   const rows = parseUnifiedDiff(diff)
   const changes: TaskChangeItem[] = []
   let path = target
@@ -115,10 +118,13 @@ function explainCode(title: string, target: string, diff: string): TaskExplanati
 
   const first = changes[0]
   const area = areaFor(target)
-  const summary = first
+  const specific = description && !GENERIC_DESCRIPTION.test(description) ? description : null
+  const summary = specific
+    ? specific
+    : first
     ? changes.length > 1
       ? `파일 ${changes.length}곳이 바뀝니다. ${first.where}: ${first.what}.`
-      : `${first.where}에서 ${first.what.replace(/다$/, '다')}.`
+      : `${first.where}에서 ${first.what}.`
     : `${title}: 바뀌는 코드가 없습니다.`
 
   return {
@@ -210,11 +216,13 @@ export function explainTask(input: {
   title: string
   target: string
   content: TaskContent
+  /** AI가 쓴 작업 설명. 코드 작업이면 요약 문장으로 쓴다 */
+  description?: string
   /** 문서 작업에서 기존 본문을 알면 넘긴다 */
   previousBody?: string
 }): TaskExplanation {
-  const { type, title, target, content, previousBody } = input
-  if (content.diff !== undefined) return explainCode(title, target, content.diff)
+  const { type, title, target, content, description, previousBody } = input
+  if (content.diff !== undefined) return explainCode(title, target, content.diff, description)
   if (content.command !== undefined) return explainDeploy(target, content.command)
   if (content.query !== undefined) return explainQuery(type, target, content.query)
   if (content.body !== undefined) return explainDoc(title, target, content.body, previousBody)

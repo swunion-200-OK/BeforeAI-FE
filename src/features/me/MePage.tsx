@@ -1,10 +1,12 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { Lock, MessageSquare, Smartphone, UserRound } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { USE_MOCK } from '../../api/client'
 import { meApi } from '../../api/endpoints'
 import type { Me, NotificationSettings } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { NetworkBadge } from '../../components/badges'
+import { Avatar, KeyValues } from '../../components/rich'
 import { toast } from '../../components/toast'
 import { Button, ErrorState, Field, Mono, PageHeader, Sheet, Spinner, TextInput } from '../../components/ui'
 import { ROLE_LABEL } from '../../lib/labels'
@@ -16,21 +18,24 @@ function ProfileSection({ me }: { me: Me }) {
   const departmentName = useDepartmentNames()
   const network = useNetwork()
   return (
-    <Sheet title="계정">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 text-sm">
-        <dt className="text-ink-3">이름</dt>
-        <dd>{me.name}</dd>
-        <dt className="text-ink-3">사번</dt>
-        <dd>{me.employeeNo}</dd>
-        <dt className="text-ink-3">역할</dt>
-        <dd>{ROLE_LABEL[me.role]}</dd>
-        <dt className="text-ink-3">부서</dt>
-        <dd>{departmentName(me.departmentId)}</dd>
-        <dt className="text-ink-3">접속 환경</dt>
-        <dd>
-          <NetworkBadge network={network} />
-        </dd>
-      </dl>
+    <Sheet title="계정" icon={<UserRound size={16} />}>
+      <div className="flex items-center gap-4">
+        <Avatar name={me.name} size="lg" />
+        <div className="min-w-0">
+          <p className="text-base font-bold tracking-tight">{me.name}</p>
+          <p className="text-[0.8125rem] text-ink-2">
+            {ROLE_LABEL[me.role]}, {departmentName(me.departmentId)}
+          </p>
+        </div>
+        <div className="ml-auto">
+          <KeyValues
+            items={[
+              { label: '사번', value: me.employeeNo },
+              { label: '접속 환경', value: <NetworkBadge network={network} /> },
+            ]}
+          />
+        </div>
+      </div>
     </Sheet>
   )
 }
@@ -62,6 +67,7 @@ function OtpSection({ me }: { me: Me }) {
   return (
     <Sheet
       title="OTP"
+      icon={<Smartphone size={16} />}
       actions={
         secret === null && (
           <Button internalOnly loading={start.isPending} onClick={() => start.mutate()}>
@@ -77,7 +83,7 @@ function OtpSection({ me }: { me: Me }) {
             : '외부망에서 로그인하려면 OTP 앱을 등록해야 합니다.'}
         </p>
       ) : (
-        <form onSubmit={submit} className="flex max-w-sm flex-col gap-3">
+        <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="text-sm text-ink-2">
             <p>OTP 앱에 아래 비밀 키를 추가한 뒤, 앱에 표시된 6자리 번호를 입력해 주세요.</p>
             <p className="mt-2 rounded-md bg-sheet-alt px-3 py-2">
@@ -129,39 +135,43 @@ function SlackForm({ initial }: { initial: NotificationSettings }) {
   })
   return (
     <form
-      className="flex max-w-sm flex-col gap-3"
+      className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault()
         save.mutate()
       }}
     >
-      <Field label="Slack 사용자 ID">
-        {(id) => (
-          <TextInput
-            id={id}
-            value={settings.slackUserId ?? ''}
-            onChange={(e) => setSettings({ ...settings, slackUserId: e.target.value || null })}
-          />
-        )}
-      </Field>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="size-4 accent-seal"
-          checked={settings.approvalRequests}
-          onChange={(e) => setSettings({ ...settings, approvalRequests: e.target.checked })}
-        />
-        승인 요청이 오면 알림 받기
-      </label>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="size-4 accent-seal"
-          checked={settings.requestResults}
-          onChange={(e) => setSettings({ ...settings, requestResults: e.target.checked })}
-        />
-        내 요청의 결과 알림 받기
-      </label>
+      <div className="grid items-end gap-4 sm:grid-cols-[minmax(0,14rem)_1fr]">
+        <Field label="Slack 사용자 ID">
+          {(id) => (
+            <TextInput
+              id={id}
+              value={settings.slackUserId ?? ''}
+              onChange={(e) => setSettings({ ...settings, slackUserId: e.target.value || null })}
+            />
+          )}
+        </Field>
+        <div className="flex flex-col gap-1.5">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-seal"
+              checked={settings.approvalRequests}
+              onChange={(e) => setSettings({ ...settings, approvalRequests: e.target.checked })}
+            />
+            승인 요청이 오면 알림 받기
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4 accent-seal"
+              checked={settings.requestResults}
+              onChange={(e) => setSettings({ ...settings, requestResults: e.target.checked })}
+            />
+            내 요청의 결과 알림 받기
+          </label>
+        </div>
+      </div>
       <p className="text-xs text-ink-3">알림에는 승인 상세 링크만 담습니다. 서명은 이 서비스 화면에서만 합니다.</p>
       <div>
         <Button type="submit" variant="primary" loading={save.isPending}>
@@ -175,7 +185,7 @@ function SlackForm({ initial }: { initial: NotificationSettings }) {
 function SlackSection() {
   const settings = useQuery({ queryKey: ['me', 'notification-settings'], queryFn: meApi.notificationSettings })
   return (
-    <Sheet title="Slack 알림">
+    <Sheet title="Slack 알림" icon={<MessageSquare size={16} />}>
       {settings.isPending && <Spinner />}
       {settings.isError && <ErrorState error={settings.error} onRetry={() => settings.refetch()} />}
       {settings.data && <SlackForm initial={settings.data} />}
@@ -188,14 +198,18 @@ export default function MePage() {
   return (
     <>
       <PageHeader title="내 정보" description="승인 키, 비밀번호, OTP와 Slack 알림을 관리합니다." />
-      <div className="flex flex-col gap-4">
-        <ProfileSection me={me} />
-        <SigningKeySection me={me} />
-        <Sheet title="비밀번호">
-          <PasswordForm submitLabel="비밀번호 바꾸기" onDone={() => toast.success('비밀번호를 바꿨습니다')} />
-        </Sheet>
-        <OtpSection me={me} />
-        <SlackSection />
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <ProfileSection me={me} />
+          <Sheet title="비밀번호" icon={<Lock size={16} />}>
+            <PasswordForm inline submitLabel="비밀번호 바꾸기" onDone={() => toast.success('비밀번호를 바꿨습니다')} />
+          </Sheet>
+          <OtpSection me={me} />
+        </div>
+        <div className="flex min-w-0 flex-col gap-4">
+          <SigningKeySection me={me} />
+          <SlackSection />
+        </div>
       </div>
     </>
   )

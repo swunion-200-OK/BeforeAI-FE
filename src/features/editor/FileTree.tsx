@@ -46,7 +46,7 @@ function DirectoryEntries({ path, depth, ...tree }: TreeProps & { path: string; 
 
 function TreeEntry({ entry, depth, ...tree }: TreeProps & { entry: FileEntry; depth: number }) {
   const [open, setOpen] = useState(false)
-  const rowClass = 'flex w-full items-center gap-1.5 py-1 pr-2 text-left text-[0.8125rem] hover:bg-paper'
+  const rowClass = 'flex w-full items-center gap-1.5 py-1.5 pr-2 text-left text-[0.8125rem] hover:bg-paper'
 
   if (entry.type === 'dir') {
     const Icon = open ? FolderOpen : Folder
