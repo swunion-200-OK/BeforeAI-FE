@@ -51,9 +51,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(
     async (accessToken: string) => {
       setAccessToken(accessToken)
-      client.clear()
+      const me = await meApi.get()
+      client.setQueryData(['me'], me)
+      // clear()는 구독 중인 화면에 알리지 않아 이전 사용자의 데이터가 남는다. reset은 알리고 다시 읽는다.
+      await client.cancelQueries({ predicate: (query) => query.queryKey[0] !== 'me' })
+      void client.resetQueries({ predicate: (query) => query.queryKey[0] !== 'me' })
       setAuthenticated(true)
-      await client.fetchQuery({ queryKey: ['me'], queryFn: meApi.get })
     },
     [client],
   )

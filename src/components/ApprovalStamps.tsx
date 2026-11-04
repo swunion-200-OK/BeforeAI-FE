@@ -47,7 +47,7 @@ export function ApprovalStamps({
   justStampedBy?: string
 }) {
   return (
-    <div className="inline-flex overflow-hidden rounded border border-rule-strong">
+    <div className="flex w-fit overflow-hidden rounded border border-rule-strong">
       {status.requirements.map((requirement, index) => {
         const record = requirement.approvedBy[0]
         return (
