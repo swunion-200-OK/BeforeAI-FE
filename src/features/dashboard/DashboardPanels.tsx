@@ -1,22 +1,23 @@
-import { useQuery } from '@tanstack/react-query'
+import type { UseQueryResult } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { requestsApi } from '../../api/endpoints'
-import type { Dashboard, DepartmentStat, RequestStatus, Risk } from '../../api/types'
+import type { Dashboard, DepartmentStat, RequestStatus, RequestSummary, Risk } from '../../api/types'
 import { RequestStatusBadge, RiskBadge } from '../../components/badges'
 import { TaskProgress } from '../../components/rich'
 import { Button, ErrorState, Sheet, Spinner } from '../../components/ui'
 import { formatElapsed } from '../../lib/format'
-import { usePendingApprovals } from '../../lib/queries'
+import { useIsExternal, usePendingApprovals, useProjects } from '../../lib/queries'
 import { KillAllDialog } from '../admin/KillAllDialog'
 import { groupByRequest, riskiestTask } from '../approvals/queueGroups'
+import { pathFor } from '../requests/requestPaths'
 import { ATTENTION_STATUSES } from './statusGroups'
 
-function SeeAll({ to, count }: { to: string; count: number }) {
+/** 숫자 칸은 이 화면 안에서 내용만 바꾼다. 전체 목록으로 가는 길은 여기에 둔다. */
+function ToList({ to }: { to: string }) {
   return (
     <Link to={to} className="text-sm font-medium text-seal hover:underline">
-      전체 {count}건
+      목록에서 보기
     </Link>
   )
 }
@@ -25,20 +26,19 @@ function SeeAll({ to, count }: { to: string; count: number }) {
 
 const PENDING_LIMIT = 7
 
-export function TodoPanel({ emptyText, className }: { emptyText: string; className?: string }) {
+export function TodoPanel({ emptyText }: { emptyText: string }) {
   const pending = usePendingApprovals()
   // 승인 대기 목록과 같게 요청 하나를 한 줄로 보여 준다.
   const items = groupByRequest(pending.data ?? [])
   return (
     <Sheet
       title="내가 지금 할 일"
-      actions={items.length > PENDING_LIMIT ? <SeeAll to="/approvals" count={items.length} /> : undefined}
+      actions={items.length > 0 ? <ToList to="/approvals" /> : undefined}
       flush
-      className={className}
     >
       {pending.isPending && <Spinner />}
       {pending.isError && <ErrorState error={pending.error} onRetry={() => pending.refetch()} />}
-      {pending.isSuccess && items.length === 0 && <p className="px-4 py-5 text-sm text-ink-2">{emptyText}</p>}
+      {pending.isSuccess && items.length === 0 && <p className="px-4 py-5 text-base text-ink-2">{emptyText}</p>}
       {items.length > 0 && (
         <ul className="divide-y divide-rule">
           {items.slice(0, PENDING_LIMIT).map((group) => {
@@ -48,13 +48,13 @@ export function TodoPanel({ emptyText, className }: { emptyText: string; classNa
               <li key={group.requestId}>
                 <Link
                   to={`/approvals/${group.requestId}`}
-                  className="grid grid-cols-[4.25rem_minmax(0,1fr)_12rem_7.5rem] items-center gap-x-4 px-4 py-3.5 hover:bg-seal-soft/40"
+                  className="grid grid-cols-[4.25rem_minmax(0,1fr)_minmax(0,11rem)_7rem] items-center gap-x-4 px-4 py-3.5 hover:bg-seal-soft/40"
                 >
                   <span>
                     <RiskBadge risk={top.risk} />
                   </span>
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="truncate text-[0.9375rem] font-medium text-ink">
+                  <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                    <span className="line-clamp-2 text-base font-medium text-ink">
                       {top.taskTitle}
                       {group.tasks.length > 1 && ` 외 ${group.tasks.length - 1}건`}
                     </span>
@@ -80,73 +80,83 @@ export function TodoPanel({ emptyText, className }: { emptyText: string; classNa
   )
 }
 
-// ── 실행 중 ─────────────────────────────────────────────────
+// ── 숫자 칸을 눌렀을 때 보이는 요청 목록 ───────────────────
 
-const RUNNING_LIMIT = 5
+const REQUEST_LIMIT = 7
 
 const ago = (iso: string) => {
   const elapsed = formatElapsed(iso)
   return elapsed === '방금' ? elapsed : `${elapsed} 전`
 }
 
-/** 실행 중인 요청이 있을 때만 보인다. 없으면 일괄 중단할 대상도 없으므로 버튼까지 함께 숨는다. */
-export function RunningPanel({
-  canKillAll,
+function RequestLine({ request, projectName, external }: { request: RequestSummary; projectName: string; external: boolean }) {
+  return (
+    <Link
+      to={pathFor(request, external)}
+      className="grid grid-cols-[6.5rem_minmax(0,1fr)_minmax(0,11rem)_10rem_6rem] items-center gap-x-4 px-4 py-3.5 hover:bg-seal-soft/40"
+    >
+      <span>
+        <RequestStatusBadge status={request.status} />
+      </span>
+      <span className="line-clamp-2 text-base font-medium text-ink">{request.prompt}</span>
+      <span className="truncate text-sm text-ink-2">
+        {request.requester.name}, {projectName}
+      </span>
+      <span>{request.taskSummary && <TaskProgress summary={request.taskSummary} />}</span>
+      <span className="text-right text-sm whitespace-nowrap text-ink-3 tabular-nums">{ago(request.updatedAt)}</span>
+    </Link>
+  )
+}
+
+export function RequestsPanel({
+  title,
+  query,
+  statuses,
+  emptyText,
   listTo,
-  className,
 }: {
-  canKillAll: boolean
+  title: string
+  query: UseQueryResult<RequestSummary[]>
+  /** 없으면 전부 보여 준다 */
+  statuses?: RequestStatus[]
+  emptyText: string
   listTo: string
-  className?: string
 }) {
-  const [killOpen, setKillOpen] = useState(false)
-  const running = useQuery({
-    queryKey: ['dashboard', 'running'],
-    queryFn: () => requestsApi.list({ status: 'RUNNING', limit: 100 }),
-    refetchInterval: 3000,
-  })
-  const items = running.data?.items ?? []
+  const projects = useProjects()
+  const external = useIsExternal()
+  const all = query.data ?? []
+  const items = statuses ? all.filter((request) => statuses.includes(request.status)) : all
+  const projectName = (id: string) => projects.data?.find((project) => project.id === id)?.name ?? id
+  return (
+    <Sheet title={title} actions={items.length > 0 ? <ToList to={listTo} /> : undefined} flush>
+      {query.isPending && <Spinner />}
+      {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
+      {query.isSuccess && items.length === 0 && <p className="px-4 py-5 text-base text-ink-2">{emptyText}</p>}
+      {items.length > 0 && (
+        <ul className="divide-y divide-rule">
+          {items.slice(0, REQUEST_LIMIT).map((request) => (
+            <li key={request.id}>
+              <RequestLine request={request} projectName={projectName(request.projectId)} external={external} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </Sheet>
+  )
+}
+
+/** 실행 중인 요청이 있을 때만 보인다. 어느 칸을 보고 있든 비상 버튼은 바로 눌러야 하므로 제목 줄에 둔다. */
+export function KillAllAction({ visible }: { visible: boolean }) {
+  const [open, setOpen] = useState(false)
   return (
     <>
-      {(items.length > 0 || running.isError) && (
-        <Sheet
-          title="실행 중"
-          actions={
-            <>
-              {items.length > RUNNING_LIMIT && <SeeAll to={listTo} count={items.length} />}
-              {canKillAll && (
-                // 옆 패널과 제목 줄 높이가 같도록 버튼이 줄을 밀어내지 않게 한다.
-                <Button variant="danger-outline" size="sm" className="-my-1.5" onClick={() => setKillOpen(true)}>
-                  전사 일괄 중단
-                </Button>
-              )}
-            </>
-          }
-          flush
-          className={className}
-        >
-          {running.isError && <ErrorState error={running.error} onRetry={() => running.refetch()} />}
-          {items.length > 0 && (
-            <ul className="divide-y divide-rule">
-              {items.slice(0, RUNNING_LIMIT).map((request) => (
-                <li key={request.id}>
-                  <Link to={`/requests/${request.id}`} className="block px-4 py-3.5 hover:bg-seal-soft/40">
-                    <span className="block truncate text-sm font-medium text-ink">{request.prompt}</span>
-                    <span className="mt-1.5 flex items-center gap-3">
-                      {request.taskSummary && <TaskProgress summary={request.taskSummary} />}
-                      <span className="ml-auto text-xs whitespace-nowrap text-ink-3 tabular-nums">
-                        {ago(request.updatedAt)} 시작
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Sheet>
+      {visible && (
+        <Button variant="danger-outline" onClick={() => setOpen(true)}>
+          전사 일괄 중단
+        </Button>
       )}
-      {/* 입력 중에 실행이 모두 끝나도 창이 사라지지 않게 패널 밖에 둔다. */}
-      {canKillAll && <KillAllDialog open={killOpen} onClose={() => setKillOpen(false)} />}
+      {/* 입력 중에 실행이 모두 끝나도 창이 사라지지 않게 버튼 밖에 둔다. */}
+      <KillAllDialog open={open} onClose={() => setOpen(false)} />
     </>
   )
 }
@@ -203,7 +213,7 @@ function StatusCounts({
       <div className="grid grid-cols-[repeat(3,minmax(0,11rem))] gap-x-10">
         {groups.map((group) => (
           <div key={group.label} className="min-w-0">
-            <h4 className="mb-1.5 text-[0.8125rem] text-ink-3">{group.label}</h4>
+            <h4 className="mb-1.5 text-[0.875rem] text-ink-3">{group.label}</h4>
             <ul>
               {group.statuses.map((status) => (
                 <li key={status}>
@@ -230,7 +240,7 @@ function DepartmentCompare({ departments }: { departments: DepartmentStat[] }) {
       <h3 className={SUBTITLE}>부서별 비교</h3>
       <table className="w-full text-sm">
         <thead>
-          <tr className="text-[0.8125rem] text-ink-3">
+          <tr className="text-[0.875rem] text-ink-3">
             <th scope="col" className="pb-1.5 text-left font-normal">
               부서
             </th>
@@ -277,7 +287,7 @@ export function DashboardDetails({
 
   return (
     <details className="group rounded-xl border border-rule bg-sheet shadow-card">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-[0.9375rem] font-semibold hover:bg-sheet-alt [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-base font-semibold hover:bg-sheet-alt [&::-webkit-details-marker]:hidden">
         현황 자세히
         <ChevronDown size={16} className="text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
