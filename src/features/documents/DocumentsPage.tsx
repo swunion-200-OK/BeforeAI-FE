@@ -1,12 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { FileText, History } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { documentsApi, requestsApi } from '../../api/endpoints'
 import { ApiError, errorMessage } from '../../api/errors'
 import type { DocumentSummary, DocumentVersionSummary, RequestStatus } from '../../api/types'
 import { DiffViewer } from '../../components/DiffViewer'
-import { Timeline, UserChip } from '../../components/rich'
 import { toast } from '../../components/toast'
 import {
   Banner,
@@ -15,11 +13,10 @@ import {
   EmptyState,
   ErrorState,
   Mono,
-  PageHeader,
   Select,
   Sheet,
   Spinner,
-  Tabs,
+  Tooltip,
 } from '../../components/ui'
 import { makeUnifiedDiff } from '../../lib/diff'
 import { diffStats } from '../../lib/explain'
@@ -41,19 +38,24 @@ const IN_PROGRESS: RequestStatus[] = [
   'ROLLING_BACK',
 ]
 
-type ViewTab = 'body' | 'diff'
-
-function VersionView({ document, version }: { document: DocumentSummary; version: number }) {
-  const [tab, setTab] = useState<ViewTab>('body')
+/** 고른 버전의 본문, 또는 바로 앞 버전과의 비교 */
+function VersionView({
+  document,
+  version,
+  comparing,
+}: {
+  document: DocumentSummary
+  version: number
+  comparing: boolean
+}) {
   const current = useQuery({
     queryKey: ['document-version', document.id, version],
     queryFn: () => documentsApi.version(document.id, version),
   })
-  const hasPrevious = version > 1
   const previous = useQuery({
     queryKey: ['document-version', document.id, version - 1],
     queryFn: () => documentsApi.version(document.id, version - 1),
-    enabled: hasPrevious && tab === 'diff',
+    enabled: comparing,
   })
   const diff = useMemo(
     () => (previous.data && current.data ? makeUnifiedDiff(document.path, previous.data.body, current.data.body) : null),
@@ -63,93 +65,20 @@ function VersionView({ document, version }: { document: DocumentSummary; version
 
   if (current.isPending) return <Spinner />
   if (current.isError) return <ErrorState error={current.error} onRetry={() => current.refetch()} />
-
+  if (!comparing) return <MarkdownText body={current.data.body} />
+  if (previous.isPending) return <Spinner />
+  if (previous.isError) return <ErrorState error={previous.error} onRetry={() => previous.refetch()} />
   return (
     <>
-      <Tabs<ViewTab>
-        value={tab}
-        onChange={setTab}
-        tabs={[
-          { id: 'body', label: '본문' },
-          { id: 'diff', label: '이전 버전과 비교' },
-        ]}
-      />
-      <div className="quiet-scroll h-[calc(100dvh-25rem)] min-h-64 overflow-y-auto">
-        {tab === 'body' ? (
-          <MarkdownText body={current.data.body} />
-        ) : !hasPrevious ? (
-          <EmptyState title="첫 버전입니다">비교할 이전 버전이 없습니다.</EmptyState>
-        ) : previous.isPending ? (
-          <Spinner />
-        ) : previous.isError ? (
-          <ErrorState error={previous.error} onRetry={() => previous.refetch()} />
-        ) : (
-          <>
-            {stats && (
-              <p className="mb-2 flex items-center gap-1.5 text-xs text-ink-3 tabular-nums">
-                v{version - 1}에서 v{version}으로
-                <span className="font-medium text-low">+{stats.added}</span>
-                <span className="font-medium text-high">−{stats.removed}</span>
-              </p>
-            )}
-            {diff && <DiffViewer diff={diff} />}
-          </>
-        )}
-      </div>
+      {stats && (
+        <p className="mb-2 flex items-center gap-1.5 text-[0.8125rem] text-ink-3 tabular-nums">
+          v{version - 1}에서 v{version}으로
+          <span className="font-medium text-low">+{stats.added}</span>
+          <span className="font-medium text-high">−{stats.removed}</span>
+        </p>
+      )}
+      {diff && <DiffViewer diff={diff} />}
     </>
-  )
-}
-
-function VersionTimeline({
-  document,
-  items,
-  selected,
-  onSelect,
-}: {
-  document: DocumentSummary
-  items: DocumentVersionSummary[]
-  selected: number
-  onSelect: (version: number) => void
-}) {
-  return (
-    <Timeline
-      items={items.map((item) => {
-        const isSelected = item.version === selected
-        return {
-          key: String(item.version),
-          tone: item.version === document.currentVersion ? 'current' : 'done',
-          title: (
-            <span className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => onSelect(item.version)}
-                className={`rounded px-1 font-semibold hover:underline ${
-                  isSelected ? 'bg-seal-soft text-seal-dark' : 'text-seal'
-                }`}
-              >
-                v{item.version}
-              </button>
-              {item.version === document.currentVersion && (
-                <span className="rounded bg-low-soft px-1.5 text-xs font-medium text-low">현재 적용</span>
-              )}
-            </span>
-          ),
-          meta: (
-            <span className="mt-1 flex flex-col gap-1">
-              <UserChip name={item.createdBy.name} sub={formatDateTime(item.createdAt)} />
-              {item.requestId ? (
-                <Link to={`/requests/${item.requestId}`} className="font-mono text-seal hover:underline">
-                  {item.requestId}
-                </Link>
-              ) : (
-                <span>요청 없이 등록</span>
-              )}
-            </span>
-          ),
-        }
-      })}
-    />
   )
 }
 
@@ -159,6 +88,7 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [confirming, setConfirming] = useState(false)
   const [rollbackRefused, setRollbackRefused] = useState(false)
+  const [wantsCompare, setWantsCompare] = useState(false)
 
   const versions = useQuery({
     queryKey: ['document-versions', document.id],
@@ -195,110 +125,109 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
     onSettled: () => setConfirming(false),
   })
 
-  if (versions.isPending) return <div className="col-span-2"><Spinner /></div>
-  if (versions.isError) {
-    return (
-      <div className="col-span-2">
-        <ErrorState error={versions.error} onRetry={() => versions.refetch()} />
-      </div>
-    )
-  }
+  if (versions.isPending) return <Spinner />
+  if (versions.isError) return <ErrorState error={versions.error} onRetry={() => versions.refetch()} />
   if (items.length === 0) {
-    return (
-      <Sheet className="col-span-2">
-        <EmptyState title="저장된 버전이 없습니다">문서 작업을 적용하면 버전이 쌓입니다.</EmptyState>
-      </Sheet>
-    )
+    return <EmptyState title="저장된 버전이 없습니다">문서 작업을 적용하면 버전이 쌓입니다.</EmptyState>
   }
 
   const selectedItem = items.find((item) => item.version === selected)
-  const rollbackBlockedReason = isCurrent
-    ? '지금 적용된 버전입니다. 되돌릴 이전 버전을 고르세요'
-    : !appliedBy
-      ? '이 문서를 적용한 요청이 없어 되돌릴 수 없습니다'
-      : statusBlocks
-        ? `이 문서를 마지막으로 적용한 요청이 ${REQUEST_STATUS_LABEL[requestStatus]} 상태라 롤백할 수 없습니다`
-        : null
+  const rollbackBlockedReason = !appliedBy
+    ? '이 문서를 적용한 요청이 없어 되돌릴 수 없습니다'
+    : statusBlocks
+      ? `이 문서를 마지막으로 적용한 요청이 ${REQUEST_STATUS_LABEL[requestStatus]} 상태라 롤백할 수 없습니다`
+      : null
   const showBlockedNotice = !isCurrent && Boolean(appliedBy) && (statusBlocks || rollbackRefused)
   const stillRunning = requestStatus !== undefined && IN_PROGRESS.includes(requestStatus)
+  // 첫 버전은 비교할 앞 버전이 없다.
+  const canCompare = selected > 1
+  const comparing = wantsCompare && canCompare
+
+  const compareToggle = (
+    <label className={`inline-flex items-center gap-2 text-sm ${canCompare ? 'text-ink-2' : 'text-ink-3'}`}>
+      <input
+        type="checkbox"
+        checked={comparing}
+        disabled={!canCompare}
+        onChange={(event) => setWantsCompare(event.target.checked)}
+        className="size-4 accent-seal"
+      />
+      이전 버전과 비교
+    </label>
+  )
 
   return (
     <>
-      <Sheet
-        title={
-          <>
-            {document.title} <span className="font-normal text-ink-3">v{selected}</span>
-            {!isCurrent && (
-              <span className="rounded bg-medium-soft px-1.5 text-xs font-medium text-medium">과거 버전</span>
-            )}
-          </>
-        }
-        icon={<FileText size={16} aria-hidden />}
-        actions={
-          <span className="flex items-center gap-3 text-xs text-ink-3">
-            <Mono className="text-ink-2">{document.path}</Mono>
-            {selectedItem && (
-              <span>
-                {selectedItem.createdBy.name}, {formatDateTime(selectedItem.createdAt)}
-              </span>
+      <h2 className="text-[1.5rem] font-bold tracking-tight">{document.title}</h2>
+      <Mono className="text-ink-3">{document.path}</Mono>
+
+      <div className="mt-4 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="w-36 shrink-0">
+          <Select
+            aria-label="버전"
+            value={selected}
+            onChange={(event) => setSearchParams({ v: event.target.value }, { replace: true })}
+          >
+            {items.map((item) => (
+              <option key={item.version} value={item.version}>
+                v{item.version}
+                {item.version === document.currentVersion ? ' 현재 적용' : ''}
+              </option>
+            ))}
+          </Select>
+        </div>
+        {canCompare ? compareToggle : <Tooltip text="첫 버전이라 비교할 이전 버전이 없습니다">{compareToggle}</Tooltip>}
+        {selectedItem && (
+          <span className="text-[0.8125rem] text-ink-3">
+            {selectedItem.createdBy.name}, {formatDateTime(selectedItem.createdAt)},{' '}
+            {selectedItem.requestId ? (
+              <>
+                적용 요청{' '}
+                <Link to={`/requests/${selectedItem.requestId}`} className="font-mono hover:text-seal hover:underline">
+                  {selectedItem.requestId}
+                </Link>
+              </>
+            ) : (
+              '요청 없이 등록'
             )}
           </span>
-        }
-      >
-        <VersionView key={selected} document={document} version={selected} />
-      </Sheet>
-
-      <div className="sticky top-4 flex flex-col gap-4">
-        <Sheet title="버전 기록" icon={<History size={16} aria-hidden />}>
-          <div className="quiet-scroll max-h-[calc(100dvh-30rem)] min-h-32 overflow-y-auto pr-1">
-            <VersionTimeline
-              document={document}
-              items={items}
-              selected={selected}
-              onSelect={(version) => setSearchParams({ v: String(version) }, { replace: true })}
-            />
+        )}
+        {!isCurrent && (
+          <div className="ml-auto">
+            <Button
+              internalOnly
+              disabled={Boolean(rollbackBlockedReason)}
+              disabledReason={rollbackBlockedReason}
+              onClick={() => setConfirming(true)}
+            >
+              이 버전으로 롤백
+            </Button>
           </div>
-        </Sheet>
-
-        <Sheet title={`v${selected}으로 되돌리기`}>
-          <div className="flex flex-col gap-3">
-            {showBlockedNotice ? (
-              <Banner tone="warning" title="지금은 이 문서를 롤백할 수 없습니다">
-                이 문서를 마지막으로 적용한{' '}
-                <Link to={`/requests/${appliedBy}`} className="underline">
-                  요청
-                </Link>
-                {stillRunning ? (
-                  <>
-                    이 {requestStatus && REQUEST_STATUS_LABEL[requestStatus]} 상태입니다. 그 요청이 끝난 뒤 다시 시도해 주세요.
-                  </>
-                ) : (
-                  <>
-                    이 이미 롤백을 마쳤거나 진행 중입니다. 이전 내용으로 되돌리려면 작업 요청에서 문서 수정을 새 요청으로
-                    만들어 주세요.
-                  </>
-                )}
-              </Banner>
-            ) : (
-              <p className="text-[0.8125rem] text-ink-2">
-                {rollbackBlockedReason ?? '바로 되돌리지 않습니다. 롤백 Plan도 같은 승인 절차를 거친 뒤 새 버전으로 저장됩니다.'}
-              </p>
-            )}
-            <div className="[&>span]:flex [&>span]:w-full">
-              <Button
-                variant="secondary"
-                className="w-full"
-                internalOnly
-                disabled={Boolean(rollbackBlockedReason)}
-                disabledReason={rollbackBlockedReason}
-                onClick={() => setConfirming(true)}
-              >
-                이 버전으로 롤백
-              </Button>
-            </div>
-          </div>
-        </Sheet>
+        )}
       </div>
+
+      {showBlockedNotice && (
+        <p className="mb-3 text-sm text-medium">
+          이 문서를 마지막으로 적용한{' '}
+          <Link to={`/requests/${appliedBy}`} className="underline">
+            요청
+          </Link>
+          {stillRunning ? (
+            <>이 {requestStatus && REQUEST_STATUS_LABEL[requestStatus]} 상태입니다. 그 요청이 끝난 뒤 다시 시도해 주세요.</>
+          ) : (
+            <>
+              이 이미 롤백을 마쳤거나 진행 중입니다. 이전 내용으로 되돌리려면 작업 요청에서 문서 수정을 새 요청으로 만들어
+              주세요.
+            </>
+          )}
+        </p>
+      )}
+
+      <Sheet flush>
+        <div className="px-8 py-6">
+          <VersionView key={selected} document={document} version={selected} comparing={comparing} />
+        </div>
+      </Sheet>
 
       <ConfirmModal
         open={confirming}
@@ -308,11 +237,8 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
         onConfirm={() => rollback.mutate()}
         onClose={() => setConfirming(false)}
       >
-        <p>
-          바로 되돌리지 않습니다. 롤백 Plan도 같은 승인 절차(해시 확인, 서명, 실행기 검증)를 거친 뒤 실행되며, 실행되면 새
-          버전으로 저장됩니다.
-        </p>
-        <p className="mt-2">코드·DB·배포 작업은 롤백 기능이 없고, 문서만 되돌릴 수 있습니다.</p>
+        바로 되돌리지 않습니다. 롤백 Plan도 같은 승인 절차(해시 확인, 서명, 실행기 검증)를 거친 뒤 실행되며, 실행되면 새
+        버전으로 저장됩니다.
       </ConfirmModal>
     </>
   )
@@ -341,100 +267,72 @@ export default function DocumentsPage() {
   // 문서를 고르지 않았으면 첫 문서를 바로 보여 준다.
   if (!documentId && listed.length > 0) return <Navigate to={`/documents/${listed[0].id}`} replace />
 
-  return (
-    <>
-      <PageHeader
-        title="문서"
-        description="적용할 때마다 버전이 저장되고, 이전 버전으로 되돌릴 수 있습니다."
-        actions={
-          <div className="w-56">
-            <Select
-              aria-label="프로젝트"
-              value={projectId}
-              onChange={(event) => {
-                setChosenProjectId(event.target.value)
-                navigate('/documents')
-              }}
-            >
-              {projects.data?.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        }
-      />
+  if (projects.isError) return <ErrorState error={projects.error} onRetry={() => projects.refetch()} />
+  if (documents.isError) return <ErrorState error={documents.error} onRetry={() => documents.refetch()} />
+  if (projects.isPending || documents.isPending) return <Spinner />
 
-      {pendingDocs.length > 0 && (
-        <div className="mb-4">
-          <Banner tone="info" title={`적용을 기다리는 문서 작업이 ${pendingDocs.length}건 있습니다`}>
-            <ul className="mt-0.5 flex flex-wrap gap-x-4">
-              {pendingDocs.map((item) => (
-                <li key={`${item.requestId}-${item.taskId}`}>
-                  <Link to={`/approvals/${item.requestId}`} className="underline">
+  return (
+    <div className="grid grid-cols-[15rem_minmax(0,1fr)] items-start gap-8">
+      <h1 className="sr-only">문서</h1>
+      <nav aria-label="문서 목록" className="sticky top-6 flex flex-col gap-3">
+        <Select
+          aria-label="프로젝트"
+          value={projectId}
+          onChange={(event) => {
+            setChosenProjectId(event.target.value)
+            navigate('/documents')
+          }}
+        >
+          {projects.data.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </Select>
+        <ul className="flex flex-col gap-0.5">
+          {listed.map((document) => {
+            const active = document.id === documentId
+            return (
+              <li key={document.id}>
+                <Link
+                  to={`/documents/${document.id}`}
+                  aria-current={active ? 'page' : undefined}
+                  className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${
+                    active ? 'bg-seal-soft font-medium text-seal-dark' : 'text-ink hover:bg-sheet'
+                  }`}
+                >
+                  <span className="truncate">{document.title}</span>
+                  <span className="shrink-0 text-xs font-normal text-ink-3 tabular-nums">v{document.currentVersion}</span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
+
+      <div className="min-w-0">
+        {pendingDocs.length > 0 && (
+          <div className="mb-4">
+            <Banner tone="info">
+              <span className="flex flex-wrap gap-x-3">
+                <span>적용을 기다리는 문서 작업이 {pendingDocs.length}건 있습니다.</span>
+                {pendingDocs.map((item) => (
+                  <Link key={`${item.requestId}-${item.taskId}`} to={`/approvals/${item.requestId}`} className="underline">
                     {item.taskTitle}
                   </Link>
-                </li>
-              ))}
-            </ul>
-          </Banner>
-        </div>
-      )}
-
-      {projects.isError ? (
-        <ErrorState error={projects.error} onRetry={() => projects.refetch()} />
-      ) : documents.isError ? (
-        <ErrorState error={documents.error} onRetry={() => documents.refetch()} />
-      ) : projects.isPending || documents.isPending ? (
-        <Spinner />
-      ) : (
-        <div className="grid grid-cols-[14rem_minmax(0,1fr)_18rem] items-start gap-4 2xl:grid-cols-[17rem_minmax(0,1fr)_21rem]">
-          <Sheet title="문서 목록" flush className="sticky top-4">
-            {listed.length === 0 ? (
-              <EmptyState title="문서가 없습니다">문서 작업을 적용하면 여기에 나타납니다.</EmptyState>
-            ) : (
-              <ul className="quiet-scroll max-h-[calc(100dvh-17rem)] overflow-y-auto">
-                {listed.map((document) => {
-                  const active = document.id === documentId
-                  return (
-                    <li key={document.id} className="border-b border-rule last:border-b-0">
-                      <Link
-                        to={`/documents/${document.id}`}
-                        aria-current={active ? 'page' : undefined}
-                        className={`block px-4 py-2.5 hover:bg-paper ${
-                          active ? 'bg-seal-soft shadow-[inset_3px_0_0_var(--color-seal)]' : ''
-                        }`}
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className={`truncate text-sm font-medium ${active ? 'text-seal-dark' : 'text-ink'}`}>
-                            {document.title}
-                          </span>
-                          <span className="shrink-0 rounded bg-paper px-1.5 text-xs text-ink-2 tabular-nums">
-                            v{document.currentVersion}
-                          </span>
-                        </span>
-                        <span className="mt-0.5 block truncate font-mono text-xs text-ink-3">{document.path}</span>
-                        <span className="block text-xs text-ink-3">{formatDateTime(document.updatedAt)}</span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </Sheet>
-
-          {selected ? (
-            <DocumentDetail key={selected.id} document={selected} />
-          ) : (
-            <Sheet className="col-span-2">
-              <EmptyState title={documentId ? '문서를 찾을 수 없습니다' : '문서를 고르세요'}>
-                왼쪽 목록에서 문서를 고르면 버전과 본문을 볼 수 있습니다.
-              </EmptyState>
-            </Sheet>
-          )}
-        </div>
-      )}
-    </>
+                ))}
+              </span>
+            </Banner>
+          </div>
+        )}
+        {selected ? (
+          <DocumentDetail key={selected.id} document={selected} />
+        ) : listed.length === 0 ? (
+          <EmptyState title="문서가 없습니다">문서 작업을 적용하면 여기에 나타납니다.</EmptyState>
+        ) : (
+          <EmptyState title={documentId ? '문서를 찾을 수 없습니다' : '문서를 고르세요'} />
+        )}
+      </div>
+    </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChevronRight, FileCode2, Folder, FolderOpen, Loader2 } from 'lucide-react'
+import { ChevronRight, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { errorMessage } from '../../api/errors'
 import { editorApi } from '../../api/endpoints'
@@ -13,7 +13,7 @@ interface TreeProps {
   onOpenFile: (path: string) => void
 }
 
-const indent = (depth: number) => ({ paddingLeft: `${depth * 14 + 8}px` })
+const indent = (depth: number) => ({ paddingLeft: `${depth * 14 + 10}px` })
 
 function DirectoryEntries({ path, depth, ...tree }: TreeProps & { path: string; depth: number }) {
   const listing = useQuery({
@@ -46,10 +46,9 @@ function DirectoryEntries({ path, depth, ...tree }: TreeProps & { path: string; 
 
 function TreeEntry({ entry, depth, ...tree }: TreeProps & { entry: FileEntry; depth: number }) {
   const [open, setOpen] = useState(false)
-  const rowClass = 'flex w-full items-center gap-1.5 py-1.5 pr-2 text-left text-[0.8125rem] hover:bg-paper'
+  const rowClass = 'flex w-full items-center gap-1.5 py-1.5 pr-2 text-left text-sm hover:bg-paper'
 
   if (entry.type === 'dir') {
-    const Icon = open ? FolderOpen : Folder
     return (
       <li>
         <button
@@ -59,8 +58,7 @@ function TreeEntry({ entry, depth, ...tree }: TreeProps & { entry: FileEntry; de
           className={`${rowClass} text-ink-2`}
           style={indent(depth)}
         >
-          <ChevronRight size={13} className={`shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden />
-          <Icon size={14} className="shrink-0 text-ink-3" aria-hidden />
+          <ChevronRight size={14} className={`shrink-0 text-ink-3 transition-transform ${open ? 'rotate-90' : ''}`} aria-hidden />
           <span className="truncate">{entry.name}</span>
         </button>
         {/* 펼칠 때 처음으로 하위 목록을 읽는다 */}
@@ -80,8 +78,7 @@ function TreeEntry({ entry, depth, ...tree }: TreeProps & { entry: FileEntry; de
         className={`${rowClass} ${active ? 'bg-seal-soft font-medium text-seal-dark' : 'text-ink'}`}
         style={indent(depth)}
       >
-        <span className="w-[13px] shrink-0" aria-hidden />
-        <FileCode2 size={14} className="shrink-0 text-ink-3" aria-hidden />
+        <span className="w-3.5 shrink-0" aria-hidden />
         <span className="flex-1 truncate">{entry.name}</span>
         {modified && <span className="shrink-0 text-xs font-medium text-medium">수정됨</span>}
       </button>
@@ -91,7 +88,7 @@ function TreeEntry({ entry, depth, ...tree }: TreeProps & { entry: FileEntry; de
 
 export function FileTree(props: TreeProps) {
   return (
-    <div className="py-1">
+    <div className="py-2">
       <DirectoryEntries path="" depth={0} {...props} />
     </div>
   )

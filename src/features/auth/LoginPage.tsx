@@ -20,6 +20,7 @@ const DEMO_ACCOUNTS = [
   { employeeNo: 'E1001', name: '최팀장', role: '백엔드 부서 관리자' },
   { employeeNo: 'E2001', name: '정팀장', role: '인프라 부서 관리자' },
   { employeeNo: 'E0001', name: '박CTO', role: '관리자' },
+  { employeeNo: 'E2101', name: '오인프라', role: '승인 키 없음' },
   { employeeNo: 'E1131', name: '강신입', role: '최초 로그인' },
 ]
 const DEMO_PASSWORD = 'demo1234!'

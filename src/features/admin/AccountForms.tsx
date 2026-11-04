@@ -1,10 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Building2, Plus } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import { useMe } from '../../app/AuthProvider'
 import { adminApi } from '../../api/endpoints'
 import type { Role, User } from '../../api/types'
 import { toast } from '../../components/toast'
-import { Banner, Button, ErrorState, Field, Modal, Mono, Select, Sheet, TextInput } from '../../components/ui'
+import { Banner, Button, ErrorState, Field, Modal, Mono, Select, TextInput } from '../../components/ui'
 import { ROLE_LABEL } from '../../lib/labels'
 import { useDepartments, useRefreshAll } from '../../lib/queries'
 import { usersQuery } from './adminQueries'
@@ -72,9 +72,16 @@ export function PasswordModal({ issued, onClose }: { issued: IssuedPassword | nu
   )
 }
 
-/** 표 옆에 늘 펴 둔 계정 생성 폼. 만들면 초기 비밀번호를 보여 주고 폼을 비운다. */
-export function CreateUserPanel({ onIssued }: { onIssued: (issued: IssuedPassword) => void }) {
+/** 만들면 창을 닫고 초기 비밀번호를 보여 준다. 사번이 겹치면 입력값을 둔 채 오류만 알린다. */
+export function CreateUserModal({
+  onClose,
+  onIssued,
+}: {
+  onClose: () => void
+  onIssued: (issued: IssuedPassword) => void
+}) {
   const refresh = useRefreshAll()
+  const formId = useId()
   const [employeeNo, setEmployeeNo] = useState('')
   const [name, setName] = useState('')
   const [role, setRole] = useState<Role>('EMPLOYEE')
@@ -91,71 +98,88 @@ export function CreateUserPanel({ onIssued }: { onIssued: (issued: IssuedPasswor
       }),
     onSuccess: async (result) => {
       onIssued({ name: result.user.name, password: result.initialPassword })
-      setEmployeeNo('')
-      setName('')
-      setRole('EMPLOYEE')
-      setDepartmentId(null)
-      setSlackUserId('')
+      onClose()
       await refresh()
     },
   })
   return (
-    <Sheet title="계정 생성" icon={<Plus size={16} aria-hidden />}>
+    <Modal
+      open
+      title="계정 추가"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>닫기</Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            disabled={!employeeNo.trim() || !name.trim()}
+            disabledReason="사번과 이름을 입력해 주세요"
+            loading={create.isPending}
+          >
+            계정 생성
+          </Button>
+        </>
+      }
+    >
       <form
-        className="flex flex-col gap-3"
+        id={formId}
+        className="grid grid-cols-2 gap-3"
         onSubmit={(event) => {
           event.preventDefault()
           if (employeeNo.trim() && name.trim()) create.mutate()
         }}
       >
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="사번">
-            {(id) => <TextInput id={id} value={employeeNo} onChange={(event) => setEmployeeNo(event.target.value)} />}
-          </Field>
-          <Field label="이름">
-            {(id) => <TextInput id={id} value={name} onChange={(event) => setName(event.target.value)} />}
-          </Field>
-          <Field label="역할">{(id) => <RoleSelect id={id} value={role} onChange={setRole} />}</Field>
-          <Field label="부서">{(id) => <DepartmentSelect id={id} value={departmentId} onChange={setDepartmentId} />}</Field>
-        </div>
-        <Field label="Slack 사용자 ID" hint="비워 두면 나중에 지정할 수 있습니다">
-          {(id) => <TextInput id={id} value={slackUserId} onChange={(event) => setSlackUserId(event.target.value)} />}
+        <Field label="사번">
+          {(id) => <TextInput id={id} value={employeeNo} onChange={(event) => setEmployeeNo(event.target.value)} />}
         </Field>
-        <Button
-          type="submit"
-          variant="primary"
-          disabled={!employeeNo.trim() || !name.trim()}
-          disabledReason="사번과 이름을 입력해 주세요"
-          loading={create.isPending}
-          className="w-full"
-        >
-          계정 생성
-        </Button>
-        <p className="text-xs text-ink-3">회원가입은 없습니다. 만들면 초기 비밀번호가 발급됩니다.</p>
+        <Field label="이름">
+          {(id) => <TextInput id={id} value={name} onChange={(event) => setName(event.target.value)} />}
+        </Field>
+        <Field label="역할">{(id) => <RoleSelect id={id} value={role} onChange={setRole} />}</Field>
+        <Field label="부서">{(id) => <DepartmentSelect id={id} value={departmentId} onChange={setDepartmentId} />}</Field>
+        <div className="col-span-2">
+          <Field label="Slack 사용자 ID" hint="비워 두면 나중에 지정할 수 있습니다">
+            {(id) => <TextInput id={id} value={slackUserId} onChange={(event) => setSlackUserId(event.target.value)} />}
+          </Field>
+        </div>
       </form>
-    </Sheet>
+    </Modal>
   )
 }
 
-/** 표의 "변경" 버튼으로 연다. 고를 때마다 key를 바꿔 끼워 입력값을 그 사용자 것으로 맞춘다. */
-export function EditUserModal({ user, onClose }: { user: User | null; onClose: () => void }) {
+/** 표의 "관리" 버튼으로 연다. 역할·부서·Slack ID 변경과 비밀번호 초기화, 비활성화를 여기서 한다. */
+export function ManageUserModal({
+  user,
+  onClose,
+  onResetPassword,
+  onDeactivate,
+  onActivate,
+}: {
+  user: User
+  onClose: () => void
+  onResetPassword: () => void
+  onDeactivate: () => void
+  onActivate: () => void
+}) {
+  const me = useMe()
   const refresh = useRefreshAll()
-  const [role, setRole] = useState<Role>(user?.role ?? 'EMPLOYEE')
-  const [departmentId, setDepartmentId] = useState(user?.departmentId ?? null)
-  const [slackUserId, setSlackUserId] = useState(user?.slackUserId ?? '')
+  const [role, setRole] = useState<Role>(user.role)
+  const [departmentId, setDepartmentId] = useState(user.departmentId)
+  const [slackUserId, setSlackUserId] = useState(user.slackUserId ?? '')
   const update = useMutation({
-    mutationFn: () =>
-      adminApi.updateUser((user as User).id, { role, departmentId, slackUserId: slackUserId.trim() || null }),
+    mutationFn: () => adminApi.updateUser(user.id, { role, departmentId, slackUserId: slackUserId.trim() || null }),
     onSuccess: async () => {
-      toast.success(`${user?.name} 계정을 변경했습니다`)
+      toast.success(`${user.name} 계정을 변경했습니다`)
       await refresh()
       onClose()
     },
   })
   return (
     <Modal
-      open={Boolean(user)}
-      title={`${user?.name} 계정 변경`}
+      open
+      title={`${user.name} 계정 관리`}
       onClose={onClose}
       footer={
         <>
@@ -172,12 +196,27 @@ export function EditUserModal({ user, onClose }: { user: User | null; onClose: (
         <Field label="Slack 사용자 ID">
           {(id) => <TextInput id={id} value={slackUserId} onChange={(event) => setSlackUserId(event.target.value)} />}
         </Field>
+        <div className="mt-2 flex gap-2 border-t border-rule pt-4">
+          <Button onClick={onResetPassword}>비밀번호 초기화</Button>
+          {user.active ? (
+            <Button
+              variant="danger-outline"
+              disabled={user.id === me.id}
+              disabledReason="지금 로그인한 계정은 비활성화할 수 없습니다"
+              onClick={onDeactivate}
+            >
+              비활성화
+            </Button>
+          ) : (
+            <Button onClick={onActivate}>활성화</Button>
+          )}
+        </div>
       </div>
     </Modal>
   )
 }
 
-export function DepartmentsPanel() {
+export function DepartmentsModal({ onClose }: { onClose: () => void }) {
   const refresh = useRefreshAll()
   const departments = useDepartments()
   const users = useQuery(usersQuery)
@@ -193,13 +232,13 @@ export function DepartmentsPanel() {
   const headcount = (departmentId: string) =>
     users.data?.filter((user) => user.departmentId === departmentId && user.active).length ?? 0
   return (
-    <Sheet title="부서" icon={<Building2 size={16} aria-hidden />}>
+    <Modal open title="부서 관리" onClose={onClose}>
       {departments.isError && <ErrorState error={departments.error} onRetry={() => departments.refetch()} />}
-      <ul className="mb-3 divide-y divide-rule rounded-lg border border-rule text-[0.8125rem]">
+      <ul className="mb-4 divide-y divide-rule text-sm">
         {departments.data?.map((department) => (
-          <li key={department.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+          <li key={department.id} className="flex items-center justify-between gap-2 py-2">
             <span className="font-medium text-ink">{department.name}</span>
-            <span className="text-xs text-ink-3 tabular-nums">{headcount(department.id)}명</span>
+            <span className="text-ink-3 tabular-nums">{headcount(department.id)}명</span>
           </li>
         ))}
       </ul>
@@ -215,10 +254,16 @@ export function DepartmentsPanel() {
             {(id) => <TextInput id={id} value={name} onChange={(event) => setName(event.target.value)} />}
           </Field>
         </div>
-        <Button type="submit" disabled={!name.trim()} disabledReason="부서 이름을 입력해 주세요" loading={create.isPending}>
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={!name.trim()}
+          disabledReason="부서 이름을 입력해 주세요"
+          loading={create.isPending}
+        >
           부서 생성
         </Button>
       </form>
-    </Sheet>
+    </Modal>
   )
 }

@@ -1,16 +1,13 @@
 import { useMutation, useQueries } from '@tanstack/react-query'
-import { Hourglass, Inbox, Lock, Plus, ShieldBan, Unlock } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown, Plus } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { forbiddenApi, type ForbiddenInput } from '../../api/endpoints'
 import type { ForbiddenProposal, ForbiddenProposalStatus, ForbiddenRule } from '../../api/types'
-import { TaskTypeTag } from '../../components/badges'
-import { SegmentedTabs, StatCard, UserChip } from '../../components/rich'
 import { toast } from '../../components/toast'
 import {
   Banner,
   Button,
   ConfirmModal,
-  EmptyState,
   ErrorState,
   Field,
   Modal,
@@ -21,53 +18,37 @@ import {
   Spinner,
 } from '../../components/ui'
 import { formatDateTime } from '../../lib/format'
+import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames, useDepartments, useRefreshAll } from '../../lib/queries'
 import { proposalsQuery } from '../admin/adminQueries'
 import { ForbiddenFields } from './ForbiddenFields'
 import { EMPTY_FORBIDDEN_INPUT, isForbiddenInputComplete } from './forbiddenInput'
 import { ForbiddenRuleTable, RELEASE_PENDING_NOTICE } from './ForbiddenRuleTable'
 
-const PROPOSAL_STATUS_LABEL: Record<ForbiddenProposalStatus, string> = {
-  OPEN: '검토 대기',
-  CONFIRMED: '확정',
-  REJECTED: '반려',
-}
+const STATUSES: ForbiddenProposalStatus[] = ['OPEN', 'CONFIRMED', 'REJECTED']
 
-const PROPOSAL_STATUS_CLASS: Record<ForbiddenProposalStatus, string> = {
-  OPEN: 'bg-seal-soft text-seal-dark',
-  CONFIRMED: 'bg-forbidden-soft text-forbidden',
-  REJECTED: 'bg-high-soft text-high',
-}
-
-const STATUSES = Object.keys(PROPOSAL_STATUS_LABEL) as ForbiddenProposalStatus[]
-
-function AddRuleModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function AddRuleModal({ onClose }: { onClose: () => void }) {
   const refresh = useRefreshAll()
   const { data: departments } = useDepartments()
   const [departmentId, setDepartmentId] = useState('')
   const [input, setInput] = useState<ForbiddenInput>(EMPTY_FORBIDDEN_INPUT)
   const selected = departmentId || departments?.[0]?.id || ''
-  const close = () => {
-    setDepartmentId('')
-    setInput(EMPTY_FORBIDDEN_INPUT)
-    onClose()
-  }
   const add = useMutation({
     mutationFn: () => forbiddenApi.addRule({ ...input, departmentId: selected }),
     onSuccess: async () => {
       toast.success('금지 규칙을 추가했습니다. 실행기 로컬 정책에도 바로 반영됩니다')
       await refresh()
-      close()
+      onClose()
     },
   })
   return (
     <Modal
-      open={open}
+      open
       title="금지 규칙 직접 추가"
-      onClose={close}
+      onClose={onClose}
       footer={
         <>
-          <Button onClick={close}>닫기</Button>
+          <Button onClick={onClose}>닫기</Button>
           <Button
             variant="primary"
             disabled={!selected || !isForbiddenInputComplete(input)}
@@ -98,58 +79,54 @@ function AddRuleModal({ open, onClose }: { open: boolean; onClose: () => void })
   )
 }
 
-function ProposalCard({
-  proposal,
-  onConfirm,
-  onReject,
+/** 제안 표. 마지막 칸은 처리할 제안이면 확정·반려 버튼, 지난 제안이면 결과다. */
+function ProposalTable({
+  proposals,
+  renderLast,
 }: {
-  proposal: ForbiddenProposal
-  onConfirm: () => void
-  onReject: () => void
+  proposals: ForbiddenProposal[]
+  renderLast: (proposal: ForbiddenProposal, index: number) => ReactNode
 }) {
   const departmentName = useDepartmentNames()
   return (
-    <article className="rounded-lg border border-rule bg-sheet p-3">
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[0.8125rem] font-semibold text-ink">{departmentName(proposal.departmentId)}</span>
-        <TaskTypeTag type={proposal.taskType} />
-        <span className="rounded bg-paper px-1.5 py-0.5">
-          <Mono>{proposal.target}</Mono>
-        </span>
-        {proposal.status !== 'OPEN' && (
-          <span className={`ml-auto rounded px-1.5 py-0.5 text-xs font-medium ${PROPOSAL_STATUS_CLASS[proposal.status]}`}>
-            {PROPOSAL_STATUS_LABEL[proposal.status]}
-          </span>
-        )}
-      </div>
-      <p className="mt-2 text-sm text-ink">{proposal.reason}</p>
-      {proposal.rejectReason && <p className="mt-1 text-xs text-high">반려 사유: {proposal.rejectReason}</p>}
-      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-        <UserChip name={proposal.proposer.name} sub={formatDateTime(proposal.createdAt)} />
-        {proposal.status === 'OPEN' && (
-          <div className="flex gap-1.5">
-            <Button size="sm" variant="primary" onClick={onConfirm}>
-              확정
-            </Button>
-            <Button size="sm" variant="danger-outline" onClick={onReject}>
-              반려
-            </Button>
-          </div>
-        )}
-      </div>
-    </article>
+    <div className="overflow-x-auto">
+      <table className="sheet-table [&_td]:py-3">
+        <thead>
+          <tr>
+            <th>유형</th>
+            <th>대상</th>
+            <th>사유</th>
+            <th>제안자</th>
+            <th aria-label="처리" />
+          </tr>
+        </thead>
+        <tbody>
+          {proposals.map((proposal, index) => (
+            <tr key={proposal.id}>
+              <td className="whitespace-nowrap">{TASK_TYPE_LABEL[proposal.taskType]}</td>
+              <td>
+                <Mono className="whitespace-nowrap">{proposal.target}</Mono>
+              </td>
+              <td className="min-w-40">
+                {proposal.reason}
+                {proposal.rejectReason && <p className="mt-0.5 text-[0.8125rem] text-high">반려 사유: {proposal.rejectReason}</p>}
+              </td>
+              <td className="whitespace-nowrap">
+                {proposal.proposer.name}
+                <p className="mt-0.5 text-[0.8125rem] text-ink-3">
+                  {departmentName(proposal.departmentId)}, {formatDateTime(proposal.createdAt)}
+                </p>
+              </td>
+              <td className="text-right">{renderLast(proposal, index)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
-function ProposalSection({
-  lists,
-  status,
-  onStatusChange,
-}: {
-  lists: Record<ForbiddenProposalStatus, ForbiddenProposal[] | undefined>
-  status: ForbiddenProposalStatus
-  onStatusChange: (status: ForbiddenProposalStatus) => void
-}) {
+function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
   const refresh = useRefreshAll()
   const departmentName = useDepartmentNames()
   const [confirming, setConfirming] = useState<ForbiddenProposal | null>(null)
@@ -171,36 +148,22 @@ function ProposalSection({
       await refresh()
     },
   })
-  const proposals = lists[status]
 
   return (
-    <Sheet title="팀장 제안" icon={<Inbox size={16} aria-hidden />}>
-      <SegmentedTabs<ForbiddenProposalStatus>
-        label="제안 상태로 거르기"
-        value={status}
-        onChange={onStatusChange}
-        items={STATUSES.map((value) => ({
-          id: value,
-          label: PROPOSAL_STATUS_LABEL[value],
-          count: lists[value]?.length,
-        }))}
-      />
-      <div className="mt-3 flex flex-col gap-2.5">
-        {!proposals && <Spinner />}
-        {proposals?.length === 0 && (
-          <EmptyState title={status === 'OPEN' ? '검토할 제안이 없습니다' : '조건에 맞는 제안이 없습니다'}>
-            {status === 'OPEN' ? '팀장이 금지 작업을 제안하면 여기에 나타납니다.' : undefined}
-          </EmptyState>
+    <Sheet title={`검토할 제안 ${proposals.length}건`} flush className="ring-2 ring-medium/25">
+      <ProposalTable
+        proposals={proposals}
+        renderLast={(proposal, index) => (
+          <div className="flex justify-end gap-1.5">
+            <Button size="sm" variant={index === 0 ? 'primary' : 'secondary'} onClick={() => setConfirming(proposal)}>
+              확정
+            </Button>
+            <Button size="sm" onClick={() => setRejecting(proposal)}>
+              반려
+            </Button>
+          </div>
         )}
-        {proposals?.map((proposal) => (
-          <ProposalCard
-            key={proposal.id}
-            proposal={proposal}
-            onConfirm={() => setConfirming(proposal)}
-            onReject={() => setRejecting(proposal)}
-          />
-        ))}
-      </div>
+      />
       <ConfirmModal
         open={Boolean(confirming)}
         title="금지 작업 확정"
@@ -231,7 +194,43 @@ function ProposalSection({
   )
 }
 
-function RulesSection({ rules, loading, error, onRetry }: { rules: ForbiddenRule[]; loading: boolean; error: unknown; onRetry: () => void }) {
+function PastProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
+  return (
+    <details className="group">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden">
+        지난 제안 보기 ({proposals.length}건)
+        <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
+      <div className="mt-3">
+        <Sheet flush>
+          <ProposalTable
+            proposals={proposals}
+            renderLast={(proposal) => (
+              <span className={`whitespace-nowrap ${proposal.status === 'REJECTED' ? 'text-high' : 'text-ink-2'}`}>
+                {proposal.status === 'REJECTED' ? '반려' : '확정'}
+              </span>
+            )}
+          />
+        </Sheet>
+      </div>
+    </details>
+  )
+}
+
+function RulesSection({
+  rules,
+  loading,
+  error,
+  onRetry,
+  primaryAdd,
+}: {
+  rules: ForbiddenRule[]
+  loading: boolean
+  error: unknown
+  onRetry: () => void
+  /** 처리할 제안이 있으면 그쪽이 주인공이라 직접 추가는 조용히 둔다. */
+  primaryAdd: boolean
+}) {
   const refresh = useRefreshAll()
   const [adding, setAdding] = useState(false)
   const [releasing, setReleasing] = useState<ForbiddenRule | null>(null)
@@ -246,13 +245,12 @@ function RulesSection({ rules, loading, error, onRetry }: { rules: ForbiddenRule
 
   return (
     <Sheet
-      title="부서별 금지 규칙"
-      icon={<ShieldBan size={16} aria-hidden />}
+      title={loading ? '확정 규칙' : `확정 규칙 ${rules.length}건`}
       flush
       actions={
-        <Button variant="primary" onClick={() => setAdding(true)}>
+        <Button variant={primaryAdd ? 'primary' : 'secondary'} onClick={() => setAdding(true)}>
           <Plus size={15} aria-hidden />
-          규칙 직접 추가
+          직접 추가
         </Button>
       }
     >
@@ -271,7 +269,7 @@ function RulesSection({ rules, loading, error, onRetry }: { rules: ForbiddenRule
           }
         />
       )}
-      <AddRuleModal open={adding} onClose={() => setAdding(false)} />
+      {adding && <AddRuleModal onClose={() => setAdding(false)} />}
       <ConfirmModal
         open={Boolean(releasing)}
         title="금지 규칙 해제 요청"
@@ -300,8 +298,7 @@ function RulesSection({ rules, loading, error, onRetry }: { rules: ForbiddenRule
 /** 관리자의 금지 작업 관리: 제안 확정·반려, 직접 추가, 부서별 규칙, 해제 요청 (5.7, ADM-05) */
 export function ForbiddenAdminPanel() {
   const { data: departments } = useDepartments()
-  const [status, setStatus] = useState<ForbiddenProposalStatus>('OPEN')
-  const proposalResults = useQueries({ queries: STATUSES.map((value) => proposalsQuery(value)) })
+  const proposalResults = useQueries({ queries: STATUSES.map((status) => proposalsQuery(status)) })
   const ruleResults = useQueries({
     queries: (departments ?? []).map((department) => ({
       queryKey: ['forbidden-rules', department.id],
@@ -309,58 +306,29 @@ export function ForbiddenAdminPanel() {
     })),
   })
 
-  const lists = {
-    OPEN: proposalResults[0].data,
-    CONFIRMED: proposalResults[1].data,
-    REJECTED: proposalResults[2].data,
-  }
+  const open = proposalResults[0].data ?? []
+  const past = [...(proposalResults[1].data ?? []), ...(proposalResults[2].data ?? [])].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  )
   const proposalError = proposalResults.find((result) => result.isError)
-  const rules = ruleResults.flatMap((result) => result.data ?? [])
-  const activeCount = rules.filter((rule) => rule.status === 'ACTIVE').length
-  const releasePending = rules.length - activeCount
   const ruleError = ruleResults.find((result) => result.isError)
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-3">
-        <StatCard
-          label="검토 대기 제안"
-          value={lists.OPEN?.length ?? 0}
-          icon={Hourglass}
-          tone={lists.OPEN?.length ? 'amber' : 'neutral'}
-          hint="확정하면 실행기 정책에도 반영됩니다"
-        />
-        <StatCard
-          label="적용 중인 금지 규칙"
-          value={activeCount}
-          icon={Lock}
-          tone="neutral"
-          hint="Plan 단계와 실행 직전에 두 번 차단합니다"
-        />
-        <StatCard
-          label="해제 대기"
-          value={releasePending}
-          icon={Unlock}
-          tone={releasePending > 0 ? 'amber' : 'neutral'}
-          hint="실행기 로컬 콘솔의 재확인을 기다립니다"
-        />
-      </div>
-
-      <div className="grid items-start gap-4 xl:grid-cols-[20rem_minmax(0,1fr)] 2xl:grid-cols-[24rem_minmax(0,1fr)]">
-        {proposalError ? (
-          <Sheet title="팀장 제안">
-            <ErrorState error={proposalError.error} onRetry={() => proposalError.refetch()} />
-          </Sheet>
-        ) : (
-          <ProposalSection lists={lists} status={status} onStatusChange={setStatus} />
-        )}
-        <RulesSection
-          rules={rules}
-          loading={!departments || ruleResults.some((result) => result.isPending)}
-          error={ruleError?.error}
-          onRetry={() => ruleError?.refetch()}
-        />
-      </div>
+      {proposalError && (
+        <Sheet title="제안">
+          <ErrorState error={proposalError.error} onRetry={() => proposalError.refetch()} />
+        </Sheet>
+      )}
+      {open.length > 0 && <OpenProposals proposals={open} />}
+      <RulesSection
+        rules={ruleResults.flatMap((result) => result.data ?? [])}
+        loading={!departments || ruleResults.some((result) => result.isPending)}
+        error={ruleError?.error}
+        onRetry={() => ruleError?.refetch()}
+        primaryAdd={open.length === 0}
+      />
+      {past.length > 0 && <PastProposals proposals={past} />}
     </div>
   )
 }

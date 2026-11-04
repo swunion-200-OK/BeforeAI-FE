@@ -1,18 +1,18 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { BookText, FolderPlus } from 'lucide-react'
-import { useState } from 'react'
+import { Plus } from 'lucide-react'
+import { useId, useState } from 'react'
 import { Link } from 'react-router'
 import { adminApi } from '../../api/endpoints'
-import { Avatar, UserChip } from '../../components/rich'
 import { toast } from '../../components/toast'
-import { EmptyState, Button, ErrorState, Field, Mono, Select, Sheet, Spinner, TextArea, TextInput } from '../../components/ui'
+import { EmptyState, Button, ErrorState, Field, Modal, Mono, Select, Sheet, Spinner, TextArea, TextInput } from '../../components/ui'
 import { useDepartmentNames, useDepartments, useProjects, useRefreshAll } from '../../lib/queries'
 import { usersQuery } from './adminQueries'
 
 const MIN_OWNERS = 2
 
-function CreateProjectForm() {
+function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const refresh = useRefreshAll()
+  const formId = useId()
   const departments = useDepartments()
   const departmentName = useDepartmentNames()
   const users = useQuery(usersQuery)
@@ -34,10 +34,7 @@ function CreateProjectForm() {
       }),
     onSuccess: async (project) => {
       toast.success(`${project.name} 프로젝트를 만들었습니다`)
-      setName('')
-      setRepository('')
-      setOwnerIds([])
-      setSpecBody('')
+      onClose()
       await refresh()
     },
   })
@@ -58,9 +55,30 @@ function CreateProjectForm() {
   }
 
   return (
-    <Sheet title="프로젝트 생성" icon={<FolderPlus size={16} aria-hidden />}>
+    <Modal
+      open
+      wide
+      title="프로젝트 만들기"
+      onClose={onClose}
+      footer={
+        <>
+          <Button onClick={onClose}>닫기</Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            disabled={Boolean(blockedReason)}
+            disabledReason={blockedReason}
+            loading={create.isPending}
+          >
+            프로젝트 만들기
+          </Button>
+        </>
+      }
+    >
       <form
-        className="grid gap-3 md:grid-cols-2"
+        id={formId}
+        className="grid grid-cols-2 gap-4"
         onSubmit={(event) => {
           event.preventDefault()
           if (!blockedReason) create.mutate()
@@ -80,23 +98,24 @@ function CreateProjectForm() {
             </Select>
           )}
         </Field>
-        <div className="md:col-span-2">
-          <Field label="저장소" hint="예: git@internal:auth-service.git">
+        <div className="col-span-2">
+          <Field label="저장소">
             {(id) => (
               <TextInput
                 id={id}
                 className="font-mono"
+                placeholder="git@internal:auth-service.git"
                 value={repository}
                 onChange={(event) => setRepository(event.target.value)}
               />
             )}
           </Field>
         </div>
-        <fieldset className="md:col-span-2">
+        <fieldset className="col-span-2">
           <legend className="mb-1 text-[0.8125rem] font-medium text-ink-2">담당자 (2명 이상)</legend>
           {users.isPending && <Spinner />}
           {users.isError && <ErrorState error={users.error} onRetry={() => users.refetch()} />}
-          <div className="grid gap-1 sm:grid-cols-2">
+          <div className="grid grid-cols-3 gap-1">
             {users.data
               ?.filter((user) => user.active)
               .map((user) => {
@@ -104,7 +123,7 @@ function CreateProjectForm() {
                 return (
                   <label
                     key={user.id}
-                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1.5 text-sm ${
+                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-sm ${
                       checked ? 'border-seal bg-seal-soft/40' : 'border-rule hover:bg-sheet-alt'
                     }`}
                   >
@@ -114,7 +133,6 @@ function CreateProjectForm() {
                       checked={checked}
                       onChange={(event) => toggleOwner(user.id, event.target.checked)}
                     />
-                    <Avatar name={user.name} size="sm" />
                     <span className="min-w-0 truncate">
                       {user.name}
                       <span className="ml-1.5 text-xs text-ink-3">{departmentName(user.departmentId)}</span>
@@ -123,88 +141,69 @@ function CreateProjectForm() {
                 )
               })}
           </div>
-          <p className={`mt-1 text-xs ${lackingOwners ? 'text-high' : 'text-ink-3'}`}>
-            {ownerIds.length}명 선택함. 담당자는 데이터 수정·DB 접근·배포 작업을 승인합니다.
-          </p>
+          <p className="mt-1.5 text-[0.8125rem] text-ink-3">{ownerIds.length}명 선택함</p>
         </fieldset>
-        <div className="md:col-span-2">
+        <div className="col-span-2">
           <Field label="초기 기획서" hint="AI가 이 프로젝트를 분석할 때 컨텍스트로 씁니다">
             {(id) => <TextArea id={id} rows={5} value={specBody} onChange={(event) => setSpecBody(event.target.value)} />}
           </Field>
         </div>
-        <div className="md:col-span-2">
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={Boolean(blockedReason)}
-            disabledReason={blockedReason}
-            loading={create.isPending}
-          >
-            프로젝트 생성
-          </Button>
-        </div>
       </form>
-    </Sheet>
-  )
-}
-
-function ProjectList() {
-  const projects = useProjects()
-  const departmentName = useDepartmentNames()
-  const count = projects.data?.length
-  return (
-    <Sheet
-      title={count === undefined ? '등록된 프로젝트' : `등록된 프로젝트 ${count}개`}
-      icon={<BookText size={16} aria-hidden />}
-      flush
-    >
-      {projects.isPending && <Spinner />}
-      {projects.isError && <ErrorState error={projects.error} onRetry={() => projects.refetch()} />}
-      {projects.data?.length === 0 && <EmptyState title="등록된 프로젝트가 없습니다">왼쪽 폼에서 첫 프로젝트를 만드세요.</EmptyState>}
-      {projects.data && projects.data.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="sheet-table">
-            <thead>
-              <tr>
-                <th>프로젝트</th>
-                <th>담당 부서</th>
-                <th>담당자</th>
-              </tr>
-            </thead>
-            <tbody>
-              {projects.data.map((project) => (
-                <tr key={project.id}>
-                  <td>
-                    <Link to={`/projects/${project.id}`} className="font-medium text-seal hover:underline">
-                      {project.name}
-                    </Link>
-                    <div className="mt-0.5">
-                      <Mono className="text-ink-3">{project.repository}</Mono>
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap">{departmentName(project.departmentId)}</td>
-                  <td>
-                    <span className="flex flex-wrap gap-x-3 gap-y-1">
-                      {project.owners.map((owner) => (
-                        <UserChip key={owner.id} name={owner.name} />
-                      ))}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Sheet>
+    </Modal>
   )
 }
 
 export function ProjectsTab() {
+  const projects = useProjects()
+  const departmentName = useDepartmentNames()
+  const [creating, setCreating] = useState(false)
+  const count = projects.data?.length
   return (
-    <div className="grid items-start gap-4 xl:grid-cols-2">
-      <CreateProjectForm />
-      <ProjectList />
-    </div>
+    <>
+      <Sheet
+        title={count === undefined ? '프로젝트' : `프로젝트 ${count}개`}
+        flush
+        actions={
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            <Plus size={15} aria-hidden />
+            프로젝트 만들기
+          </Button>
+        }
+      >
+        {projects.isPending && <Spinner />}
+        {projects.isError && <ErrorState error={projects.error} onRetry={() => projects.refetch()} />}
+        {projects.data?.length === 0 && <EmptyState title="등록된 프로젝트가 없습니다" />}
+        {projects.data && projects.data.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="sheet-table [&_td]:py-3">
+              <thead>
+                <tr>
+                  <th>프로젝트</th>
+                  <th>담당 부서</th>
+                  <th>담당자</th>
+                </tr>
+              </thead>
+              <tbody>
+                {projects.data.map((project) => (
+                  <tr key={project.id}>
+                    <td>
+                      <Link to={`/projects/${project.id}`} className="font-medium text-ink hover:text-seal hover:underline">
+                        {project.name}
+                      </Link>
+                      <div className="mt-0.5">
+                        <Mono className="text-ink-3">{project.repository}</Mono>
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap">{departmentName(project.departmentId)}</td>
+                    <td>{project.owners.map((owner) => owner.name).join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Sheet>
+      {creating && <CreateProjectModal onClose={() => setCreating(false)} />}
+    </>
   )
 }

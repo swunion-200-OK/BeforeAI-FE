@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Hourglass, KeyRound, ShieldCheck, type LucideIcon } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { meApi } from '../../api/endpoints'
 import { errorMessage } from '../../api/errors'
@@ -24,29 +24,13 @@ const STATUS_CLASS: Record<SigningKeyStatus, string> = {
   REVOKED: 'bg-forbidden-soft text-forbidden',
 }
 
-const HERO = {
-  ready: {
-    Icon: ShieldCheck,
-    box: 'bg-low-soft',
-    icon: 'bg-low text-white',
-    title: '이 기기에서 승인할 수 있습니다',
-    text: '승인 서명은 이 기기에 있는 개인키로 만듭니다. 개인키는 기기 밖으로 나가지 않습니다.',
-  },
-  waiting: {
-    Icon: Hourglass,
-    box: 'bg-medium-soft',
-    icon: 'bg-medium text-white',
-    title: '관리자 등록을 기다리고 있습니다',
-    text: '관리자가 실행기에 공개키를 등록하면 승인할 수 있습니다.',
-  },
-  none: {
-    Icon: KeyRound,
-    box: 'bg-seal-soft',
-    icon: 'bg-seal text-white',
-    title: '승인 키 등록 필요',
-    text: '이 기기에서 키를 만들어 제출하고 관리자 등록을 받으면 승인할 수 있습니다.',
-  },
-} satisfies Record<string, { Icon: LucideIcon; box: string; icon: string; title: string; text: string }>
+type KeyState = 'ready' | 'waiting' | 'none'
+
+const STATE_VIEW: Record<KeyState, { label: string; color: string; text: string }> = {
+  ready: { label: '등록됨', color: 'text-low', text: '이 기기에서 승인할 수 있습니다.' },
+  waiting: { label: '등록 대기', color: 'text-medium', text: '관리자 등록을 기다리고 있습니다.' },
+  none: { label: '없음', color: 'text-ink', text: '이 기기에서 키를 만들고 관리자 등록을 받으면 승인할 수 있습니다.' },
+}
 
 function shorten(key: string) {
   return key.length > 20 ? `${key.slice(0, 20)}…` : key
@@ -59,7 +43,7 @@ class PinMismatchError extends Error {
   }
 }
 
-function stepsFor(state: keyof typeof HERO): Step[] {
+function stepsFor(state: KeyState): Step[] {
   const labels = ['키 만들기', '실행기 공개키 고정', '공개키 제출', '관리자 등록']
   if (state === 'ready') return labels.map((label) => ({ key: label, label, state: 'done' }))
   if (state === 'waiting') {
@@ -123,34 +107,38 @@ export function SigningKeySection({ me }: { me: Me }) {
     },
   })
 
-  const state: keyof typeof HERO =
-    hasDeviceKey && deviceKeyStatus === 'REGISTERED' ? 'ready' : deviceKeyUsable ? 'waiting' : 'none'
-  const hero = HERO[state]
+  const state: KeyState = hasDeviceKey && deviceKeyStatus === 'REGISTERED' ? 'ready' : deviceKeyUsable ? 'waiting' : 'none'
+  const view = STATE_VIEW[state]
+  const revoked = state === 'none' && deviceKeyStatus === 'REVOKED'
+  const elsewhere = state === 'none' && !revoked && activeKeyElsewhere
   // 키 목록을 모르는 동안에는 만들기를 내놓지 않는다. 등록된 기기의 키를 모르고 덮어쓰면 서명이 막힌다.
   const canCreate = keys.isSuccess && !deviceKeyUsable
 
   return (
-    <Sheet title="승인 키" icon={<KeyRound size={16} />}>
-      <div className="flex flex-col gap-4">
-        {keys.isSuccess && (
-          <>
-            <div className={`flex items-center gap-3.5 rounded-xl p-4 ${hero.box}`}>
-              <span className={`inline-flex size-12 shrink-0 items-center justify-center rounded-full ${hero.icon}`}>
-                <hero.Icon size={24} aria-hidden />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-bold tracking-tight text-ink">{hero.title}</p>
-                <p className="mt-0.5 text-[0.8125rem] text-ink-2">
-                  {state === 'none' && deviceKeyStatus === 'REVOKED'
-                    ? '이 기기의 키가 폐기되었습니다. 승인하려면 새 키를 만들어 주세요.'
-                    : state === 'none' && activeKeyElsewhere
-                      ? '다른 기기에 등록된 키가 있습니다. 이 기기에서 승인하려면 새 키를 만들어 주세요.'
-                      : hero.text}
+    <Sheet flush>
+      <div className="flex flex-col gap-4 p-6">
+        <div>
+          <h2 className="text-sm font-medium text-ink-2">승인 키</h2>
+          {keys.isPending && <Spinner />}
+          {keys.isError && <ErrorState error={keys.error} onRetry={() => keys.refetch()} />}
+          {keys.isSuccess && (
+            <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className={`text-[2rem] leading-tight font-bold tracking-tight ${view.color}`}>
+                  {revoked ? '폐기됨' : elsewhere ? '이 기기에 없음' : view.label}
+                </p>
+                <p className="mt-1 text-sm text-ink-2">
+                  {revoked
+                    ? '승인하려면 새 키를 만들어 주세요.'
+                    : elsewhere
+                      ? '다른 기기의 키가 있어, 이 기기에서 승인하려면 새로 만들어야 합니다.'
+                      : view.text}
                 </p>
               </div>
               {canCreate && (
                 <Button
                   variant="primary"
+                  size="lg"
                   internalOnly
                   loading={create.isPending}
                   onClick={() => (activeKeyElsewhere ? setConfirmOpen(true) : create.mutate())}
@@ -159,9 +147,8 @@ export function SigningKeySection({ me }: { me: Me }) {
                 </Button>
               )}
             </div>
-            <Stepper steps={stepsFor(state)} />
-          </>
-        )}
+          )}
+        </div>
 
         {pinMismatch && (
           <Banner tone="danger" title="실행기 공개키가 고정해 둔 키와 다릅니다">
@@ -169,48 +156,57 @@ export function SigningKeySection({ me }: { me: Me }) {
           </Banner>
         )}
 
-        {device.pinnedExecutorKey && (
-          <p className="text-[0.8125rem] text-ink-2">
-            고정한 실행기 공개키 <Mono>{shorten(device.pinnedExecutorKey)}</Mono>
-          </p>
-        )}
-
-        {keys.isPending && <Spinner />}
-        {keys.isError && <ErrorState error={keys.error} onRetry={() => keys.refetch()} />}
-        {keys.data && keys.data.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-rule">
-            <table className="sheet-table">
-              <thead>
-                <tr>
-                  <th>키</th>
-                  <th>공개키</th>
-                  <th>상태</th>
-                  <th>제출</th>
-                  <th>등록</th>
-                </tr>
-              </thead>
-              <tbody>
-                {keys.data.map((key) => (
-                  <tr key={key.keyId}>
-                    <td className="whitespace-nowrap">
-                      <Mono>{key.keyId}</Mono>
-                      {key.keyId === device.keyId && <span className="ml-1.5 text-xs text-ink-3">이 기기</span>}
-                    </td>
-                    <td title={key.publicKey}>
-                      <Mono>{shorten(key.publicKey)}</Mono>
-                    </td>
-                    <td>
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_CLASS[key.status]}`}>
-                        {STATUS_LABEL[key.status]}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap">{formatDateTime(key.createdAt)}</td>
-                    <td className="whitespace-nowrap">{key.registeredAt ? formatDateTime(key.registeredAt) : '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {keys.isSuccess && (
+          <details className="group">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm text-ink-3 hover:text-ink-2 [&::-webkit-details-marker]:hidden">
+              자세히
+              <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+            </summary>
+            <div className="mt-4 flex flex-col gap-4">
+              <Stepper steps={stepsFor(state)} />
+              <p className="text-sm text-ink-2">승인 서명은 이 기기의 개인키로 만들고, 개인키는 기기 밖으로 나가지 않습니다.</p>
+              {device.pinnedExecutorKey && (
+                <p className="text-sm text-ink-2">
+                  고정한 실행기 공개키 <Mono>{shorten(device.pinnedExecutorKey)}</Mono>
+                </p>
+              )}
+              {keys.data.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="sheet-table">
+                    <thead>
+                      <tr>
+                        <th>키</th>
+                        <th>공개키</th>
+                        <th>상태</th>
+                        <th>제출</th>
+                        <th>등록</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {keys.data.map((key) => (
+                        <tr key={key.keyId}>
+                          <td className="whitespace-nowrap">
+                            <Mono>{key.keyId}</Mono>
+                            {key.keyId === device.keyId && <span className="ml-1.5 text-xs text-ink-3">이 기기</span>}
+                          </td>
+                          <td title={key.publicKey}>
+                            <Mono>{shorten(key.publicKey)}</Mono>
+                          </td>
+                          <td>
+                            <span className={`rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_CLASS[key.status]}`}>
+                              {STATUS_LABEL[key.status]}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap">{formatDateTime(key.createdAt)}</td>
+                          <td className="whitespace-nowrap">{key.registeredAt ? formatDateTime(key.registeredAt) : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </details>
         )}
       </div>
 

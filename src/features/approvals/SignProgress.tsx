@@ -37,9 +37,7 @@ export function SignProgress({ step, state }: { step: SignStep | null; state: Si
                 <Check size={13} aria-hidden />
               ) : active ? (
                 <Loader2 size={13} className="animate-spin" aria-hidden />
-              ) : (
-                index + 1
-              )}
+              ) : null}
             </span>
             <span className={`text-xs ${active || failed ? 'font-medium text-ink' : 'text-ink-2'}`}>{item.label}</span>
           </li>

@@ -1,4 +1,4 @@
-import type { PendingApproval } from '../../api/types'
+import type { PendingApproval, Risk } from '../../api/types'
 
 export interface QueueGroup {
   requestId: string
@@ -26,6 +26,13 @@ export function groupByRequest(items: PendingApproval[]): QueueGroup[] {
     })
   }
   return [...groups.values()]
+}
+
+const RISK_RANK: Record<Risk, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, FORBIDDEN: 3 }
+
+/** 목록 한 줄의 제목과 배지는 요청에서 위험도가 가장 높은 작업을 따른다. */
+export function riskiestTask(group: QueueGroup): PendingApproval {
+  return group.tasks.reduce((top, task) => (RISK_RANK[task.risk] > RISK_RANK[top.risk] ? task : top))
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000

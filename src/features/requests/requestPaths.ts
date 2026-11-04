@@ -1,4 +1,4 @@
-import type { RequestStatus, RequestSummary } from '../../api/types'
+import type { RequestDetail, RequestStatus, RequestSummary, Task, TaskApprovalStatus } from '../../api/types'
 
 const COMPOSE: RequestStatus[] = ['ANALYZING', 'REVIEWING', 'ANALYSIS_FAILED']
 
@@ -24,3 +24,12 @@ export const STATUS_GROUPS: StatusGroup[] = [
   },
   { id: 'done', label: '끝남', statuses: ['COMPLETED', 'ROLLED_BACK', 'REJECTED', 'CANCELED', 'KILLED'] },
 ]
+
+/** 제출 전이나 승인을 받지 않고 끝난 작업에는 승인 현황을 그리지 않는다. */
+export function approvalToShow(request: RequestDetail, task: Task): TaskApprovalStatus | undefined {
+  const status = request.approvalStatus.find((item) => item.taskId === task.id)
+  if (!status || request.status === 'REVIEWING') return undefined
+  const hasRecords = status.requirements.some((requirement) => requirement.approvedBy.length > 0)
+  const waiting = request.status === 'PENDING_APPROVAL' || request.status === 'REAPPROVAL_REQUIRED'
+  return hasRecords || (waiting && task.status === 'PENDING') ? status : undefined
+}

@@ -1,20 +1,18 @@
 import type { ReactNode } from 'react'
 import type { ForbiddenRule } from '../../api/types'
-import { TaskTypeTag } from '../../components/badges'
 import { EmptyState, Mono } from '../../components/ui'
 import { formatDateTime } from '../../lib/format'
+import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames } from '../../lib/queries'
 
 export const RELEASE_PENDING_NOTICE = '실행기 로컬 콘솔에서 관리자 재확인 후 실제 해제됩니다'
 
 function RuleStatus({ rule }: { rule: ForbiddenRule }) {
-  if (rule.status === 'ACTIVE') {
-    return <span className="rounded bg-forbidden-soft px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-forbidden">🔒 적용 중</span>
-  }
+  if (rule.status === 'ACTIVE') return <span className="whitespace-nowrap text-ink-2">적용 중</span>
   return (
     <div>
-      <span className="rounded bg-medium-soft px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-medium">해제 대기</span>
-      <p className="mt-1 max-w-56 text-xs text-ink-3">{RELEASE_PENDING_NOTICE}</p>
+      <span className="font-medium whitespace-nowrap text-medium">해제 대기</span>
+      <p className="mt-0.5 max-w-56 text-xs break-keep text-ink-3">{RELEASE_PENDING_NOTICE}</p>
     </div>
   )
 }
@@ -35,7 +33,7 @@ export function ForbiddenRuleTable({
   }
   return (
     <div className="overflow-x-auto">
-      <table className="sheet-table">
+      <table className="sheet-table [&_td]:py-3">
         <thead>
           <tr>
             {showDepartment && <th>부서</th>}
@@ -50,15 +48,12 @@ export function ForbiddenRuleTable({
           {rules.map((rule) => (
             <tr key={rule.id}>
               {showDepartment && <td className="font-medium whitespace-nowrap">{departmentName(rule.departmentId)}</td>}
-              <td>
-                <TaskTypeTag type={rule.taskType} />
-              </td>
+              <td className="whitespace-nowrap">{TASK_TYPE_LABEL[rule.taskType]}</td>
               <td>
                 <Mono className="whitespace-nowrap">{rule.target}</Mono>
               </td>
-              <td className="min-w-40">
+              <td className="min-w-40" title={`${formatDateTime(rule.createdAt)} 확정`}>
                 {rule.reason}
-                <p className="text-xs text-ink-3">{formatDateTime(rule.createdAt)} 확정</p>
               </td>
               <td>
                 <RuleStatus rule={rule} />

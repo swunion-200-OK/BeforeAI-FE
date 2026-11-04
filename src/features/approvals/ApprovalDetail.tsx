@@ -1,14 +1,14 @@
 import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query'
-import { ArrowRight, CircleCheck, ExternalLink, Globe, ShieldCheck, ShieldX, Stamp } from 'lucide-react'
+import { ArrowRight, ChevronDown } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 import { approvalsApi, meApi } from '../../api/endpoints'
 import { ApiError, errorMessage } from '../../api/errors'
-import type { Plan, Risk, SubmitApprovalResponse, Task, TaskApprovalStatus } from '../../api/types'
+import type { Plan, RequestDetail, SubmitApprovalResponse, Task, TaskApprovalStatus } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { ApprovalStamps, approvalSummary } from '../../components/ApprovalStamps'
 import { RequestStatusBadge } from '../../components/badges'
-import { ProjectTag, RiskSummary, UserChip } from '../../components/rich'
+import { KeyValues } from '../../components/rich'
 import { TaskCard } from '../../components/TaskCard'
 import { toast } from '../../components/toast'
 import { Banner, Button, EmptyState, ErrorState, Mono, ReasonModal, Spinner } from '../../components/ui'
@@ -27,64 +27,57 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 type DecisionKind = 'reject' | 'change'
 
-function PlanStrip({ plan }: { plan: Plan }) {
-  const risks: Record<Risk, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, FORBIDDEN: 0 }
-  for (const task of plan.tasks) risks[task.risk] += 1
+/** 조용한 메타 한 줄. 누르면 저장소·기준 커밋·해시가 펼쳐진다. */
+function RequestMeta({
+  request,
+  plan,
+  planHash,
+  taskCount,
+}: {
+  request: RequestDetail
+  plan: Plan | null | undefined
+  planHash: string | undefined
+  taskCount: number
+}) {
+  const departmentName = useDepartmentNames()
+  const parts = [request.requester.name, request.projectName, `작업 ${taskCount}개`]
+  // 롤백인지, 에디터에서 온 요청인지는 승인 판단에 필요해서 접지 않는다.
+  if (plan?.kind === 'ROLLBACK') parts.push('문서 롤백 Plan')
+  else if (request.source !== 'PROMPT') parts.push(SOURCE_LABEL[request.source])
   return (
-    <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-xl border border-rule bg-sheet px-4 py-2.5 text-[0.8125rem] shadow-card">
-      <div className="flex items-center gap-2">
-        <dt className="text-ink-3">작업</dt>
-        <dd className="flex items-center gap-2">
-          <span className="font-semibold">{plan.tasks.length}개</span>
-          <RiskSummary risks={risks} />
-        </dd>
+    <details className="group mt-2">
+      <summary className="inline-flex cursor-pointer list-none flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-3 hover:text-ink-2 [&::-webkit-details-marker]:hidden">
+        {request.status !== 'PENDING_APPROVAL' && <RequestStatusBadge status={request.status} />}
+        <span>{parts.join(', ')}</span>
+        <span className="inline-flex items-center gap-0.5">
+          Plan 자세히
+          <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+        </span>
+      </summary>
+      <div className="mt-2.5">
+        <KeyValues
+          items={[
+            { label: '요청자 부서', value: departmentName(request.requester.departmentId) },
+            { label: '요청 시각', value: formatDateTime(request.createdAt) },
+            ...(plan
+              ? [
+                  { label: '저장소', value: <Mono>{plan.repository}</Mono> },
+                  { label: '기준 커밋', value: <Mono>{plan.baseCommit}</Mono> },
+                ]
+              : []),
+            ...(planHash ? [{ label: 'Plan 해시', value: <Mono>{planHash}</Mono> }] : []),
+          ]}
+        />
       </div>
-      <div className="flex items-center gap-2">
-        <dt className="text-ink-3">저장소</dt>
-        <dd>
-          <Mono>{plan.repository}</Mono>
-        </dd>
-      </div>
-      <div className="flex items-center gap-2">
-        <dt className="text-ink-3">기준 커밋</dt>
-        <dd>
-          <Mono>{plan.baseCommit}</Mono>
-        </dd>
-      </div>
-      {plan.kind === 'ROLLBACK' && (
-        <div className="flex items-center gap-2">
-          <dt className="text-ink-3">종류</dt>
-          <dd className="font-medium">문서 롤백 Plan</dd>
-        </div>
-      )}
-    </dl>
+    </details>
   )
 }
 
-function TaskNote({
-  status,
-  approvable,
-  blocked,
-  task,
-}: {
-  status: TaskApprovalStatus | undefined
-  approvable: boolean
-  blocked: boolean
-  task: Task
-}) {
-  if (blocked) {
-    return (
-      <p className="flex items-start gap-1.5 text-[0.8125rem] font-medium text-external">
-        <Globe size={14} className="mt-0.5 shrink-0" aria-hidden />
-        내부망 승인 필요: 외부망에서는 코드 수정(낮음·중간)만 승인할 수 있습니다.
-      </p>
-    )
-  }
-  if (!status) return null
-  const summary = approvalSummary(status)
-  if (approvable) return <p className="text-[0.8125rem] font-medium text-seal-dark">내가 승인할 수 있습니다. {summary}</p>
-  if (task.status === 'PENDING') return <p className="text-[0.8125rem] text-ink-2">다른 승인권자 대기: {summary}</p>
-  return <p className="text-[0.8125rem] text-ink-2">{summary}</p>
+/** 카드 아래 안내는 체크할 수 없는 이유가 있을 때만 쓴다. 나머지는 체크박스와 결재란이 말해 준다. */
+function taskNote(task: Task, approvable: boolean, blocked: boolean, status: TaskApprovalStatus | undefined): ReactNode {
+  if (blocked) return <p className="text-sm font-medium text-external">내부망 승인 필요</p>
+  if (!status || approvable || task.status !== 'PENDING') return undefined
+  return <p className="text-sm text-ink-2">{approvalSummary(status)}</p>
 }
 
 function ContextNotice({ error, requestId }: { error: unknown; requestId: string }) {
@@ -104,33 +97,6 @@ function ContextNotice({ error, requestId }: { error: unknown; requestId: string
     <Banner tone="info" title="아직 승인할 수 없는 요청입니다" action={detailLink}>
       요청자가 Plan을 제출하면 승인할 수 있습니다.
     </Banner>
-  )
-}
-
-function PanelSection({
-  title,
-  icon,
-  aside,
-  children,
-}: {
-  title: string
-  icon: ReactNode
-  aside?: ReactNode
-  children: ReactNode
-}) {
-  return (
-    <section className="border-b border-rule px-4 py-3.5 last:border-b-0">
-      <div className="mb-2.5 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-[0.875rem] font-semibold">
-          <span aria-hidden className="text-ink-3">
-            {icon}
-          </span>
-          {title}
-        </h2>
-        {aside}
-      </div>
-      {children}
-    </section>
   )
 }
 
@@ -156,16 +122,17 @@ function StampSheet({
   stampedBy?: string
 }) {
   return (
-    <ul className="flex flex-wrap gap-2.5">
+    <ul className="flex flex-col gap-4">
       {statuses.map((status) => {
         const task = tasks.find((t) => t.id === status.taskId)
         return (
-          <li key={status.taskId} className="min-w-[9.75rem] flex-1 rounded-lg bg-sheet-alt p-2.5">
-            <p className="mb-2 text-[0.8125rem] leading-snug font-medium">
-              <span className="mr-1 font-mono text-xs font-normal text-ink-3">{status.taskId}</span>
-              <span title={task?.title}>{task?.title}</span>
-            </p>
-            <div className="overflow-x-auto [&>div]:bg-sheet">
+          <li key={status.taskId}>
+            {statuses.length > 1 && (
+              <p className="mb-1.5 truncate text-sm text-ink-2" title={task?.title}>
+                {task?.title}
+              </p>
+            )}
+            <div className="overflow-x-auto">
               <ApprovalStamps status={status} justStampedBy={stampedBy} />
             </div>
           </li>
@@ -177,7 +144,6 @@ function StampSheet({
 
 export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string; nextRequestId?: string }) {
   const me = useMe()
-  const departmentName = useDepartmentNames()
   const refreshAll = useRefreshAll()
   const requestQuery = useRequest(requestId)
   const request = requestQuery.data
@@ -220,7 +186,6 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
   const approvable = context?.approvableTaskIds ?? []
   const blocked = context?.blockedTaskIds ?? []
   const selected = approvable.filter((id) => !deselected.has(id))
-  const selectedTasks = tasks.filter((t) => selected.includes(t.id))
   // 외부망에서 막힌 문서 작업도 버튼 문구는 적용/미적용이어야 해서, 고를 게 없으면 막힌 작업을 기준으로 삼는다.
   const decisionBase = (selected.length > 0 ? selected : approvable.length > 0 ? approvable : blocked)
     .map((id) => tasks.find((t) => t.id === id))
@@ -306,7 +271,7 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
             )
           }
         >
-          요청자가 Plan을 고치는 중이거나 조회 권한이 없는 요청입니다. 다시 제출되면 승인 대기에 나타납니다.
+          요청자가 Plan을 고치는 중이거나 조회 권한이 없는 요청입니다.
         </EmptyState>
       </div>
     )
@@ -336,8 +301,12 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
   const samePlan = Boolean(context) && request.currentPlanId === context?.plan.id
   const accepting = request.status === 'PENDING_APPROVAL' && samePlan && !contextQuery.isPlaceholderData
 
+  // 키를 아직 안 만든 사람은 고정한 실행기 공개키도 없어 서명을 확인할 수 없다. 변조가 아니라 키 등록이 먼저다.
+  const onlyAwaitingKey = Boolean(integrity?.keyMissing && integrity.hashOk && !keysQuery.isError && !keyReady)
+  const integrityFailed = Boolean(integrity && !integrity.ok && !onlyAwaitingKey)
+
   let signBlockedReason: string | null = null
-  if (integrity && !integrity.ok) signBlockedReason = 'Plan 무결성 확인에 실패해 서명할 수 없습니다.'
+  if (integrityFailed) signBlockedReason = 'Plan 무결성 확인에 실패해 서명할 수 없습니다.'
   else if (keyChecking) signBlockedReason = '승인 키를 확인하고 있습니다.'
   else if (keysQuery.isError) signBlockedReason = '승인 키 상태를 확인하지 못했습니다. 새로고침한 뒤 다시 시도해 주세요.'
   else if (!keyReady) signBlockedReason = '승인 키를 등록해야 서명할 수 있습니다.'
@@ -350,74 +319,68 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
   const approveLabel = docMode ? '적용' : '승인(서명)'
   const rejectLabel = docMode ? '미적용' : '거부'
   const plan = context?.plan ?? request.plan
-  const stampsDone = request.approvalStatus.filter((s) => s.requirements.every((r) => r.satisfied)).length
   const nothingLeft = result?.response.remainingTaskIds.length === 0
+  // 서명을 마쳐 더 고를 작업이 없으면 결정 버튼을 치운다. 남은 작업이 있으면 이어서 서명한다.
+  const decisionDone = Boolean(result) && approvable.length === 0
+  // 작업을 고를 수 있거나 일부가 막혀 있을 때만 몇 개에 서명하는지 알려 준다.
+  const showSelectedCount = selected.length > 0 && approvable.length + blocked.length > 1
+
+  // 안내는 한 번에 하나만, 가장 중요한 것을 보여 준다.
+  let notice: ReactNode = null
+  if (integrityFailed) {
+    notice = (
+      <Banner tone="danger" title="이 Plan은 실행기가 만든 내용과 다를 수 있습니다">
+        AI 설명은 검증되지 않은 참고 자료입니다. 실제 변경 내용을 확인하고, 서명하지 말고 관리자에게 알려 주세요.
+      </Banner>
+    )
+  } else if (expectedContextError) {
+    notice = <ContextNotice error={contextError} requestId={requestId} />
+  } else if (contextQuery.isError) {
+    notice = <ErrorState error={contextError} onRetry={() => contextQuery.refetch()} />
+  } else if (context && request.status !== 'PENDING_APPROVAL' && !result) {
+    notice = <Banner tone="neutral" title={`이 요청은 지금 ${REQUEST_STATUS_LABEL[request.status]} 상태라 승인을 받지 않습니다`} />
+  } else if (context && keysQuery.isSuccess && !keyReady) {
+    notice = (
+      <Banner
+        tone="warning"
+        title="승인 키 등록 필요"
+        action={
+          <Link to="/me" className="font-medium underline">
+            내 정보로 이동
+          </Link>
+        }
+      >
+        {deviceKey?.status === 'PENDING'
+          ? '승인 키가 관리자 등록을 기다리고 있습니다.'
+          : me.signingKeyStatus === 'REGISTERED'
+            ? '이 기기에 등록된 승인 키가 없습니다. 키를 만든 기기에서 서명하거나 이 기기에서 새로 등록해 주세요.'
+            : '이 기기에서 승인 키를 만들고 관리자 등록을 받으면 서명할 수 있습니다.'}
+      </Banner>
+    )
+  } else if (blocked.length > 0) {
+    notice = (
+      <Banner tone="warning" title="외부망에서 승인할 수 없는 작업이 있습니다">
+        코드 수정(낮음·중간)이 아닌 작업은 내부망에서 승인합니다.
+      </Banner>
+    )
+  }
 
   return (
     <>
       {/* 가운데: 무엇이 바뀌는지 */}
       <div className="quiet-scroll min-w-0 flex-1 overflow-y-auto bg-paper">
-        <div className="mx-auto flex max-w-[1180px] flex-col gap-3 px-5 py-4">
-          <header>
+        <div className="mx-auto flex max-w-[1040px] flex-col gap-4 px-8 py-7">
+          <header className="mb-1">
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-[1.25rem] leading-snug font-bold tracking-tight whitespace-pre-wrap">{request.prompt}</h2>
-              <Link
-                to={`/requests/${requestId}`}
-                className="inline-flex shrink-0 items-center gap-1 pt-1 text-[0.8125rem] font-medium text-seal hover:underline"
-              >
+              <h2 className="text-[1.5rem] leading-snug font-bold tracking-tight whitespace-pre-wrap">{request.prompt}</h2>
+              <Link to={`/requests/${requestId}`} className="shrink-0 pt-1.5 text-sm text-ink-3 hover:text-seal hover:underline">
                 요청 상세 보기
-                <ExternalLink size={13} aria-hidden />
               </Link>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-              <RequestStatusBadge status={request.status} />
-              <UserChip name={request.requester.name} sub={departmentName(request.requester.departmentId)} />
-              <ProjectTag name={request.projectName} />
-              <span className="text-[0.8125rem] text-ink-3">{formatDateTime(request.createdAt)}</span>
-              {request.source !== 'PROMPT' && (
-                <span className="rounded bg-forbidden-soft px-1.5 py-0.5 text-xs text-forbidden">
-                  {SOURCE_LABEL[request.source]}
-                </span>
-              )}
-            </div>
+            <RequestMeta request={request} plan={plan} planHash={context?.planHash} taskCount={tasks.length} />
           </header>
 
-          {integrity && !integrity.ok && (
-            <Banner tone="danger" title="이 Plan은 실행기가 만든 내용과 다를 수 있습니다">
-              AI 설명은 검증되지 않은 참고 자료입니다. 실제 변경 내용을 확인하고, 서명하지 말고 관리자에게 알려 주세요.
-            </Banner>
-          )}
-          {expectedContextError && <ContextNotice error={contextError} requestId={requestId} />}
-          {contextQuery.isError && !expectedContextError && (
-            <ErrorState error={contextError} onRetry={() => contextQuery.refetch()} />
-          )}
-          {context && keysQuery.isSuccess && !keyReady && (
-            <Banner
-              tone="warning"
-              title="승인 키 등록 필요"
-              action={
-                <Link to="/me" className="font-medium underline">
-                  내 정보로 이동
-                </Link>
-              }
-            >
-              {deviceKey?.status === 'PENDING'
-                ? '승인 키가 관리자 등록을 기다리고 있습니다. 등록된 뒤 서명할 수 있습니다.'
-                : me.signingKeyStatus === 'REGISTERED'
-                  ? '이 기기에 등록된 승인 키가 없습니다. 키를 만든 기기에서 서명하거나 이 기기에서 새로 등록해 주세요.'
-                  : '이 기기에서 승인 키를 만들고 관리자 등록을 받으면 서명할 수 있습니다.'}
-            </Banner>
-          )}
-          {blocked.length > 0 && (
-            <Banner tone="warning" title="외부망에서 승인할 수 없는 작업이 있습니다">
-              코드 수정(낮음·중간)이 아닌 작업은 내부망에서 승인합니다. 내용은 여기서 확인할 수 있습니다.
-            </Banner>
-          )}
-          {context && request.status !== 'PENDING_APPROVAL' && !result && (
-            <Banner tone="neutral" title={`이 요청은 지금 ${REQUEST_STATUS_LABEL[request.status]} 상태라 승인을 받지 않습니다`} />
-          )}
-
-          {plan && <PlanStrip plan={plan} />}
+          {notice}
 
           {tasks.map((task) => {
             const canApprove = approvable.includes(task.id)
@@ -427,10 +390,10 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
                 key={task.id}
                 task={task}
                 requestId={requestId}
-                defaultOpen
+                defaultOpen={task.risk === 'HIGH' || integrityFailed}
                 highlighted={request.changedTaskIds.includes(task.id)}
                 leading={
-                  !context || task.risk === 'FORBIDDEN' ? undefined : task.status === 'PENDING' ? (
+                  !context ? undefined : task.risk !== 'FORBIDDEN' && task.status === 'PENDING' ? (
                     <input
                       type="checkbox"
                       className="size-4 accent-seal disabled:cursor-not-allowed"
@@ -441,18 +404,14 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
                       onChange={() => toggle(task.id)}
                     />
                   ) : (
-                    <CircleCheck size={16} className="text-ink-3" aria-hidden />
+                    // 체크할 수 없는 카드도 제목 줄을 맞춘다. 진행 상태는 카드의 상태 배지가 보여 준다.
+                    <span className="block size-4" aria-hidden />
                   )
                 }
                 footer={
-                  task.risk === 'FORBIDDEN' ? undefined : (
-                    <TaskNote
-                      task={task}
-                      approvable={canApprove}
-                      blocked={isBlocked}
-                      status={request.approvalStatus.find((s) => s.taskId === task.id)}
-                    />
-                  )
+                  task.risk === 'FORBIDDEN'
+                    ? undefined
+                    : taskNote(task, canApprove, isBlocked, request.approvalStatus.find((s) => s.taskId === task.id))
                 }
               />
             )
@@ -461,49 +420,22 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
       </div>
 
       {/* 오른쪽: 확인하고 결정한다 */}
-      <aside aria-label="승인 결정" className="flex w-[380px] shrink-0 flex-col border-l border-rule bg-sheet">
-        <div className="quiet-scroll min-h-0 flex-1 overflow-y-auto">
+      <aside aria-label="승인 결정" className="flex w-[320px] shrink-0 flex-col border-l border-rule bg-sheet">
+        <div className="quiet-scroll flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
           {integrity && context && (
-            <PanelSection
-              title="무결성 확인"
-              icon={integrity.ok ? <ShieldCheck size={16} className="text-low" /> : <ShieldX size={16} className="text-high" />}
-            >
-              <IntegrityCheck result={integrity} receivedHash={context.planHash} />
-            </PanelSection>
+            <IntegrityCheck result={integrity} receivedHash={context.planHash} awaitingKey={onlyAwaitingKey} />
           )}
           {request.approvalStatus.length > 0 && (
-            <PanelSection
-              title="결재란"
-              icon={<Stamp size={16} />}
-              aside={
-                <span className="text-xs text-ink-3 tabular-nums">
-                  {stampsDone}/{request.approvalStatus.length} 완료
-                </span>
-              }
-            >
+            <section>
+              <h2 className="mb-2.5 text-sm font-semibold">결재란</h2>
               <StampSheet statuses={request.approvalStatus} tasks={tasks} stampedBy={stampedBy} />
-            </PanelSection>
+            </section>
           )}
         </div>
 
         {context && integrity && (
-          <div className="flex flex-col gap-2.5 border-t border-rule-strong bg-sheet p-4 shadow-[0_-4px_12px_rgb(16_26_46/0.06)]">
-            <div className="flex items-baseline justify-between gap-2">
-              <h2 className="text-[0.875rem] font-semibold">{docMode ? '적용 여부 결정' : '승인'}</h2>
-              {selectedTasks.length > 0 && <span className="text-xs text-ink-3">선택한 작업 {selectedTasks.length}개</span>}
-            </div>
-            {selectedTasks.length > 0 && (
-              <ul className="flex flex-col gap-0.5 text-[0.8125rem]">
-                {selectedTasks.map((task) => (
-                  <li key={task.id} className="truncate" title={task.title}>
-                    <span className="mr-1.5 font-mono text-xs text-ink-3">{task.id}</span>
-                    {task.title}
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {runState && <SignProgress step={step} state={runState} />}
+          <div className="flex flex-col gap-2.5 border-t border-rule p-5">
+            {runState && runState !== 'done' && <SignProgress step={step} state={runState} />}
             {signError && (
               <Banner tone="danger" title="서명을 제출하지 못했습니다">
                 {signError}
@@ -520,7 +452,7 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
             {result && result.response.status !== 'VERIFICATION_FAILED' && (
               <div className="flex items-center gap-3 rounded-lg bg-seal-soft p-2.5">
                 <ResultSeal label={result.doc ? '적용' : '승인'} />
-                <div className="min-w-0 text-[0.8125rem] text-seal-dark">
+                <div className="min-w-0 text-sm break-keep text-seal-dark">
                   {result.response.executionRequested ? (
                     <>
                       <p className="font-semibold">필요한 승인이 모두 모여 실행을 요청했습니다</p>
@@ -547,36 +479,40 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
               </Link>
             )}
 
-            {signBlockedReason && !result && <p className="text-[0.8125rem] text-ink-2">{signBlockedReason}</p>}
-
-            <Button
-              variant="primary"
-              size="lg"
-              className="w-full"
-              disabled={Boolean(signBlockedReason)}
-              loading={sign.isPending}
-              onClick={() => sign.mutate(selected)}
-            >
-              {approveLabel}
-            </Button>
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="danger-outline"
-                className="w-full"
-                disabled={selected.length === 0 || sign.isPending || !accepting}
-                onClick={() => setDecision('reject')}
-              >
-                {rejectLabel}
-              </Button>
-              <Button
-                className="w-full"
-                disabled={selected.length === 0 || sign.isPending || !accepting}
-                onClick={() => setDecision('change')}
-              >
-                수정 요청
-              </Button>
-            </div>
-            <p className="text-xs text-ink-3">서명은 이 기기의 승인 키로 하고, 실행기만 열어 볼 수 있게 암호화해 보냅니다.</p>
+            {!decisionDone && (
+              <>
+                {signBlockedReason && !result && <p className="text-sm text-ink-2">{signBlockedReason}</p>}
+                {showSelectedCount && <p className="text-sm text-ink-3">선택한 작업 {selected.length}개</p>}
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className="w-full"
+                  disabled={Boolean(signBlockedReason)}
+                  loading={sign.isPending}
+                  onClick={() => sign.mutate(selected)}
+                >
+                  {approveLabel}
+                </Button>
+                <div className="flex justify-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={selected.length === 0 || sign.isPending || !accepting}
+                    onClick={() => setDecision('reject')}
+                  >
+                    {rejectLabel}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={selected.length === 0 || sign.isPending || !accepting}
+                    onClick={() => setDecision('change')}
+                  >
+                    수정 요청
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </aside>
@@ -595,7 +531,7 @@ export function ApprovalDetail({ requestId, nextRequestId }: { requestId: string
       <ReasonModal
         open={decision === 'change'}
         title="수정을 요청합니다"
-        description="요청은 거부 상태가 되고, 적은 내용이 요청자에게 전달됩니다. 요청자는 내용을 반영해 새로 요청합니다."
+        description="요청은 거부 상태가 되고, 적은 내용이 요청자에게 전달됩니다."
         label="수정할 내용"
         placeholder="어떻게 고치면 되는지 적어 주세요"
         confirmLabel="수정 요청"

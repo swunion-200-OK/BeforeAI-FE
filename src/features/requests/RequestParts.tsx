@@ -1,34 +1,17 @@
-import { Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import type { RequestDetail, Task } from '../../api/types'
-import { RequestStatusBadge } from '../../components/badges'
-import { Avatar, ProjectTag } from '../../components/rich'
 import { Banner, Button, ConfirmModal, ReasonModal } from '../../components/ui'
-import { formatDateTime, formatElapsed } from '../../lib/format'
-import { SOURCE_LABEL } from '../../lib/labels'
-import { useDepartmentNames } from '../../lib/queries'
+import { formatDateTime } from '../../lib/format'
 import { useCancelRequest, usePatchPlan, useRetryAnalysis } from './useRequestActions'
 
 const MAX_ANALYSIS_ATTEMPTS = 3
 
+/** 조용한 메타 한 줄: 프로젝트, 요청자, 시각 */
 export function RequestMeta({ request }: { request: RequestDetail }) {
-  const departmentName = useDepartmentNames()
-  return (
-    <>
-      <RequestStatusBadge status={request.status} />
-      <ProjectTag name={request.projectName} />
-      <span className="inline-flex items-center gap-1.5">
-        <Avatar name={request.requester.name} size="sm" />
-        요청자 {request.requester.name}
-        <span className="text-ink-3">{departmentName(request.requester.departmentId)}</span>
-      </span>
-      <span className="text-ink-3">
-        {formatDateTime(request.createdAt)} ({formatElapsed(request.createdAt)} 전)
-      </span>
-      {request.source !== 'PROMPT' && <span className="text-ink-3">{SOURCE_LABEL[request.source]}에서 만듦</span>}
-    </>
-  )
+  const parts = [request.projectName, request.requester.name, formatDateTime(request.createdAt)]
+  if (request.plan?.kind === 'ROLLBACK') parts.push('문서 롤백')
+  return <span className="text-ink-3">{parts.join(', ')}</span>
 }
 
 /** 작업별 수정(지시 문장 입력)·삭제. 어느 쪽이든 PATCH 후 AI가 다시 분석한다. */
@@ -52,12 +35,10 @@ export function TaskEditButtons({
     <>
       {task.risk !== 'FORBIDDEN' && (
         <Button size="sm" variant="ghost" internalOnly onClick={() => setMode('edit')}>
-          <Pencil size={13} aria-hidden />
           수정
         </Button>
       )}
       <Button size="sm" variant="ghost" internalOnly onClick={() => setMode('delete')}>
-        <Trash2 size={13} aria-hidden />
         삭제
       </Button>
 
@@ -99,17 +80,17 @@ export function TaskEditButtons({
 export function CancelRequestButton({
   requestId,
   onDone,
-  fullWidth,
+  size,
 }: {
   requestId: string
   onDone?: () => void
-  fullWidth?: boolean
+  size?: 'md' | 'lg'
 }) {
   const [open, setOpen] = useState(false)
   const cancel = useCancelRequest(requestId, onDone)
   return (
     <>
-      <Button variant="danger-outline" className={fullWidth ? 'w-full' : ''} onClick={() => setOpen(true)}>
+      <Button size={size} onClick={() => setOpen(true)}>
         요청 취소
       </Button>
       <ConfirmModal

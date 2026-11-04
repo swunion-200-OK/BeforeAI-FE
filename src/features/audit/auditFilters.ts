@@ -13,10 +13,6 @@ export const FILTER_KEYS = [
 
 export type FilterKey = (typeof FILTER_KEYS)[number]
 
-export function hasFilters(params: URLSearchParams): boolean {
-  return FILTER_KEYS.some((key) => params.get(key))
-}
-
 export function countFilters(params: URLSearchParams): number {
   return FILTER_KEYS.filter((key) => params.get(key)).length
 }

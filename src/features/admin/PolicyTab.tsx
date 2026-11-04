@@ -1,9 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Scale, Sparkles, TableProperties } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { adminApi, orgApi } from '../../api/endpoints'
 import type { ApprovalMatrixRow, ApproverRule, PolicyPreset, Risk } from '../../api/types'
 import { RiskBadge } from '../../components/badges'
+import { SegmentedTabs } from '../../components/rich'
 import { toast } from '../../components/toast'
 import { Button, ConfirmModal, ErrorState, Select, Sheet, Spinner } from '../../components/ui'
 import { PRESET_LABEL, RISK_LABEL, RULE_LABEL } from '../../lib/labels'
@@ -12,41 +13,51 @@ import { policyQuery } from './adminQueries'
 
 const PRESETS: PolicyPreset[] = ['SMALL', 'MEDIUM', 'LARGE']
 
-/** 기능 명세서 5.5 규모별 기본 정책. 도장 수는 높음 작업에 필요한 승인 인원이다. */
-const PRESET_DETAILS: Record<
-  PolicyPreset,
-  { lowApprover: string; lowStamps: number; highApprover: string; highStamps: number; slack: string; audit: string }
-> = {
-  SMALL: { lowApprover: '요청자 본인', lowStamps: 1, highApprover: '담당자 1인', highStamps: 1, slack: '선택', audit: '90일' },
+interface PresetDetail {
+  lowApprover: string
+  highApprover: string
+  highApprovals: number
+  slack: string
+  audit: string
+}
+
+/** 기능 명세서 5.5 규모별 기본 정책 */
+const PRESET_DETAILS: Record<PolicyPreset, PresetDetail> = {
+  SMALL: { lowApprover: '요청자 본인', highApprover: '담당자 1인', highApprovals: 1, slack: '선택', audit: '90일' },
   MEDIUM: {
     lowApprover: '요청자 본인',
-    lowStamps: 1,
     highApprover: '담당자 + 부서 관리자',
-    highStamps: 2,
+    highApprovals: 2,
     slack: '기본 켜짐',
     audit: '1년',
   },
   LARGE: {
     lowApprover: '요청자 외 같은 부서 1인',
-    lowStamps: 1,
     highApprover: '담당자 + 부서 관리자 + 관리자',
-    highStamps: 3,
+    highApprovals: 3,
     slack: '기본 켜짐',
     audit: '3년',
   },
 }
 
+const PRESET_COMPARISON: Array<{ label: string; value: (detail: PresetDetail) => string }> = [
+  { label: '위험도 낮음·중간 작업 승인', value: (detail) => detail.lowApprover },
+  { label: '위험도 높음 작업 승인', value: (detail) => detail.highApprover },
+  { label: '위험도 높음 승인 인원', value: (detail) => `${detail.highApprovals}명` },
+  { label: 'Slack 알림', value: (detail) => detail.slack },
+  { label: '감사 로그 보관', value: (detail) => detail.audit },
+]
+
 const EDITABLE_RISKS: Array<ApprovalMatrixRow['defaultRisk']> = ['LOW', 'MEDIUM', 'HIGH']
 const EDITABLE_RULES: ApproverRule[] = ['ANYONE', 'PROJECT_OWNER']
 
-/** 필요한 승인 인원을 빈 도장 칸으로 보여 준다. 글자로 같은 내용을 함께 쓰므로 스크린 리더에는 숨긴다. */
-function Stamps({ count }: { count: number }) {
+/** 안내 한 문장과 그 칸의 버튼 */
+function SectionBar({ text, children }: { text: string; children: ReactNode }) {
   return (
-    <span aria-hidden className="inline-flex shrink-0 gap-0.5">
-      {Array.from({ length: count }, (_, index) => (
-        <span key={index} className="size-3.5 rounded-full border-[1.5px] border-seal" />
-      ))}
-    </span>
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <p className="text-sm text-ink-2">{text}</p>
+      <div className="flex items-center gap-2">{children}</div>
+    </div>
   )
 }
 
@@ -64,11 +75,11 @@ function PresetCard({
   const detail = PRESET_DETAILS[preset]
   return (
     <label
-      className={`flex cursor-pointer flex-col gap-2 rounded-lg border p-3 transition-colors ${
-        selected ? 'border-seal bg-seal-soft/40 ring-1 ring-seal' : 'border-rule hover:border-rule-strong hover:bg-sheet-alt'
+      className={`flex cursor-pointer flex-col gap-1.5 rounded-lg border p-4 transition-colors ${
+        selected ? 'border-seal bg-seal-soft/40 ring-1 ring-seal' : 'border-rule hover:border-rule-strong'
       }`}
     >
-      <span className="flex items-center gap-2">
+      <span className="mb-1 flex items-center gap-2">
         <input
           type="radio"
           name="preset"
@@ -77,39 +88,45 @@ function PresetCard({
           checked={selected}
           onChange={onSelect}
         />
-        <span className="font-semibold text-ink">{PRESET_LABEL[preset]}</span>
-        {applied && <span className="ml-auto rounded bg-seal px-1.5 py-0.5 text-xs font-medium text-white">적용 중</span>}
-        {selected && !applied && (
-          <span className="ml-auto rounded bg-medium-soft px-1.5 py-0.5 text-xs font-medium text-medium">적용 전</span>
-        )}
+        <span className="text-base font-semibold text-ink">{PRESET_LABEL[preset]}</span>
+        {applied && <span className="ml-auto text-sm font-medium text-seal">적용 중</span>}
       </span>
-      <dl className="grid gap-y-1.5 text-[0.8125rem]">
-        <div>
-          <dt className="text-xs text-ink-3">위험도 낮음·중간 작업 승인</dt>
-          <dd className="flex items-center justify-between gap-2 text-ink">
-            {detail.lowApprover}
-            <Stamps count={detail.lowStamps} />
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-ink-3">위험도 높음 작업 승인</dt>
-          <dd className="flex items-center justify-between gap-2 text-ink">
-            {detail.highApprover}
-            <Stamps count={detail.highStamps} />
-          </dd>
-        </div>
-        <div className="flex gap-4">
-          <div>
-            <dt className="text-xs text-ink-3">Slack 알림</dt>
-            <dd className="text-ink">{detail.slack}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-ink-3">감사 로그 보관</dt>
-            <dd className="text-ink">{detail.audit}</dd>
-          </div>
-        </div>
-      </dl>
+      <span className="text-sm text-ink-2">낮음·중간은 {detail.lowApprover}</span>
+      <span className="text-sm text-ink-2">높음은 {detail.highApprover}</span>
     </label>
+  )
+}
+
+function PresetComparison() {
+  return (
+    <details className="group mt-4">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded text-sm font-medium text-seal hover:underline [&::-webkit-details-marker]:hidden">
+        자세히
+        <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+      </summary>
+      <div className="mt-3 overflow-x-auto">
+        <table className="sheet-table">
+          <thead>
+            <tr>
+              <th aria-label="항목" />
+              {PRESETS.map((preset) => (
+                <th key={preset}>{PRESET_LABEL[preset]}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {PRESET_COMPARISON.map((row) => (
+              <tr key={row.label}>
+                <td className="whitespace-nowrap text-ink-2">{row.label}</td>
+                {PRESETS.map((preset) => (
+                  <td key={preset}>{row.value(PRESET_DETAILS[preset])}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
 
@@ -129,43 +146,22 @@ function PresetSection() {
     },
   })
 
-  const icon = <Scale size={16} aria-hidden />
-  if (policy.isPending) {
-    return (
-      <Sheet title="규모별 기본 정책" icon={icon}>
-        <Spinner />
-      </Sheet>
-    )
-  }
-  if (policy.isError) {
-    return (
-      <Sheet title="규모별 기본 정책" icon={icon}>
-        <ErrorState error={policy.error} onRetry={() => policy.refetch()} />
-      </Sheet>
-    )
-  }
+  if (policy.isPending) return <Spinner />
+  if (policy.isError) return <ErrorState error={policy.error} onRetry={() => policy.refetch()} />
 
   return (
-    <Sheet
-      title="규모별 기본 정책"
-      icon={icon}
-      actions={
-        <>
-          <span className="text-xs text-ink-3">
-            프리셋은 승인 기준표의 승인권자를 그대로 두고, 필요한 승인 인원만 바꿉니다.
-          </span>
-          <Button
-            variant="primary"
-            disabled={selected === policy.data.preset}
-            disabledReason="지금 적용된 프리셋입니다"
-            onClick={() => setConfirming(true)}
-          >
-            프리셋 적용
-          </Button>
-        </>
-      }
-    >
-      <div className="grid gap-3 md:grid-cols-3">
+    <Sheet>
+      <SectionBar text="프리셋은 승인 기준표의 승인권자를 그대로 두고, 필요한 승인 인원만 바꿉니다.">
+        <Button
+          variant="primary"
+          disabled={selected === policy.data.preset}
+          disabledReason="지금 적용된 프리셋입니다"
+          onClick={() => setConfirming(true)}
+        >
+          프리셋 적용
+        </Button>
+      </SectionBar>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
         {PRESETS.map((preset) => (
           <PresetCard
             key={preset}
@@ -176,6 +172,7 @@ function PresetSection() {
           />
         ))}
       </div>
+      <PresetComparison />
       <ConfirmModal
         open={confirming}
         title={`${PRESET_LABEL[selected]} 프리셋 적용`}
@@ -224,19 +221,10 @@ function MatrixSection() {
   }
 
   return (
-    <Sheet
-      title="승인 기준표"
-      icon={<TableProperties size={16} aria-hidden />}
-      flush
-      actions={
-        <>
-          <span className="inline-flex items-center gap-1.5 text-xs text-ai-dark">
-            <Sparkles size={13} aria-hidden />
-            AI는 내용에 따라 위험도를 올리기만 할 수 있고, 기본값보다 내리지는 못합니다.
-          </span>
-          <Button disabled={!dirty} onClick={() => setDraft(null)}>
-            되돌리기
-          </Button>
+    <Sheet flush>
+      <div className="px-4 py-3">
+        <SectionBar text="AI는 내용에 따라 위험도를 올리기만 할 수 있고, 기본값보다 내리지는 못합니다.">
+          {dirty && <Button onClick={() => setDraft(null)}>되돌리기</Button>}
           <Button
             variant="primary"
             disabled={!dirty}
@@ -245,9 +233,8 @@ function MatrixSection() {
           >
             기준표 저장
           </Button>
-        </>
-      }
-    >
+        </SectionBar>
+      </div>
       {matrix.isPending && <Spinner />}
       {matrix.isError && <ErrorState error={matrix.error} onRetry={() => matrix.refetch()} />}
       {rows && (
@@ -263,30 +250,25 @@ function MatrixSection() {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.taskType} className={changed(row) ? 'bg-seal-soft/40' : ''}>
+                <tr key={row.taskType}>
                   <td className="font-medium whitespace-nowrap">
                     {row.label}
-                    {changed(row) && (
-                      <span className="ml-2 rounded bg-seal-soft px-1.5 py-0.5 text-xs font-medium text-seal-dark">바뀜</span>
-                    )}
+                    {changed(row) && <span className="ml-2 text-[0.8125rem] font-medium text-seal">바뀜</span>}
                   </td>
                   <td className="text-ink-2">{row.examples}</td>
                   <td>
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 shrink-0">
-                        <Select
-                          aria-label={`${row.label} 기본 위험도`}
-                          value={row.defaultRisk}
-                          onChange={(event) => changeRisk(row, event.target.value as ApprovalMatrixRow['defaultRisk'])}
-                        >
-                          {EDITABLE_RISKS.map((risk) => (
-                            <option key={risk} value={risk}>
-                              {RISK_LABEL[risk as Risk]}
-                            </option>
-                          ))}
-                        </Select>
-                      </div>
-                      <RiskBadge risk={row.defaultRisk} />
+                    <div className="w-28">
+                      <Select
+                        aria-label={`${row.label} 기본 위험도`}
+                        value={row.defaultRisk}
+                        onChange={(event) => changeRisk(row, event.target.value as ApprovalMatrixRow['defaultRisk'])}
+                      >
+                        {EDITABLE_RISKS.map((risk) => (
+                          <option key={risk} value={risk}>
+                            {RISK_LABEL[risk as Risk]}
+                          </option>
+                        ))}
+                      </Select>
                     </div>
                   </td>
                   <td>
@@ -308,7 +290,7 @@ function MatrixSection() {
                   </td>
                 </tr>
               ))}
-              <tr className="bg-forbidden-soft/50">
+              <tr>
                 <td className="font-medium whitespace-nowrap">부서 금지 작업</td>
                 <td className="text-ink-2">금지 목록에 있는 작업</td>
                 <td>
@@ -334,11 +316,27 @@ function MatrixSection() {
   )
 }
 
+type Segment = 'preset' | 'matrix'
+
+const SEGMENTS: Array<{ id: Segment; label: string }> = [
+  { id: 'preset', label: '규모 프리셋' },
+  { id: 'matrix', label: '승인 기준표' },
+]
+
 export function PolicyTab() {
+  const [segment, setSegment] = useState<Segment>('preset')
   return (
     <div className="flex flex-col gap-4">
-      <PresetSection />
-      <MatrixSection />
+      <div>
+        <SegmentedTabs<Segment> label="정책 항목" value={segment} onChange={setSegment} items={SEGMENTS} />
+      </div>
+      {/* 고치던 기준표가 칸을 오가도 남도록 둘 다 띄워 두고 숨긴다. */}
+      <div role="tabpanel" aria-label={SEGMENTS[0].label} hidden={segment !== 'preset'}>
+        <PresetSection />
+      </div>
+      <div role="tabpanel" aria-label={SEGMENTS[1].label} hidden={segment !== 'matrix'}>
+        <MatrixSection />
+      </div>
     </div>
   )
 }

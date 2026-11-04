@@ -141,5 +141,12 @@ export const devControls = {
     resumeTimers()
     persist()
   },
+  /** 시연 가이드용: 이 프롬프트로 만든 가장 최근 요청. 없으면 같은 내용의 시드 요청을 쓴다. */
+  latestRequestId(prompt: string): string {
+    const match = db().requests
+      .filter((request) => request.prompt === prompt && request.id !== 'r-main')
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+    return match?.id ?? 'r-main'
+  },
   subscribe: onDbChange,
 }

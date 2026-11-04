@@ -7,7 +7,6 @@ import { NetworkBadge } from '../../components/badges'
 import { Banner, Drawer, ErrorState, Mono, Spinner } from '../../components/ui'
 import { FAILED_CHECK_LABEL } from '../../lib/labels'
 import { useProjects } from '../../lib/queries'
-import { ActorChip } from './ActorChip'
 import { AuditActionLabel } from './AuditActionLabel'
 
 const DETAIL_LABEL: Record<string, string> = {
@@ -83,9 +82,7 @@ function LogBody({ log }: { log: AuditLog }) {
 
       <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-2 text-sm">
         <Row label="시각">{fullDateTime.format(new Date(log.at))}</Row>
-        <Row label="사용자">
-          <ActorChip actor={log.actor} />
-        </Row>
+        <Row label="사용자">{log.actor.name}</Row>
         <Row label="액션">
           <AuditActionLabel action={log.action} />
         </Row>

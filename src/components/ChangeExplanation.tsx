@@ -1,78 +1,69 @@
-import { ArrowRight, MapPin, RotateCcw, Sparkles, Users } from 'lucide-react'
+import { ArrowRight, Sparkles } from 'lucide-react'
 import type { Task } from '../api/types'
 import { diffStats, explanationOf } from '../lib/explain'
 
 /**
- * 예상 변경을 말로 풀어 보여 준다. 어디가, 무엇이, 이전에서 이후로 바뀌고, 누가 영향받고, 되돌릴 수 있는지.
- * 이 설명은 AI가 쓴 참고 자료이고 해시 대상이 아니다. 서명 기준은 아래의 실제 변경 내용이다.
+ * 예상 변경을 말로 풀어 보여 준다. 한 문장과 이전 → 이후만 먼저 보여 주고, 나머지는 "자세히"에 둔다.
+ * 이 설명은 AI가 쓴 참고 자료이고 해시 대상이 아니다. 서명 기준은 실제 변경 내용이다.
  */
-export function ChangeExplanation({ task }: { task: Task }) {
+export function ChangeSummary({ task }: { task: Task }) {
+  const explanation = explanationOf(task)
+  const pairs = explanation.changes.filter((change) => change.before !== undefined || change.after !== undefined)
+  return (
+    <div className="mt-1.5">
+      <p className="flex items-start gap-1.5 text-[0.9375rem] text-ink">
+        <Sparkles size={14} className="mt-1 shrink-0 text-ai" aria-label="AI 설명" />
+        <span>{explanation.summary}</span>
+      </p>
+      {pairs.slice(0, 2).map((change, index) => (
+        <div key={index} className="mt-1.5 ml-5 flex flex-wrap items-center gap-1.5 text-sm">
+          {change.before !== undefined && (
+            <span className="rounded bg-high-soft px-1.5 py-0.5 text-high">
+              <span className="sr-only">이전: </span>
+              {change.before}
+            </span>
+          )}
+          {change.before !== undefined && change.after !== undefined && (
+            <ArrowRight size={14} className="text-ink-3" aria-label="에서" />
+          )}
+          {change.after !== undefined && (
+            <span className="rounded bg-low-soft px-1.5 py-0.5 text-low">
+              <span className="sr-only">이후: </span>
+              {change.after}
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** "자세히"를 열면 보이는 내용: 어디가 바뀌고, 누가 영향받고, 되돌릴 수 있는지. */
+export function ChangeDetails({ task }: { task: Task }) {
   const explanation = explanationOf(task)
   return (
-    <div className="overflow-hidden rounded-lg border border-ai/25 bg-ai-soft/40">
-      <div className="flex items-start gap-2 border-b border-ai/15 px-3.5 py-2.5">
-        <Sparkles size={16} className="mt-0.5 shrink-0 text-ai" aria-hidden />
-        <p className="text-sm font-medium text-ink">{explanation.summary}</p>
-      </div>
-
-      {explanation.changes.length > 0 && (
-        <ul className="divide-y divide-ai/10 bg-sheet/70">
-          {explanation.changes.map((change, index) => (
-            <li key={`${change.where}-${index}`} className="px-3.5 py-2.5">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-ai-dark">
-                  <MapPin size={12} aria-hidden />
-                  {change.where}
-                </span>
-                <span className="text-[0.8125rem] text-ink-2">{change.what}</span>
-              </div>
-              {(change.before !== undefined || change.after !== undefined) && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[0.8125rem]">
-                  {change.before !== undefined && (
-                    <span className="rounded bg-high-soft px-1.5 py-0.5 text-high">
-                      <span className="sr-only">이전: </span>
-                      {change.before}
-                    </span>
-                  )}
-                  {change.before !== undefined && change.after !== undefined && (
-                    <ArrowRight size={14} className="text-ink-3" aria-label="에서" />
-                  )}
-                  {change.after !== undefined && (
-                    <span className="rounded bg-low-soft px-1.5 py-0.5 text-low">
-                      <span className="sr-only">이후: </span>
-                      {change.after}
-                    </span>
-                  )}
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+      <dt className="text-ink-3">어디가 바뀌나요</dt>
+      <dd className="text-ink-2">
+        {explanation.changes.map((change, index) => (
+          <p key={index}>
+            <span className="font-medium text-ink">{change.where}</span> {change.what}
+          </p>
+        ))}
+      </dd>
+      {explanation.impact.length > 0 && (
+        <>
+          <dt className="text-ink-3">누가 영향받나요</dt>
+          <dd className="text-ink-2">
+            {explanation.impact.map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </dd>
+        </>
       )}
-
-      <div className="grid gap-x-4 gap-y-2 border-t border-ai/15 px-3.5 py-2.5 text-[0.8125rem] sm:grid-cols-2">
-        {explanation.impact.length > 0 && (
-          <div className="flex items-start gap-1.5">
-            <Users size={14} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />
-            <div>
-              <span className="text-xs font-semibold text-ink-2">누가 영향받나요</span>
-              {explanation.impact.map((line) => (
-                <p key={line} className="text-ink-2">
-                  {line}
-                </p>
-              ))}
-            </div>
-          </div>
-        )}
-        <div className="flex items-start gap-1.5">
-          <RotateCcw size={14} className="mt-0.5 shrink-0 text-ink-3" aria-hidden />
-          <div>
-            <span className="text-xs font-semibold text-ink-2">되돌릴 수 있나요</span>
-            <p className="text-ink-2">{explanation.undo}</p>
-          </div>
-        </div>
-      </div>
-    </div>
+      <dt className="text-ink-3">되돌릴 수 있나요</dt>
+      <dd className="text-ink-2">{explanation.undo}</dd>
+    </dl>
   )
 }
 

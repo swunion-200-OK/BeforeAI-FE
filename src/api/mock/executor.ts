@@ -180,7 +180,8 @@ function scriptFor(task: Task, requestId: string): Line[] {
         info('헬스 체크 통과'),
       ]
     case 'DB': {
-      const steps = task.id === 't-long' ? 120 : 3
+      // 시드의 실행 중 요청은 시연하는 동안 끝나지 않게 길게 둔다 (약 20분).
+      const steps = task.id === 't-long' ? 600 : 3
       return [
         cmd('npm run migrate:up'),
         ...Array.from({ length: steps }, (_, i) => info(`마이그레이션 진행 ${Math.round(((i + 1) / steps) * 100)}%`)),

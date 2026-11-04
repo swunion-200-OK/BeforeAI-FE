@@ -6,7 +6,7 @@ import type { FilterKey } from './auditFilters'
 
 const ACTIONS = Object.keys(AUDIT_ACTION_LABEL) as AuditAction[]
 
-/** 상세 필터 한 줄. 값은 URL과 동기화되므로 링크로 그대로 공유할 수 있다. */
+/** "필터" 버튼을 눌러야 펼쳐지는 상세 필터. 값은 URL과 동기화되므로 링크로 그대로 공유할 수 있다. */
 export function AuditFilters({
   params,
   actors,
@@ -33,7 +33,7 @@ export function AuditFilters({
     >
       <Field label="사용자">
         {(id) => (
-          <Select className="h-8" id={id} value={actorId} onChange={(event) => onChange('actorId', event.target.value)}>
+          <Select className="h-9" id={id} value={actorId} onChange={(event) => onChange('actorId', event.target.value)}>
             <option value="">전체</option>
             {actorOptions.map((actor) => (
               <option key={actor.id} value={actor.id}>
@@ -45,7 +45,7 @@ export function AuditFilters({
       </Field>
       <Field label="부서">
         {(id) => (
-          <Select className="h-8" id={id} value={value('departmentId')} onChange={(event) => onChange('departmentId', event.target.value)}>
+          <Select className="h-9" id={id} value={value('departmentId')} onChange={(event) => onChange('departmentId', event.target.value)}>
             <option value="">전체</option>
             {departments.data?.map((department) => (
               <option key={department.id} value={department.id}>
@@ -57,7 +57,7 @@ export function AuditFilters({
       </Field>
       <Field label="프로젝트">
         {(id) => (
-          <Select className="h-8" id={id} value={value('projectId')} onChange={(event) => onChange('projectId', event.target.value)}>
+          <Select className="h-9" id={id} value={value('projectId')} onChange={(event) => onChange('projectId', event.target.value)}>
             <option value="">전체</option>
             {projects.data?.map((project) => (
               <option key={project.id} value={project.id}>
@@ -71,7 +71,7 @@ export function AuditFilters({
         {(id) => (
           // URL 값이 바뀌면 key가 바뀌어 입력칸도 새 값으로 다시 그려진다.
           <TextInput
-            className="h-8"
+            className="h-9"
             key={value('requestId')}
             id={id}
             defaultValue={value('requestId')}
@@ -85,7 +85,7 @@ export function AuditFilters({
       </Field>
       <Field label="액션">
         {(id) => (
-          <Select className="h-8" id={id} value={value('action')} onChange={(event) => onChange('action', event.target.value)}>
+          <Select className="h-9" id={id} value={value('action')} onChange={(event) => onChange('action', event.target.value)}>
             <option value="">전체</option>
             {ACTIONS.map((action) => (
               <option key={action} value={action}>
@@ -97,7 +97,7 @@ export function AuditFilters({
       </Field>
       <Field label="접속 환경">
         {(id) => (
-          <Select className="h-8" id={id} value={value('network')} onChange={(event) => onChange('network', event.target.value)}>
+          <Select className="h-9" id={id} value={value('network')} onChange={(event) => onChange('network', event.target.value)}>
             <option value="">전체</option>
             <option value="INTERNAL">{NETWORK_LABEL.INTERNAL}</option>
             <option value="EXTERNAL">{NETWORK_LABEL.EXTERNAL}</option>
@@ -107,7 +107,7 @@ export function AuditFilters({
       <Field label="시작일">
         {(id) => (
           <TextInput
-            className="h-8"
+            className="h-9"
             id={id}
             type="date"
             value={value('from')}
@@ -119,7 +119,7 @@ export function AuditFilters({
       <Field label="종료일">
         {(id) => (
           <TextInput
-            className="h-8"
+            className="h-9"
             id={id}
             type="date"
             value={value('to')}

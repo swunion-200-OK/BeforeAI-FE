@@ -1,12 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CircleCheck, CircleDot, CircleX, FileText, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { projectsApi } from '../../api/endpoints'
 import type { ChangeRequestStatus, Project, ProjectSpec, SpecChangeRequest } from '../../api/types'
-import { SegmentedTabs, UserChip } from '../../components/rich'
+import { SegmentedTabs } from '../../components/rich'
 import { toast } from '../../components/toast'
 import {
-  Banner,
   Button,
   ConfirmModal,
   EmptyState,
@@ -25,7 +23,7 @@ import { changeRequestsQuery, specQuery } from './queries'
 
 // ── 기획서 본문 ────────────────────────────────────────────
 
-function ChangeRequestModal({
+export function ChangeRequestModal({
   open,
   projectId,
   onClose,
@@ -81,75 +79,41 @@ function ChangeRequestModal({
   )
 }
 
-export function SpecTab({ project, canEdit }: { project: Project; canEdit: boolean }) {
-  const refreshAll = useRefreshAll()
-  const [draft, setDraft] = useState<string | null>(null)
-  const [requesting, setRequesting] = useState(false)
-  const spec = useQuery(specQuery(project.id))
-  const save = useMutation({
-    mutationFn: (body: string) => projectsApi.updateSpec(project.id, body),
-    onSuccess: async (saved) => {
-      await refreshAll()
-      setDraft(null)
-      toast.success(`기획서를 v${saved.version}으로 저장했습니다`)
-    },
-  })
+/** 기획서 본문. draft가 있으면 고치는 중이고, 저장과 취소는 화면 머리글에 있다. */
+export function SpecTab({
+  projectId,
+  draft,
+  onDraftChange,
+}: {
+  projectId: string
+  draft: string | null
+  onDraftChange: (value: string) => void
+}) {
+  const spec = useQuery(specQuery(projectId))
 
   if (spec.isPending) return <Spinner />
   if (spec.isError) return <ErrorState error={spec.error} onRetry={() => spec.refetch()} />
 
-  const editing = draft !== null
-  const unchanged = draft === spec.data.body
-
   return (
     <>
-      <Sheet
-        title={`현재 버전 v${spec.data.version}`}
-        icon={<FileText size={16} aria-hidden />}
-        actions={
-          editing ? (
-            <>
-              <Button size="sm" onClick={() => setDraft(null)}>
-                편집 취소
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                disabled={unchanged}
-                disabledReason="바뀐 내용이 없습니다"
-                loading={save.isPending}
-                onClick={() => save.mutate(draft)}
-              >
-                새 버전으로 저장
-              </Button>
-            </>
-          ) : canEdit ? (
-            <Button size="sm" onClick={() => setDraft(spec.data.body)}>
-              기획서 수정
-            </Button>
+      <p className="mb-3 text-[0.8125rem] text-ink-3">
+        현재 버전 v{spec.data.version}, {spec.data.updatedBy.name}, {formatDateTime(spec.data.updatedAt)}
+      </p>
+      <Sheet flush>
+        <div className="px-8 py-6">
+          {draft !== null ? (
+            <TextArea
+              aria-label="기획서 본문"
+              rows={24}
+              value={draft}
+              onChange={(event) => onDraftChange(event.target.value)}
+              className="font-mono"
+            />
           ) : (
-            <Button size="sm" onClick={() => setRequesting(true)}>
-              수정 요청
-            </Button>
-          )
-        }
-      >
-        <div className="mb-3 border-b border-rule pb-3">
-          <UserChip name={spec.data.updatedBy.name} sub={`${formatDateTime(spec.data.updatedAt)}에 저장`} />
+            <MarkdownText body={spec.data.body} />
+          )}
         </div>
-        {editing ? (
-          <TextArea
-            aria-label="기획서 본문"
-            rows={18}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            className="font-mono"
-          />
-        ) : (
-          <MarkdownText body={spec.data.body} />
-        )}
       </Sheet>
-      <ChangeRequestModal open={requesting} projectId={project.id} onClose={() => setRequesting(false)} />
     </>
   )
 }
@@ -199,9 +163,7 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
                     {version.version === latest && <span className="ml-2 text-xs font-normal text-ink-3">현재</span>}
                   </td>
                   <td>{formatDateTime(version.updatedAt)}</td>
-                  <td>
-                    <UserChip name={version.updatedBy.name} />
-                  </td>
+                  <td>{version.updatedBy.name}</td>
                   <td>
                     <div className="flex justify-end gap-1.5">
                       <Button size="sm" variant="ghost" onClick={() => setViewing(version)}>
@@ -242,10 +204,10 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
 // ── 수정 요청 ──────────────────────────────────────────────
 
 const CR_STATUS_LABEL: Record<ChangeRequestStatus, string> = { OPEN: '처리 대기', ACCEPTED: '반영됨', REJECTED: '반려됨' }
-const CR_STATUS_STYLE: Record<ChangeRequestStatus, { className: string; Icon: LucideIcon }> = {
-  OPEN: { className: 'bg-seal-soft text-seal-dark', Icon: CircleDot },
-  ACCEPTED: { className: 'bg-low-soft text-low', Icon: CircleCheck },
-  REJECTED: { className: 'bg-high-soft text-high', Icon: CircleX },
+const CR_STATUS_COLOR: Record<ChangeRequestStatus, string> = {
+  OPEN: 'text-seal-dark',
+  ACCEPTED: 'text-low',
+  REJECTED: 'text-high',
 }
 
 type StatusFilter = ChangeRequestStatus | 'ALL'
@@ -254,7 +216,6 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
   const refreshAll = useRefreshAll()
   const [status, setStatus] = useState<StatusFilter>('ALL')
   const [rejecting, setRejecting] = useState<SpecChangeRequest | null>(null)
-  const [requesting, setRequesting] = useState(false)
   const list = useQuery(changeRequestsQuery(project.id))
   const accept = useMutation({
     mutationFn: (crId: string) => projectsApi.acceptChangeRequest(project.id, crId),
@@ -273,97 +234,81 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
     onSettled: () => setRejecting(null),
   })
 
-  const countOf = (value: ChangeRequestStatus) => list.data?.filter((item) => item.status === value).length ?? 0
-  const shown = list.data?.filter((item) => status === 'ALL' || item.status === status) ?? []
+  if (list.isPending) return <Spinner />
+  if (list.isError) return <ErrorState error={list.error} onRetry={() => list.refetch()} />
+  if (list.data.length === 0) {
+    return (
+      <EmptyState title="수정 요청이 없습니다">
+        {canEdit ? '직원이 수정 요청을 보내면 여기에서 반영하거나 반려합니다.' : '기획서에 고칠 점이 있으면 수정 요청을 보내세요.'}
+      </EmptyState>
+    )
+  }
+
+  const countOf = (value: ChangeRequestStatus) => list.data.filter((item) => item.status === value).length
+  const shown = list.data.filter((item) => status === 'ALL' || item.status === status)
 
   return (
     <>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3">
         <SegmentedTabs<StatusFilter>
           label="처리 상태"
           value={status}
           onChange={setStatus}
           items={[
-            { id: 'ALL', label: '전체', count: list.data?.length ?? 0 },
+            { id: 'ALL', label: '전체', count: list.data.length },
             ...(Object.keys(CR_STATUS_LABEL) as ChangeRequestStatus[]).map((value) => ({
               id: value,
               label: CR_STATUS_LABEL[value],
               count: countOf(value),
-              icon: CR_STATUS_STYLE[value].Icon,
             })),
           ]}
         />
-        {!canEdit && <Button onClick={() => setRequesting(true)}>수정 요청</Button>}
       </div>
 
-      {list.isPending ? (
-        <Spinner />
-      ) : list.isError ? (
-        <ErrorState error={list.error} onRetry={() => list.refetch()} />
-      ) : shown.length === 0 ? (
-        <Sheet>
-          <EmptyState title="수정 요청이 없습니다">
-            {canEdit ? '직원이 수정 요청을 보내면 여기에서 반영하거나 반려합니다.' : '기획서에 고칠 점이 있으면 수정 요청을 보내세요.'}
-          </EmptyState>
-        </Sheet>
+      {shown.length === 0 ? (
+        <EmptyState title="이 상태의 수정 요청이 없습니다" />
       ) : (
         <ul className="flex flex-col gap-3">
-          {shown.map((item) => {
-            const { className, Icon } = CR_STATUS_STYLE[item.status]
-            return (
-              <li key={item.id} data-change-request>
-                <Sheet>
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-3">
-                      <UserChip name={item.requester.name} sub={formatDateTime(item.createdAt)} />
-                      <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${className}`}>
-                        <Icon size={13} aria-hidden />
-                        {CR_STATUS_LABEL[item.status]}
-                      </span>
-                    </div>
-                    {canEdit && item.status === 'OPEN' && (
-                      <div className="flex gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          loading={accept.isPending && accept.variables === item.id}
-                          onClick={() => accept.mutate(item.id)}
-                        >
-                          반영
-                        </Button>
-                        <Button size="sm" variant="danger-outline" onClick={() => setRejecting(item)}>
-                          반려
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-3 grid grid-cols-2 gap-4 max-lg:grid-cols-1">
-                    <div className="min-w-0">
-                      <h3 className="text-xs font-semibold text-ink-2">변경 내용</h3>
-                      <div className="mt-1 rounded-lg bg-sheet-alt p-3">
-                        <MarkdownText body={item.content} />
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="text-xs font-semibold text-ink-2">사유</h3>
-                      <p className="mt-1 max-w-[80ch] text-sm">{item.reason}</p>
-                    </div>
-                  </div>
-                  {item.rejectReason && (
-                    <div className="mt-3">
-                      <Banner tone="neutral" title="반려 사유">
-                        {item.rejectReason}
-                      </Banner>
+          {shown.map((item) => (
+            <li key={item.id} data-change-request>
+              <Sheet>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[0.8125rem] text-ink-3">
+                    <span className="font-medium text-ink">{item.requester.name}</span>, {formatDateTime(item.createdAt)},{' '}
+                    <span className={`font-medium ${CR_STATUS_COLOR[item.status]}`}>{CR_STATUS_LABEL[item.status]}</span>
+                  </p>
+                  {canEdit && item.status === 'OPEN' && (
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        loading={accept.isPending && accept.variables === item.id}
+                        onClick={() => accept.mutate(item.id)}
+                      >
+                        반영
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setRejecting(item)}>
+                        반려
+                      </Button>
                     </div>
                   )}
-                </Sheet>
-              </li>
-            )
-          })}
+                </div>
+                <p className="mt-2 max-w-[80ch] text-sm">
+                  <span className="text-ink-3">사유</span> {item.reason}
+                </p>
+                <div className="mt-3 rounded-lg bg-sheet-alt p-3">
+                  <MarkdownText body={item.content} />
+                </div>
+                {item.rejectReason && (
+                  <p className="mt-3 max-w-[80ch] text-sm">
+                    <span className="text-ink-3">반려 사유</span> {item.rejectReason}
+                  </p>
+                )}
+              </Sheet>
+            </li>
+          ))}
         </ul>
       )}
 
-      <ChangeRequestModal open={requesting} projectId={project.id} onClose={() => setRequesting(false)} />
       <ReasonModal
         open={rejecting !== null}
         title="수정 요청 반려"

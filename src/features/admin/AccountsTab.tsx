@@ -1,48 +1,71 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Ban, Check, Crown, KeyRound, Pencil, Power, UserCog, UserRound, UsersRound } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useState } from 'react'
-import { useMe } from '../../app/AuthProvider'
 import { adminApi } from '../../api/endpoints'
 import type { Role, User } from '../../api/types'
-import { SegmentedTabs, StatCard, UserChip } from '../../components/rich'
 import { toast } from '../../components/toast'
-import { Button, ConfirmModal, EmptyState, ErrorState, Mono, Sheet, Spinner } from '../../components/ui'
+import { Button, ConfirmModal, EmptyState, ErrorState, Select, Sheet, Spinner } from '../../components/ui'
 import { ROLE_LABEL } from '../../lib/labels'
 import { useDepartmentNames, useRefreshAll } from '../../lib/queries'
 import { usersQuery } from './adminQueries'
-import { CreateUserPanel, DepartmentsPanel, EditUserModal, PasswordModal, type IssuedPassword } from './AccountForms'
-
-const ROLE_CLASS: Record<Role, string> = {
-  ADMIN: 'bg-seal-soft text-seal-dark',
-  DEPT_MANAGER: 'bg-internal-soft text-internal',
-  EMPLOYEE: 'bg-forbidden-soft text-forbidden',
-}
+import { CreateUserModal, DepartmentsModal, ManageUserModal, PasswordModal, type IssuedPassword } from './AccountForms'
 
 type RoleFilter = Role | 'ALL'
 
 function UserStatus({ user }: { user: User }) {
-  if (!user.active) {
-    return <span className="rounded bg-forbidden-soft px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-forbidden">비활성</span>
-  }
-  if (user.mustChangePassword) {
-    return <span className="rounded bg-medium-soft px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-medium">비밀번호 변경 전</span>
-  }
-  return <span className="rounded bg-low-soft px-1.5 py-0.5 text-xs font-medium whitespace-nowrap text-low">사용 중</span>
+  if (!user.active) return <span className="text-ink-3">비활성</span>
+  if (user.mustChangePassword) return <span className="font-medium whitespace-nowrap text-medium">비밀번호 변경 전</span>
+  return <span className="text-ink-2">사용 중</span>
 }
 
-/** 넓은 화면에서는 아이콘과 글자를, 좁으면 아이콘만 보여 준다. 이름은 스크린 리더에 항상 남는다. */
-function ActionLabel({ text }: { text: string }) {
-  return <span className="max-2xl:sr-only">{text}</span>
-}
-
-function UsersTable({ users, onIssued }: { users: User[]; onIssued: (issued: IssuedPassword) => void }) {
-  const me = useMe()
-  const refresh = useRefreshAll()
+function UsersTable({ users, onManage }: { users: User[]; onManage: (user: User) => void }) {
   const departmentName = useDepartmentNames()
+  return (
+    <div className="overflow-x-auto">
+      <table className="sheet-table [&_td]:py-3">
+        <thead>
+          <tr>
+            <th>사용자</th>
+            <th>역할</th>
+            <th>부서</th>
+            <th>상태</th>
+            <th aria-label="관리" />
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((user) => (
+            <tr key={user.id} className={user.active ? '' : 'text-ink-3'}>
+              <td className="whitespace-nowrap">
+                <span className="font-medium">{user.name}</span>
+                <span className="ml-2 font-mono text-xs text-ink-3">{user.employeeNo}</span>
+              </td>
+              <td className="whitespace-nowrap">{ROLE_LABEL[user.role]}</td>
+              <td className="whitespace-nowrap">{departmentName(user.departmentId)}</td>
+              <td>
+                <UserStatus user={user} />
+              </td>
+              <td className="text-right">
+                <Button size="sm" onClick={() => onManage(user)}>
+                  관리
+                </Button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function AccountsTab() {
+  const refresh = useRefreshAll()
+  const users = useQuery(usersQuery)
   const [filter, setFilter] = useState<RoleFilter>('ALL')
-  const [editing, setEditing] = useState<User | null>(null)
+  const [opened, setOpened] = useState<'create' | 'departments' | null>(null)
+  const [managing, setManaging] = useState<User | null>(null)
   const [resetting, setResetting] = useState<User | null>(null)
   const [deactivating, setDeactivating] = useState<User | null>(null)
+  const [issued, setIssued] = useState<IssuedPassword | null>(null)
 
   const setActive = useMutation({
     mutationFn: ({ user, active }: { user: User; active: boolean }) => adminApi.updateUser(user.id, { active }),
@@ -58,109 +81,69 @@ function UsersTable({ users, onIssued }: { users: User[]; onIssued: (issued: Iss
     mutationFn: (user: User) => adminApi.resetPassword(user.id),
     onSuccess: async (result, user) => {
       setResetting(null)
-      onIssued({ name: user.name, password: result.initialPassword })
+      setIssued({ name: user.name, password: result.initialPassword })
       await refresh()
     },
   })
 
-  const shown = filter === 'ALL' ? users : users.filter((user) => user.role === filter)
-  const count = (role: Role) => users.filter((user) => user.role === role).length
+  const shown = users.data?.filter((user) => filter === 'ALL' || user.role === filter)
 
   return (
-    <Sheet
-      title="계정"
-      icon={<UsersRound size={16} aria-hidden />}
-      flush
-      actions={
-        <SegmentedTabs<RoleFilter>
-          label="역할로 거르기"
-          value={filter}
-          onChange={setFilter}
-          items={[
-            { id: 'ALL', label: '전체', count: users.length },
-            ...(Object.keys(ROLE_LABEL) as Role[]).map((role) => ({
-              id: role,
-              label: ROLE_LABEL[role],
-              count: count(role),
-            })),
-          ]}
-        />
-      }
-    >
-      {shown.length === 0 ? (
-        <EmptyState title="이 역할의 계정이 없습니다">오른쪽 폼에서 계정을 만들 수 있습니다.</EmptyState>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="sheet-table">
-            <thead>
-              <tr>
-                <th>사용자</th>
-                <th>역할</th>
-                <th>부서</th>
-                <th>Slack ID</th>
-                <th>상태</th>
-                <th aria-label="동작" />
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((user) => (
-                <tr key={user.id} className={user.active ? '' : 'bg-sheet-alt text-ink-3'}>
-                  <td>
-                    <UserChip name={user.name} sub={<span className="font-mono">{user.employeeNo}</span>} />
-                  </td>
-                  <td>
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ${ROLE_CLASS[user.role]}`}>
-                      {ROLE_LABEL[user.role]}
-                    </span>
-                  </td>
-                  <td className="whitespace-nowrap">{departmentName(user.departmentId)}</td>
-                  <td>{user.slackUserId ? <Mono>{user.slackUserId}</Mono> : <span className="text-ink-3">없음</span>}</td>
-                  <td>
-                    <UserStatus user={user} />
-                  </td>
-                  <td>
-                    <div className="flex justify-end gap-1">
-                      <Button size="sm" title="변경" onClick={() => setEditing(user)}>
-                        <Pencil size={14} aria-hidden />
-                        <ActionLabel text="변경" />
-                      </Button>
-                      <Button size="sm" title="비밀번호 초기화" onClick={() => setResetting(user)}>
-                        <KeyRound size={14} aria-hidden />
-                        <ActionLabel text="비밀번호 초기화" />
-                      </Button>
-                      {user.active ? (
-                        <Button
-                          size="sm"
-                          variant="danger-outline"
-                          title="비활성화"
-                          disabled={user.id === me.id}
-                          disabledReason="지금 로그인한 계정은 비활성화할 수 없습니다"
-                          onClick={() => setDeactivating(user)}
-                        >
-                          <Ban size={14} aria-hidden />
-                          <ActionLabel text="비활성화" />
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          title="활성화"
-                          loading={setActive.isPending && setActive.variables?.user.id === user.id}
-                          onClick={() => setActive.mutate({ user, active: true })}
-                        >
-                          <Power size={14} aria-hidden />
-                          <ActionLabel text="활성화" />
-                        </Button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <>
+      <Sheet
+        title={shown ? `계정 ${shown.length}명` : '계정'}
+        flush
+        actions={
+          <>
+            <div className="w-36">
+              <Select
+                aria-label="역할로 거르기"
+                value={filter}
+                onChange={(event) => setFilter(event.target.value as RoleFilter)}
+              >
+                <option value="ALL">전체 역할</option>
+                {(Object.keys(ROLE_LABEL) as Role[]).map((role) => (
+                  <option key={role} value={role}>
+                    {ROLE_LABEL[role]}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button onClick={() => setOpened('departments')}>부서 관리</Button>
+            <Button variant="primary" onClick={() => setOpened('create')}>
+              <Plus size={15} aria-hidden />
+              계정 추가
+            </Button>
+          </>
+        }
+      >
+        {users.isPending && <Spinner />}
+        {users.isError && <ErrorState error={users.error} onRetry={() => users.refetch()} />}
+        {shown?.length === 0 && <EmptyState title="이 역할의 계정이 없습니다" />}
+        {shown && shown.length > 0 && <UsersTable users={shown} onManage={setManaging} />}
+      </Sheet>
 
-      <EditUserModal key={editing?.id ?? 'closed'} user={editing} onClose={() => setEditing(null)} />
+      {opened === 'create' && <CreateUserModal onClose={() => setOpened(null)} onIssued={setIssued} />}
+      {opened === 'departments' && <DepartmentsModal onClose={() => setOpened(null)} />}
+      {managing && (
+        <ManageUserModal
+          key={managing.id}
+          user={managing}
+          onClose={() => setManaging(null)}
+          onResetPassword={() => {
+            setManaging(null)
+            setResetting(managing)
+          }}
+          onDeactivate={() => {
+            setManaging(null)
+            setDeactivating(managing)
+          }}
+          onActivate={() => {
+            setManaging(null)
+            setActive.mutate({ user: managing, active: true })
+          }}
+        />
+      )}
       <ConfirmModal
         open={Boolean(resetting)}
         title="비밀번호 초기화"
@@ -183,55 +166,7 @@ function UsersTable({ users, onIssued }: { users: User[]; onIssued: (issued: Iss
       >
         {deactivating?.name}님은 더 이상 로그인하거나 승인할 수 없습니다.
       </ConfirmModal>
-    </Sheet>
-  )
-}
-
-export function AccountsTab() {
-  const [issued, setIssued] = useState<IssuedPassword | null>(null)
-  const users = useQuery(usersQuery)
-  const list = users.data ?? []
-  const active = list.filter((user) => user.active).length
-  const count = (role: Role) => list.filter((user) => user.role === role).length
-  const needsPasswordChange = list.filter((user) => user.active && user.mustChangePassword).length
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-5 gap-3">
-        <StatCard label="전체 계정" value={list.length} icon={UsersRound} tone="seal" hint={`비활성 ${list.length - active}명`} />
-        <StatCard
-          label="사용 중"
-          value={active}
-          icon={Check}
-          tone="green"
-          hint={needsPasswordChange > 0 ? `비밀번호 변경 전 ${needsPasswordChange}명` : '모두 변경 완료'}
-        />
-        <StatCard label={ROLE_LABEL.ADMIN} value={count('ADMIN')} icon={Crown} tone="amber" />
-        <StatCard label={ROLE_LABEL.DEPT_MANAGER} value={count('DEPT_MANAGER')} icon={UserCog} tone="live" />
-        <StatCard label={ROLE_LABEL.EMPLOYEE} value={count('EMPLOYEE')} icon={UserRound} tone="neutral" />
-      </div>
-
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="min-w-0">
-          {users.isPending && (
-            <Sheet title="계정">
-              <Spinner />
-            </Sheet>
-          )}
-          {users.isError && (
-            <Sheet title="계정">
-              <ErrorState error={users.error} onRetry={() => users.refetch()} />
-            </Sheet>
-          )}
-          {users.data && <UsersTable users={users.data} onIssued={setIssued} />}
-        </div>
-        <div className="flex flex-col gap-4">
-          <CreateUserPanel onIssued={setIssued} />
-          <DepartmentsPanel />
-        </div>
-      </div>
-
       <PasswordModal issued={issued} onClose={() => setIssued(null)} />
-    </div>
+    </>
   )
 }

@@ -28,14 +28,19 @@ function candidatesText(requirement: RequirementStatus): string {
   return requirement.candidates.length > requirement.count ? `${names} 중 ${requirement.count}명` : names
 }
 
-/** 작업 한 건의 승인 현황을 사람이 읽는 문장으로 만든다. 예: "담당자 승인 대기 · 김담당, 이담당 중 1명" */
+/** 작업 한 건의 승인 현황을 사람이 읽는 문장으로 만든다. 예: "프로젝트 담당자 승인 대기: 김담당, 이담당 중 1명" */
 export function approvalSummary(status: TaskApprovalStatus): string {
   const waiting = status.requirements.filter((r) => !r.satisfied)
   if (waiting.length === 0) {
     const self = status.requirements.every((r) => r.approvedBy.every((a) => a.self))
     return self ? '본인 승인 완료' : '승인 완료'
   }
-  return waiting.map((r) => `${RULE_LABEL[r.rule]} 승인 대기 · ${candidatesText(r)}`).join(' / ')
+  return waiting
+    .map((r) => {
+      const waitingFor = `${RULE_LABEL[r.rule]} 승인 대기`
+      return r.candidates.length > 0 ? `${waitingFor}: ${candidatesText(r)}` : waitingFor
+    })
+    .join(' / ')
 }
 
 export function ApprovalStamps({

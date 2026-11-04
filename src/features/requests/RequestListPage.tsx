@@ -2,17 +2,18 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { requestsApi } from '../../api/endpoints'
-import type { RequestStatus, RequestSummary } from '../../api/types'
-import { RequestStatusBadge } from '../../components/badges'
-import { ProjectTag, RiskSummary, SegmentedTabs, TaskProgress, UserChip } from '../../components/rich'
+import type { RequestStatus, RequestSummary, Risk } from '../../api/types'
+import { RequestStatusBadge, RiskBadge } from '../../components/badges'
+import { SegmentedTabs, TaskProgress } from '../../components/rich'
 import { Button, EmptyState, ErrorState, PageHeader, Select, Sheet, Spinner } from '../../components/ui'
-import { formatDateTime, formatElapsed } from '../../lib/format'
-import { REQUEST_STATUSES, REQUEST_STATUS_LABEL, SOURCE_LABEL } from '../../lib/labels'
-import { useDepartmentNames, useIsExternal, useProjects } from '../../lib/queries'
+import { formatDateTime } from '../../lib/format'
+import { REQUEST_STATUS_LABEL } from '../../lib/labels'
+import { useIsExternal, useProjects } from '../../lib/queries'
 import { STATUS_GROUPS, pathFor, type StatusGroup } from './requestPaths'
 
 const LIVE: RequestStatus[] = ['ANALYZING', 'RUNNING', 'ROLLING_BACK']
 const PAGE_SIZE = 50
+const RISK_HIGHEST_FIRST: Risk[] = ['FORBIDDEN', 'HIGH', 'MEDIUM', 'LOW']
 
 type GroupId = StatusGroup['id'] | 'all'
 
@@ -20,10 +21,21 @@ function groupOfStatus(status: RequestStatus): StatusGroup['id'] {
   return STATUS_GROUPS.find((group) => group.statuses.includes(status))?.id ?? 'done'
 }
 
-function RequestRow({ request, projectName, external }: { request: RequestSummary; projectName: string; external: boolean }) {
+function RequestRow({
+  request,
+  projectName,
+  external,
+  showRequester,
+}: {
+  request: RequestSummary
+  projectName: string
+  external: boolean
+  showRequester: boolean
+}) {
   const navigate = useNavigate()
-  const departmentName = useDepartmentNames()
   const to = pathFor(request, external)
+  const summary = request.taskSummary
+  const risk = summary && RISK_HIGHEST_FIRST.find((item) => summary.risks[item] > 0)
   return (
     <tr data-clickable="true" onClick={() => navigate(to)}>
       <td className="w-px whitespace-nowrap">
@@ -32,29 +44,17 @@ function RequestRow({ request, projectName, external }: { request: RequestSummar
       <td>
         <Link
           to={to}
-          className="line-clamp-1 max-w-[52rem] font-semibold hover:underline"
+          className="line-clamp-1 max-w-[46rem] font-medium hover:underline"
           onClick={(event) => event.stopPropagation()}
         >
           {request.prompt}
         </Link>
-        <span className="mt-0.5 flex flex-wrap items-center gap-x-3">
-          <ProjectTag name={projectName} />
-          {request.source !== 'PROMPT' && (
-            <span className="text-xs text-ink-3">{SOURCE_LABEL[request.source]}에서 만듦</span>
-          )}
-        </span>
       </td>
-      <td className="whitespace-nowrap">
-        {request.taskSummary ? <RiskSummary risks={request.taskSummary.risks} /> : <span className="text-xs text-ink-3">아직 작업 없음</span>}
-      </td>
-      <td className="whitespace-nowrap">{request.taskSummary && <TaskProgress summary={request.taskSummary} />}</td>
-      <td className="whitespace-nowrap">
-        <UserChip name={request.requester.name} sub={departmentName(request.requester.departmentId)} />
-      </td>
-      <td className="whitespace-nowrap">
-        <span className="block text-[0.8125rem] text-ink-2 tabular-nums">{formatDateTime(request.createdAt)}</span>
-        <span className="block text-xs text-ink-3">{formatElapsed(request.createdAt)} 전</span>
-      </td>
+      <td className="whitespace-nowrap text-ink-2">{projectName}</td>
+      <td className="whitespace-nowrap">{risk && <RiskBadge risk={risk} />}</td>
+      <td className="whitespace-nowrap">{summary && <TaskProgress summary={summary} />}</td>
+      {showRequester && <td className="whitespace-nowrap text-ink-2">{request.requester.name}</td>}
+      <td className="whitespace-nowrap text-ink-2 tabular-nums">{formatDateTime(request.createdAt)}</td>
     </tr>
   )
 }
@@ -118,8 +118,6 @@ export default function RequestListPage() {
     const next = new URLSearchParams(window.location.search)
     if (value) next.set(key, value)
     else next.delete(key)
-    // 상태를 하나 고르면 묶음 탭 조건은 필요 없다.
-    if (key === 'status') next.delete('group')
     setParams(next, { replace: true })
   }
 
@@ -133,42 +131,36 @@ export default function RequestListPage() {
 
   return (
     <>
-      <PageHeader
-        title={mine ? '내 요청' : '요청 현황'}
-        description={mine ? '내가 요청한 작업의 진행 상태입니다.' : '조회 권한이 있는 범위의 요청입니다.'}
-        actions={
-          <Button variant="primary" internalOnly onClick={() => navigate('/requests/new')}>
-            작업 요청
-          </Button>
-        }
-      />
+      <PageHeader title={mine ? '내 요청' : '요청 현황'} />
 
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <SegmentedTabs label="진행 단계로 나눠 보기" items={tabs} value={activeTab} onChange={setTab} />
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-1.5 text-[0.8125rem] text-ink-2">
-            상태
-            <Select value={status} onChange={(event) => setFilter('status', event.target.value)} className="!w-32">
-              <option value="">전체</option>
-              {REQUEST_STATUSES.map((value) => (
-                <option key={value} value={value}>
-                  {REQUEST_STATUS_LABEL[value]}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="flex items-center gap-1.5 text-[0.8125rem] text-ink-2">
-            프로젝트
-            <Select value={projectId} onChange={(event) => setFilter('projectId', event.target.value)} className="!w-44">
-              <option value="">전체</option>
-              {projects.data?.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </Select>
-          </label>
+          <SegmentedTabs label="진행 단계로 나눠 보기" items={tabs} value={activeTab} onChange={setTab} />
+          {/* 대시보드의 ?status= 링크로 들어오면 탭보다 좁게 걸러지므로, 무엇으로 걸렀는지 알리고 풀 수 있게 한다 */}
+          {status && (
+            <button
+              type="button"
+              aria-label={`${REQUEST_STATUS_LABEL[status]} 필터 해제`}
+              onClick={() => setFilter('status', '')}
+              className="text-sm text-ink-2 hover:text-ink"
+            >
+              {REQUEST_STATUS_LABEL[status]}만 보는 중 ×
+            </button>
+          )}
         </div>
+        <Select
+          aria-label="프로젝트"
+          value={projectId}
+          onChange={(event) => setFilter('projectId', event.target.value)}
+          className="!w-48 !text-ink-2"
+        >
+          <option value="">모든 프로젝트</option>
+          {projects.data?.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </Select>
       </div>
 
       <Sheet flush className="overflow-hidden">
@@ -181,26 +173,25 @@ export default function RequestListPage() {
               filtered ? (
                 <Button onClick={() => setParams(mine ? {} : { scope: 'all' }, { replace: true })}>필터 지우기</Button>
               ) : (
-                <Button variant="primary" internalOnly onClick={() => navigate('/requests/new')}>
+                <Button internalOnly onClick={() => navigate('/requests/new')}>
                   작업 요청
                 </Button>
               )
             }
-          >
-            {filtered ? '탭이나 상태, 프로젝트 필터를 바꿔 보세요.' : '프롬프트를 입력하면 AI가 작업 계획을 만들어 줍니다.'}
-          </EmptyState>
+          />
         )}
         {items.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="sheet-table [&_td]:py-1.5">
+            <table className="sheet-table [&_td]:py-3.5">
               <thead>
                 <tr>
                   <th>상태</th>
-                  <th>요청 내용</th>
+                  <th>요청</th>
+                  <th>프로젝트</th>
                   <th>위험도</th>
                   <th>진행</th>
-                  <th>요청자</th>
-                  <th>요청 시각</th>
+                  {!mine && <th>요청자</th>}
+                  <th>시각</th>
                 </tr>
               </thead>
               <tbody>
@@ -210,6 +201,7 @@ export default function RequestListPage() {
                     request={request}
                     projectName={projectName(request.projectId)}
                     external={external}
+                    showRequester={!mine}
                   />
                 ))}
               </tbody>

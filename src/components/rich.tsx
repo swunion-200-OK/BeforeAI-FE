@@ -1,12 +1,10 @@
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { Link } from 'react-router'
-import type { RequestTaskSummary, Risk } from '../api/types'
-import { RISK_EMOJI, RISK_LABEL } from '../lib/labels'
+import type { RequestTaskSummary } from '../api/types'
 
-/** 화면을 풍부하고 한눈에 보이게 만드는 작은 부품들. */
+/** 화면에 공통으로 쓰는 작은 부품들. */
 
-// ── 사람·프로젝트 ──────────────────────────────────────────
+// ── 사람 ──────────────────────────────────────────────────
 
 const AVATAR_COLORS = [
   'bg-[#dfe7ff] text-[#23389f]',
@@ -69,72 +67,6 @@ export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number 
   )
 }
 
-export function ProjectTag({ name }: { name: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[0.8125rem] whitespace-nowrap text-ink-2">
-      <span aria-hidden className={`size-2 rounded-sm ${['bg-seal', 'bg-internal', 'bg-ai', 'bg-medium'][hash(name) % 4]}`} />
-      {name}
-    </span>
-  )
-}
-
-// ── 숫자 카드 ──────────────────────────────────────────────
-
-const STAT_TONE = {
-  seal: 'bg-seal-soft text-seal',
-  ai: 'bg-ai-soft text-ai',
-  live: 'bg-internal-soft text-internal',
-  green: 'bg-low-soft text-low',
-  amber: 'bg-medium-soft text-medium',
-  red: 'bg-high-soft text-high',
-  neutral: 'bg-forbidden-soft text-forbidden',
-} as const
-
-export type StatTone = keyof typeof STAT_TONE
-
-export function StatCard({
-  label,
-  value,
-  hint,
-  icon: Icon,
-  tone = 'seal',
-  to,
-  alert,
-}: {
-  label: string
-  value: ReactNode
-  hint?: ReactNode
-  icon: LucideIcon
-  tone?: StatTone
-  /** 누르면 해당 목록으로 이동 */
-  to?: string
-  /** 처리가 필요한 값이면 테두리로 눈에 띄게 한다 */
-  alert?: boolean
-}) {
-  const body = (
-    <>
-      <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-lg ${STAT_TONE[tone]}`}>
-        <Icon size={20} aria-hidden />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[0.8125rem] text-ink-2">{label}</span>
-        <span className="block text-[1.625rem] leading-tight font-bold tracking-tight tabular-nums">{value}</span>
-        {hint && <span className="mt-0.5 block truncate text-xs text-ink-3">{hint}</span>}
-      </span>
-    </>
-  )
-  const className = `flex items-center gap-3 rounded-xl border bg-sheet p-3.5 shadow-card ${
-    alert ? 'border-high/50' : 'border-rule'
-  }`
-  return to ? (
-    <Link to={to} className={`${className} transition-colors hover:border-seal/50 hover:bg-seal-soft/30`}>
-      {body}
-    </Link>
-  ) : (
-    <div className={className}>{body}</div>
-  )
-}
-
 // ── 필터 탭 ────────────────────────────────────────────────
 
 export function SegmentedTabs<T extends string>({
@@ -179,25 +111,6 @@ export function SegmentedTabs<T extends string>({
 
 // ── 위험도·진행 요약 ───────────────────────────────────────
 
-/** 위험도별 작업 수를 이모지 + 글자 + 숫자로 짧게 쓴다. 색만으로 구분하지 않는다. */
-export function RiskSummary({ risks }: { risks: Record<Risk, number> }) {
-  const order: Risk[] = ['FORBIDDEN', 'HIGH', 'MEDIUM', 'LOW']
-  const shown = order.filter((risk) => risks[risk] > 0)
-  if (shown.length === 0) return <span className="text-xs text-ink-3">작업 없음</span>
-  return (
-    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs whitespace-nowrap text-ink-2">
-      {shown.map((risk) => (
-        <span key={risk} className="inline-flex items-center gap-1">
-          <span aria-hidden className="text-[0.625rem]">
-            {RISK_EMOJI[risk]}
-          </span>
-          {RISK_LABEL[risk]} {risks[risk]}
-        </span>
-      ))}
-    </span>
-  )
-}
-
 /** 승인·실행 진행을 칸으로 보여 준다. 칸마다 작업 하나다. */
 export function TaskProgress({ summary }: { summary: RequestTaskSummary }) {
   const pips = Array.from({ length: summary.required }, (_, index) => {
@@ -219,57 +132,6 @@ export function TaskProgress({ summary }: { summary: RequestTaskSummary }) {
       </span>
       <span className="text-xs whitespace-nowrap text-ink-3 tabular-nums">{text}</span>
     </span>
-  )
-}
-
-export function Meter({ value, max, className = 'bg-seal' }: { value: number; max: number; className?: string }) {
-  const width = max > 0 ? Math.max(value > 0 ? 3 : 0, (value / max) * 100) : 0
-  return (
-    <span aria-hidden className="block h-2 w-full overflow-hidden rounded-full bg-paper">
-      <span className={`block h-full rounded-full ${className}`} style={{ width: `${width}%` }} />
-    </span>
-  )
-}
-
-/** 도넛 차트. 칸 사이를 벌려 색이 달라 보이지 않아도 구분된다. 글자 범례와 함께 쓴다. */
-export function Donut({
-  segments,
-  center,
-  size = 132,
-}: {
-  segments: Array<{ value: number; color: string; label: string }>
-  center?: ReactNode
-  size?: number
-}) {
-  const total = segments.reduce((sum, segment) => sum + segment.value, 0)
-  const radius = 42
-  const circumference = 2 * Math.PI * radius
-  const shown = segments.filter((segment) => segment.value > 0)
-  const gap = shown.length > 1 ? 2 : 0
-  const arcs = shown.map((segment, index) => {
-    const before = shown.slice(0, index).reduce((sum, item) => sum + item.value, 0)
-    return { ...segment, length: (segment.value / total) * circumference, start: (before / total) * circumference }
-  })
-  return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg viewBox="0 0 100 100" className="size-full -rotate-90" role="img" aria-label={segments.map((s) => `${s.label} ${s.value}건`).join(', ')}>
-        <circle cx="50" cy="50" r={radius} fill="none" stroke="var(--color-paper)" strokeWidth="11" />
-        {arcs.map((arc) => (
-          <circle
-            key={arc.label}
-            cx="50"
-            cy="50"
-            r={radius}
-            fill="none"
-            stroke={arc.color}
-            strokeWidth="11"
-            strokeDasharray={`${Math.max(arc.length - gap, 0.5)} ${circumference}`}
-            strokeDashoffset={-arc.start}
-          />
-        ))}
-      </svg>
-      {center && <div className="absolute inset-0 flex flex-col items-center justify-center text-center">{center}</div>}
-    </div>
   )
 }
 

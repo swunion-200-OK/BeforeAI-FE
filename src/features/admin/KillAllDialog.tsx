@@ -64,10 +64,10 @@ export function KillAllDialog({ open, onClose }: { open: boolean; onClose: () =>
     >
       <div className="flex flex-col gap-3">
         <Banner tone="danger" title={`실행 중인 요청 ${items.length}건을 모두 멈춥니다`}>
-          남은 작업은 실행하지 않습니다. 이미 성공한 코드 작업은 되돌리지 않습니다.
+          서명 없이 바로 멈추고 남은 작업은 실행하지 않습니다. 이미 성공한 코드 작업은 되돌리지 않습니다.
         </Banner>
         {items.length > 0 && (
-          <ul className="quiet-scroll max-h-36 divide-y divide-rule overflow-y-auto rounded-lg border border-rule text-[0.8125rem]">
+          <ul className="quiet-scroll max-h-36 divide-y divide-rule overflow-y-auto rounded-lg border border-rule text-sm">
             {items.map((request) => (
               <li key={request.id} className="flex items-baseline justify-between gap-3 px-2.5 py-1.5">
                 <span className="min-w-0 truncate text-ink">{request.prompt}</span>
@@ -78,7 +78,7 @@ export function KillAllDialog({ open, onClose }: { open: boolean; onClose: () =>
             ))}
           </ul>
         )}
-        <Field label="중단 사유">
+        <Field label="중단 사유" hint="누가 왜 멈췄는지 감사 로그에 남습니다">
           {(id) => <TextArea id={id} rows={2} value={reason} onChange={(event) => setReason(event.target.value)} />}
         </Field>
         <Field label={`확인을 위해 "${CONFIRM_PHRASE}"를 입력하세요`}>

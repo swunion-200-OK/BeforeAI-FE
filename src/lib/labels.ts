@@ -44,8 +44,6 @@ export const REQUEST_STATUS_LABEL: Record<RequestStatus, string> = {
   ROLLED_BACK: '롤백됨',
   ROLLBACK_FAILED: '롤백실패',
 }
-export const REQUEST_STATUSES = Object.keys(REQUEST_STATUS_LABEL) as RequestStatus[]
-
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
   PENDING: '승인 대기',
   APPROVED: '승인됨',

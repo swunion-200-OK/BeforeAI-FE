@@ -729,6 +729,29 @@ function seedRequests() {
   addRequest({ id: 'r-rolled-back', requesterId: 'u-01', prompt: '인증 API 가이드에 예시를 추가해줘', status: 'ROLLED_BACK', ageMinutes: 2000, kind: 'ROLLBACK', tasks: [rollbackTask('ROLLED_BACK')] })
   addRequest({ id: 'r-rollback-failed', requesterId: 'u-01', prompt: '인증 API 가이드 구조를 바꿔줘', status: 'ROLLBACK_FAILED', ageMinutes: 2600, kind: 'ROLLBACK', tasks: [rollbackTask('FAILED')] })
 
+  // 김담당도 본인 요청이 있어야 "내 대시보드"가 비지 않는다.
+  addRequest({ id: 'r-kim-review', requesterId: 'u-07', prompt: '세션 만료 안내 문구를 다듬어줘', status: 'REVIEWING', ageMinutes: 35, tasks: [testTask('PENDING')] })
+  const kimDone = addRequest({
+    id: 'r-kim-done',
+    requesterId: 'u-07',
+    prompt: '로그인 테스트를 보강해줘',
+    status: 'COMPLETED',
+    ageMinutes: 300,
+    tasks: [testTask('SUCCEEDED')],
+  })
+  signFor(kimDone, 'u-07', ['t-1'])
+  addLogs(
+    kimDone.id,
+    [
+      ['INFO', null, '[실행기] 승인 서명 검증 통과. 1회용 ID 소진, 웹쉘 세션을 엽니다'],
+      ['CMD', 't-1', '$ npm test'],
+      ['INFO', 't-1', 'Tests  43 passed (43)'],
+      ['SUCCESS', 't-1', '[t-1] 성공'],
+      ['INFO', null, '[실행기] 웹쉘 세션을 닫습니다'],
+    ],
+    290,
+  )
+
   // 승인 대기 시연용: 외부망 승인, 문서 적용, 무결성 실패
   addRequest({
     id: 'r-external',
@@ -826,6 +849,10 @@ function seedAudit() {
   auditEntry(60 * 24 * 3, 'u-mgr-be', 'SPEC_UPDATED', { projectId: 'prj-auth', label: '기획서 v2' })
   auditEntry(990, 'system', 'TASK_FAILED', { requestId: 'r-failed', taskIds: ['t-1'] })
   auditEntry(130, 'u-21', 'SUBMITTED', { requestId: 'r-external' })
+  auditEntry(300, 'u-07', 'REQUEST_CREATED', { requestId: 'r-kim-done', projectId: 'prj-auth' })
+  auditEntry(295, 'u-07', 'APPROVAL_SUBMITTED', { requestId: 'r-kim-done', taskIds: ['t-1'] }, 'INTERNAL', { keyId: 'k-07-a', self: true })
+  auditEntry(290, 'system', 'TASK_SUCCEEDED', { requestId: 'r-kim-done', taskIds: ['t-1'] })
+  auditEntry(35, 'u-07', 'REQUEST_CREATED', { requestId: 'r-kim-review', projectId: 'prj-auth' })
   db().auditLogs.sort((a, b) => b.at.localeCompare(a.at))
 }
 

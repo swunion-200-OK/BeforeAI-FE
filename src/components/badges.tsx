@@ -1,7 +1,6 @@
 import {
   Ban,
   CircleCheck,
-  CircleDashed,
   CircleDot,
   CircleSlash,
   CircleX,
@@ -19,14 +18,13 @@ import {
   Undo2,
   type LucideIcon,
 } from 'lucide-react'
-import type { Network, RequestStatus, Risk, TaskStatus, TaskType } from '../api/types'
+import type { Network, RequestStatus, Risk, TaskStatus } from '../api/types'
 import {
   NETWORK_LABEL,
   REQUEST_STATUS_LABEL,
   RISK_EMOJI,
   RISK_LABEL,
   TASK_STATUS_LABEL,
-  TASK_TYPE_LABEL,
 } from '../lib/labels'
 
 const PILL = 'inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap'
@@ -108,15 +106,6 @@ export function TaskStatusBadge({ status }: { status: TaskStatus }) {
     <span className={`${PILL} ${TONE_CLASS[tone]}`}>
       <Icon size={13} className={spin ? 'animate-spin' : ''} aria-hidden />
       {TASK_STATUS_LABEL[status]}
-    </span>
-  )
-}
-
-export function TaskTypeTag({ type }: { type: TaskType }) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded border border-rule px-1.5 py-0.5 text-xs whitespace-nowrap text-ink-2">
-      <CircleDashed size={11} className="text-ink-3" aria-hidden />
-      {TASK_TYPE_LABEL[type]}
     </span>
   )
 }
