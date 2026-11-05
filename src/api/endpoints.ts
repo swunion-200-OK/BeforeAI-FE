@@ -1,12 +1,15 @@
-import { http } from './client'
-import { streamEvents } from './sse'
+import { downloadFile, http } from './client'
+import { streamEvents, streamMessages } from './sse'
 import type {
   AcceptedRequest,
   ApprovalContext,
   ApprovalMatrixRow,
+  AuditExport,
+  AuditExportAccepted,
   AuditLog,
   AuditLogQuery,
   ChangeRequestStatus,
+  CreateAuditExportBody,
   CreateRequestBody,
   CreateUserResponse,
   Dashboard,
@@ -32,6 +35,8 @@ import type {
   PendingApproval,
   Policy,
   PolicyPreset,
+  ProgressStreamEvent,
+  ProgressTree,
   Project,
   ProjectSpec,
   RejectBody,
@@ -150,11 +155,29 @@ export const forbiddenApi = {
   release: (ruleId: string) => http<ForbiddenRule>('POST', `/admin/forbidden-rules/${ruleId}/release`),
 }
 
+/** TODO(spec): 요청 상세의 추가 필드는 명세에 없다 (types.ts). 실제 백엔드가 빼도 화면이 깨지지 않게 여기서 채운다. */
+function withDetailDefaults(detail: Partial<RequestDetail> & RequestSummary): RequestDetail {
+  return {
+    projectName: detail.projectId,
+    plan: null,
+    approvalStatus: [],
+    clarification: null,
+    analysisError: null,
+    changedTaskIds: [],
+    removedTaskTitles: [],
+    failedChecks: [],
+    rejection: null,
+    kill: null,
+    events: [],
+    ...detail,
+  }
+}
+
 export const requestsApi = {
   create: (body: CreateRequestBody) => http<AcceptedRequest>('POST', '/requests', { body }),
   list: (query?: { mine?: boolean; status?: RequestStatus; projectId?: string; cursor?: string; limit?: number }) =>
     http<Page<RequestSummary>>('GET', '/requests', { query }),
-  get: (requestId: string) => http<RequestDetail>('GET', `/requests/${requestId}`),
+  get: (requestId: string) => http<Partial<RequestDetail> & RequestSummary>('GET', `/requests/${requestId}`).then(withDetailDefaults),
   retryAnalysis: (requestId: string) => http<AcceptedRequest>('POST', `/requests/${requestId}/analysis/retry`),
   patchPlan: (requestId: string, body: PatchPlanBody) =>
     http<AcceptedRequest>('PATCH', `/requests/${requestId}/plan`, { body }),
@@ -167,6 +190,21 @@ export const requestsApi = {
     http<Page<LogLine>>('GET', `/requests/${requestId}/logs`, { query }),
   streamLogs: (requestId: string, onLine: (line: LogLine) => void, signal: AbortSignal) =>
     streamEvents<LogLine>(`/requests/${requestId}/logs/stream`, onLine, signal),
+  progress: (requestId: string) => http<ProgressTree>('GET', `/requests/${requestId}/progress`),
+  /** lastVersion을 주면 Last-Event-ID로 보내 그 뒤부터 이어 받는다 (명세 4.9) */
+  streamProgress: (
+    requestId: string,
+    onEvent: (event: ProgressStreamEvent) => void,
+    signal: AbortSignal,
+    lastVersion?: number,
+  ) =>
+    streamMessages(
+      `/requests/${requestId}/progress/stream`,
+      ({ id, event, data }) =>
+        onEvent({ id: id === null ? null : Number(id), event, data: JSON.parse(data) } as ProgressStreamEvent),
+      signal,
+      lastVersion === undefined ? undefined : String(lastVersion),
+    ),
   taskDocument: (requestId: string, taskId: string) =>
     http<TaskDocument>('GET', `/requests/${requestId}/tasks/${taskId}/document`),
   rollback: (requestId: string, body: RollbackBody) =>
@@ -205,4 +243,11 @@ export const dashboardApi = {
 export const auditApi = {
   list: (query: AuditLogQuery) => http<Page<AuditLog>>('GET', '/audit-logs', { query: { ...query } }),
   get: (logId: string) => http<AuditLog>('GET', `/audit-logs/${logId}`),
+}
+
+export const auditExportApi = {
+  create: (body: CreateAuditExportBody) => http<AuditExportAccepted>('POST', '/audit-logs/exports', { body }),
+  list: () => http<Page<AuditExport>>('GET', '/audit-logs/exports'),
+  get: (exportId: string) => http<AuditExport>('GET', `/audit-logs/exports/${exportId}`),
+  download: (exportId: string, fileName: string) => downloadFile(`/audit-logs/exports/${exportId}/file`, fileName),
 }

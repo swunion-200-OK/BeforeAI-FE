@@ -68,6 +68,7 @@ export type ErrorCode =
   | 'RETRY_LIMIT'
   | 'FORBIDDEN_TASK'
   | 'WEBSHELL_UNAVAILABLE'
+  | 'EXPORT_TOO_LARGE'
 
 export interface Page<T> {
   items: T[]
@@ -362,6 +363,8 @@ export interface RequestDetail extends RequestSummary {
   changedTaskIds: string[]
   removedTaskTitles: string[]
   failedChecks: FailedCheck[]
+  /** TODO(spec): 명세에 없는 필드. 현재 Plan의 평문 승인 기록(2.5) 개수다. 0이거나 없으면 화면이 서명 검사를 통과라고 말하지 않는다 */
+  approvalRecordCount?: number
   rejection: { by: string; reason: string; at: string; taskIds: string[] } | null
   kill: { by: string; reason: string; at: string; skippedTaskIds: string[] } | null
   events: RequestEvent[]
@@ -540,13 +543,121 @@ export interface WebshellExecution {
 export interface WebshellEvent {
   requestId: string
   executionId: string | null
-  type: 'TASK_STARTED' | 'TASK_SUCCEEDED' | 'TASK_FAILED' | 'FINAL_STATUS' | 'VERIFICATION_FAILED'
+  type: 'TASK_STARTED' | 'TASK_SUCCEEDED' | 'TASK_FAILED' | 'FINAL_STATUS' | 'VERIFICATION_FAILED' | 'STEP'
   at: string
   taskId?: string
   status?: RequestStatus
   failedChecks?: FailedCheck[]
+  step?: WebshellStep
   webshellSignature: string
 }
+
+export type StepStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
+
+/** 실행 로그 seq 구간. 아직 진행 중이면 to가 null이다 (명세 2.6) */
+export interface LogRange {
+  from: number
+  to: number | null
+}
+
+/** TODO(spec): 실행 단계 콜백의 모양은 명세에 없다. 진행 상황 트리(2.6)의 STEP 노드에 필요한 값으로 정했다. */
+export interface WebshellStep {
+  id: string
+  label: string
+  status: StepStatus
+  logRange: LogRange
+}
+
+// ── 진행 상황 트리 (명세 2.6, 4.9) ──────────────────────────
+
+export type ProgressNodeType = 'REQUEST' | 'PLAN' | 'TASK' | 'APPROVAL' | 'STEP'
+export type PlanNodeStatus = 'CURRENT' | 'SUPERSEDED'
+export type ApprovalNodeStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+
+export interface ProgressRequestNode {
+  id: string
+  type: 'REQUEST'
+  label: string
+  status: RequestStatus
+  children: ProgressNode[]
+}
+
+export interface ProgressPlanNode {
+  id: string
+  type: 'PLAN'
+  label: string
+  status: PlanNodeStatus
+  /** 대체된 Plan은 접혀 있고 children이 비어 있다 */
+  collapsed?: boolean
+  /** TODO(spec): 5.12 도식의 "해시 4be1…". 2.6 예시에는 없다. 제출 전이면 null이다 */
+  planHash?: string | null
+  /** TODO(spec): 대체된 Plan을 펼쳤을 때 보여 줄 변경 이력. 명세의 children은 비어 있다 */
+  supersededAt?: string
+  supersededTasks?: Array<{ label: string; taskType: TaskType; risk?: Risk }>
+  children: ProgressNode[]
+}
+
+export interface ProgressTaskNode {
+  id: string
+  type: 'TASK'
+  label: string
+  taskType: TaskType
+  /** TODO(spec): 5.12의 "위험도 배지"를 위한 값. 2.6 예시에서 확인할 수 없어 없을 수 있다 */
+  risk?: Risk
+  status: TaskStatus
+  dependsOn: string[]
+  children: ProgressNode[]
+}
+
+export interface ProgressApprovalNode {
+  id: string
+  type: 'APPROVAL'
+  /** 승인 대기 중이면 없고 candidates가 있다 */
+  label?: string
+  status: ApprovalNodeStatus
+  /** TODO(spec): 모양이 명세에 없다. 목은 결재 현황과 같은 { id, name }을 주고, requiredApprovers처럼 ID만 올 수도 있다. rule이 ANYONE이면 비어 있다 */
+  candidates?: Array<{ id: string; name: string } | string>
+  rule?: ApproverRule
+  network?: Network
+  at?: string
+}
+
+export interface ProgressStepNode {
+  id: string
+  type: 'STEP'
+  label: string
+  status: StepStatus
+  logRange?: LogRange
+}
+
+export type ProgressNode =
+  | ProgressRequestNode
+  | ProgressPlanNode
+  | ProgressTaskNode
+  | ProgressApprovalNode
+  | ProgressStepNode
+
+export interface ProgressTree {
+  version: number
+  updatedAt: string
+  root: ProgressRequestNode
+}
+
+/** 값이 null인 속성은 지운다. 승인되면 candidates가 없어지고 label이 생긴다 */
+export interface ProgressNodeUpdate {
+  nodeId: string
+  at: string
+  status?: string
+  label?: string | null
+  [field: string]: unknown
+}
+
+/** id는 version이다. heartbeat는 버전을 올리지 않아 id가 없다 (명세 4.9) */
+export type ProgressStreamEvent =
+  | { id: number; event: 'node.updated'; data: ProgressNodeUpdate }
+  | { id: number; event: 'node.added'; data: { parentId: string; node: ProgressNode } }
+  | { id: number; event: 'tree.replaced'; data: { at: string } }
+  | { id: null; event: 'heartbeat'; data: { at: string } }
 
 // ── 문서 ───────────────────────────────────────────────────
 
@@ -667,6 +778,7 @@ export type AuditAction =
   | 'LOGIN'
   | 'ACCOUNT_CHANGED'
   | 'POLICY_CHANGED'
+  | 'AUDIT_EXPORTED'
 
 export interface AuditLog {
   id: string
@@ -690,4 +802,38 @@ export interface AuditLogQuery {
   to?: string
   cursor?: string
   limit?: number
+}
+
+// ── 감사 로그 내보내기 (CORE-13) ──────────────────────────
+
+export type ExportFormat = 'CSV' | 'XLSX'
+export type ExportStatus = 'PROCESSING' | 'READY' | 'FAILED' | 'EXPIRED'
+
+/** GET /audit-logs의 검색 조건과 같다 */
+export type AuditExportFilters = Omit<AuditLogQuery, 'cursor' | 'limit'>
+
+export interface CreateAuditExportBody {
+  format: ExportFormat
+  filters: AuditExportFilters
+}
+
+export interface AuditExportAccepted {
+  exportId: string
+  status: ExportStatus
+  format: ExportFormat
+  rowCount: number
+}
+
+// TODO(spec): 명세의 상태 조회 예시는 READY뿐이고 목록 응답 모양은 없다. 목록도 같은 모양으로 두되 exportId·status 밖의 값은 없을 수 있다고 본다. format·createdAt은 명세에 없다.
+export interface AuditExport {
+  exportId: string
+  status: ExportStatus
+  format?: ExportFormat
+  rowCount?: number
+  fileName?: string
+  createdAt?: string
+  /** 준비된 뒤에만 값이 있다 */
+  expiresAt?: string | null
+  /** READY일 때만 값이 있다 */
+  downloadUrl?: string | null
 }

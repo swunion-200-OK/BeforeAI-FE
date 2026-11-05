@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../api/errors'
 import { requestsApi } from '../api/endpoints'
-import type { LogLevel, LogLine } from '../api/types'
+import type { LogLevel, LogLine, LogRange } from '../api/types'
 
 const LEVEL_CLASS: Record<LogLevel, string> = {
   INFO: 'text-terminal-ink',
@@ -12,9 +12,10 @@ const LEVEL_CLASS: Record<LogLevel, string> = {
 
 const time = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 
-/** 실행 로그: 터미널 모양, 읽기 전용. SSE로 실시간으로 이어 받는다. */
-export function LogViewer({ requestId, live }: { requestId: string; live: boolean }) {
-  const [lines, setLines] = useState<LogLine[]>([])
+/** 실행 로그: 터미널 모양, 읽기 전용. SSE로 실시간으로 이어 받는다. range를 주면 그 구간만 보여 준다. */
+export function LogViewer({ requestId, live, range }: { requestId: string; live: boolean; range?: LogRange }) {
+  const [received, setLines] = useState<LogLine[]>([])
+  const lines = range ? received.filter((l) => l.seq >= range.from && (range.to === null || l.seq <= range.to)) : received
   const [error, setError] = useState<string | null>(null)
   const [streaming, setStreaming] = useState(false)
   const bodyRef = useRef<HTMLDivElement>(null)

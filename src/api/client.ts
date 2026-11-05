@@ -60,12 +60,13 @@ interface RequestOptions {
   /** 인증 라우트에서는 401이 나도 토큰 재발급을 시도하지 않는다. */
   skipRefresh?: boolean
   signal?: AbortSignal
+  headers?: Record<string, string>
 }
 
 /** 헤더·토큰을 붙여 보내고, 401이면 한 번 재발급한 뒤 다시 보낸다. 오류 변환은 호출한 쪽에서 한다. */
 export async function rawFetch(method: string, path: string, options: RequestOptions = {}): Promise<Response> {
   const send = () => {
-    const headers: Record<string, string> = {}
+    const headers: Record<string, string> = { ...options.headers }
     if (options.body !== undefined) headers['Content-Type'] = 'application/json'
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`
     return transport(`${API_BASE_URL}${path}${buildQuery(options.query)}`, {
@@ -127,4 +128,16 @@ export async function http<T>(method: string, path: string, options: RequestOpti
   if (!response.ok) throw await toApiError(response)
   if (response.status === 204) return undefined as T
   return (await response.json()) as T
+}
+
+/** 링크로 받으면 인증 토큰을 실을 수 없어, 토큰을 붙여 받은 내용을 브라우저 다운로드로 넘긴다. */
+export async function downloadFile(path: string, fileName: string): Promise<void> {
+  const response = await rawFetch('GET', path)
+  if (!response.ok) throw await toApiError(response)
+  const url = URL.createObjectURL(await response.blob())
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }

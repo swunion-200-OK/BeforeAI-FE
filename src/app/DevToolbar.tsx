@@ -1,9 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, MessageSquare, PlayCircle, RotateCcw, Wrench, X } from 'lucide-react'
+import { ChevronRight, MessageSquare, PlayCircle, RotateCcw, ShieldAlert, Wrench, X } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import { networkStore } from '../api/client'
 import { devControls } from '../api/mock'
+import { TAMPER_DEMO_PATH } from '../api/mock/tamperDemo'
 import type { Network } from '../api/types'
 import { RequestStatusBadge } from '../components/badges'
 import { toast } from '../components/toast'
@@ -32,6 +33,7 @@ export default function DevToolbar() {
   const { me, signIn } = useAuth()
   const client = useQueryClient()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const network = useNetwork()
 
   // 로그인 전에도 배지가 맞도록 목 서버의 망 값을 바로 알린다.
@@ -66,6 +68,11 @@ export default function DevToolbar() {
     return () => clearTimeout(timer)
   }, [pendingStep, me?.id, navigate])
 
+  // 변조 시연을 떠나면 시연 요청을 지운다. 이 도구는 어느 화면에서나 떠 있어서 새로고침한 뒤 남은 요청도 여기서 치운다.
+  useEffect(() => {
+    if (devControls.tamper.sweep(pathname)) void client.invalidateQueries()
+  }, [client, pathname])
+
   /** 시연 단계로 이동: 그 단계의 사용자·망으로 바꾼 뒤 해당 화면을 연다. */
   const goTo = async (key: string, userId: string, nextNetwork: Network, path: string) => {
     setActiveStep(key)
@@ -82,6 +89,9 @@ export default function DevToolbar() {
     goTo(key, step.userId, step.network, step.path(devControls.latestRequestId(SCENARIO_PROMPT)))
 
   const userName = (userId: string) => state.users.find((user) => user.id === userId)?.name ?? userId
+
+  // 변조 시연은 창 전체를 쓰고, 나가는 길은 그 화면에 있다.
+  if (pathname === TAMPER_DEMO_PATH) return null
 
   if (guideOpen) {
     // 사이드바 자리에 겹쳐 띄운다. 본문을 가리지 않아 가이드를 보면서 화면을 따라갈 수 있다.
@@ -192,6 +202,16 @@ export default function DevToolbar() {
       >
         <PlayCircle size={14} aria-hidden />
         시연 가이드 열기
+        <ChevronRight size={14} className="ml-auto" aria-hidden />
+      </button>
+
+      <button
+        type="button"
+        onClick={() => goTo('tamper', 'u-07', 'INTERNAL', TAMPER_DEMO_PATH)}
+        className="mb-2.5 flex w-full items-center gap-1.5 rounded bg-white/10 px-2 py-1.5 font-medium hover:bg-white/20"
+      >
+        <ShieldAlert size={14} aria-hidden />
+        변조 시연 열기
         <ChevronRight size={14} className="ml-auto" aria-hidden />
       </button>
 

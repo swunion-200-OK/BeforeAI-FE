@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { ListFilter } from 'lucide-react'
+import { Download, ListFilter } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { auditApi } from '../../api/endpoints'
@@ -11,6 +11,7 @@ import { formatDateTime } from '../../lib/format'
 import { AUDIT_ACTION_LABEL } from '../../lib/labels'
 import { AuditActionLabel } from './AuditActionLabel'
 import { AuditDetailDrawer } from './AuditDetailDrawer'
+import { AuditExportModal } from './AuditExportModal'
 import { AuditFilters } from './AuditFilters'
 import {
   QUICK_FILTERS,
@@ -54,6 +55,7 @@ export default function AuditPage() {
   const [params, setParams] = useSearchParams()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const filters = useMemo(() => toAuditQuery(params), [params])
 
   const logs = useInfiniteQuery({
@@ -91,7 +93,16 @@ export default function AuditPage() {
 
   return (
     <>
-      <PageHeader title="감사 로그" description={SCOPE_DESCRIPTION[me.role]} />
+      <PageHeader
+        title="감사 로그"
+        description={SCOPE_DESCRIPTION[me.role]}
+        actions={
+          <Button internalOnly onClick={() => setExportOpen(true)}>
+            <Download size={15} aria-hidden />
+            내보내기
+          </Button>
+        }
+      />
 
       <Sheet flush>
         <div className="flex flex-wrap items-center gap-2 px-4 py-3">
@@ -204,6 +215,12 @@ export default function AuditPage() {
       </Sheet>
 
       <AuditDetailDrawer logId={selectedId} onClose={() => setSelectedId(null)} />
+      <AuditExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        filters={filters}
+        actors={actors}
+      />
     </>
   )
 }

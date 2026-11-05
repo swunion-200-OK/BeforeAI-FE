@@ -5,6 +5,7 @@ import { RequestStatusBadge } from '../../components/badges'
 import { TaskCard } from '../../components/TaskCard'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useProjects, useRequest } from '../../lib/queries'
+import { ProgressSection } from '../progress/ProgressTree'
 import { MoreDetails, RunLog, TaskApprovalLine } from './RequestDetailSections'
 import { approvalToShow } from './requestPaths'
 import { RequestMeta, TaskEditButtons } from './RequestParts'
@@ -87,6 +88,7 @@ export default function RequestDetailPage() {
       />
       <RequestTimeline request={request} />
       <RequestStatusBanner request={request} isRequester={isRequester} canKill={canKill} />
+      <ProgressSection key={request.id} requestId={request.id} defaultOpen />
       <div className="flex flex-col gap-5">
         <TaskList request={request} canEditPlan={canEditPlan} />
         {/* 실행 중에는 로그가 가장 궁금하므로 작업 위로 올린다. 같은 자리의 요소라 끝나도 다시 불러오지 않는다. */}

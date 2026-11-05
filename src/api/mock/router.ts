@@ -10,6 +10,7 @@ export interface Ctx {
   me: StoredUser
   network: Network
   signal?: AbortSignal
+  headers: Headers
 }
 
 export interface Route {

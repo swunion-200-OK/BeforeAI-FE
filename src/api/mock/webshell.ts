@@ -19,6 +19,7 @@ import type {
   Plan,
   RequestStatus,
   SignedApproval,
+  StepStatus,
   Task,
   TaskContent,
   TaskStatus,
@@ -26,6 +27,7 @@ import type {
   WebshellEvent,
   WebshellExecution,
   WebshellPublicKey,
+  WebshellStep,
 } from '../types'
 import { hitsForbiddenTarget, qualifies, requiredRules } from './policy'
 import {
@@ -70,9 +72,10 @@ export function signLogLine(requestId: string, line: Omit<LogLine, 'webshellSign
   return { ...line, webshellSignature: webshellSign({ requestId, ...line }) }
 }
 
-function webshellLog(requestId: string, level: LogLevel, taskId: string | null, text: string) {
+function webshellLog(requestId: string, level: LogLevel, taskId: string | null, text: string): number {
   const seq = (db().logs[requestId]?.length ?? 0) + 1
   appendLog(requestId, signLogLine(requestId, { seq, at: nowIso(), level, taskId, text }))
+  return seq
 }
 
 export function signedExecution(request: StoredRequest, executionId: string): WebshellExecution {
@@ -87,20 +90,48 @@ export function signedExecution(request: StoredRequest, executionId: string): We
 }
 
 /** 웹쉘 → 웹 서비스 콜백. 이벤트마다 웹쉘 서명을 붙인다 (명세 5장). */
-function emitEvent(request: StoredRequest, event: Pick<WebshellEvent, 'type' | 'taskId' | 'status' | 'failedChecks'>) {
+function emitEvent(
+  request: StoredRequest,
+  event: Pick<WebshellEvent, 'type' | 'taskId' | 'status' | 'failedChecks' | 'step'>,
+  at = nowIso(),
+) {
   const unsigned = {
     ...event,
     requestId: request.id,
     executionId: request.execution?.executionId ?? null,
-    at: nowIso(),
+    at,
   }
   request.webshellEvents.push({ ...unsigned, webshellSignature: webshellSign(unsigned) })
+}
+
+/**
+ * 실행 단계의 시작과 결과를 알린다. 진행 상황 트리의 STEP 노드는 이 이벤트로만 만든다 (기능 명세서 5.12).
+ * TODO(spec): 명세에는 "단계별 진행(시작·성공·실패·건너뜀)"만 있고 콜백 모양이 없다.
+ * 스크립트가 `$ 명령` 줄에 닿을 때 시작을, 다음 단계나 작업 끝에서 결과를 보내고 구간은 로그 seq로 적는다.
+ */
+export function emitStepEvent(request: StoredRequest, taskId: string | undefined, step: WebshellStep, at?: string) {
+  emitEvent(request, { type: 'STEP', taskId, step }, at)
+}
+
+/** 아직 열려 있는 단계를 지금까지의 로그 구간으로 끝낸다. */
+function closeSteps(request: StoredRequest, status: Exclude<StepStatus, 'RUNNING'>) {
+  const latest = new Map<string, WebshellEvent>()
+  for (const event of request.webshellEvents) {
+    if (event.step) latest.set(event.step.id, event)
+  }
+  const to = db().logs[request.id]?.length ?? 0
+  for (const { taskId, step } of latest.values()) {
+    if (step?.status === 'RUNNING') {
+      emitStepEvent(request, taskId, { ...step, status, logRange: { from: step.logRange.from, to } })
+    }
+  }
 }
 
 /** 최종 상태를 서명해 알린다. 킬 스위치로 끝날 때도 같다. */
 export function reportFinalStatus(request: StoredRequest) {
   // 실행이 끝나면 전용 세션도 닫는다. 다시 실행하려면 새 검증이 필요하다.
   delete db().webshell.sessions[request.id]
+  closeSteps(request, 'SKIPPED')
   request.execution = signedExecution(request, request.execution?.executionId ?? crypto.randomUUID())
   emitEvent(request, { type: 'FINAL_STATUS', status: request.status })
 }
@@ -269,6 +300,12 @@ export function requestExecution(request: StoredRequest): boolean {
     return false
   }
   const plan = request.plan as Plan
+  // 변조 시연 전용 (tamperDemo.ts): 서명은 이미 제출됐고 웹쉘이 검증하기 바로 전이다. 아래 검증은 평소와 똑같이 돈다.
+  if (request.armedPlanSwap) {
+    const { taskId, target, content } = request.armedPlanSwap
+    plan.tasks = plan.tasks.map((task) => (task.id === taskId ? { ...task, target, content } : task))
+    delete request.armedPlanSwap
+  }
   const { failed, forbiddenTaskIds, taskIds, keyId } = verifyExecution(
     {
       plan: toHashTarget(plan),
@@ -312,10 +349,11 @@ export function requestExecution(request: StoredRequest): boolean {
 
 // ── 실행 시뮬레이션 ────────────────────────────────────────
 
-type Line = { level: LogLevel; text: string }
+/** step이 있는 줄에서 새 실행 단계가 시작된다. */
+type Line = { level: LogLevel; text: string; step?: string }
 
 function scriptFor(task: Task, requestId: string): Line[] {
-  const cmd = (text: string): Line => ({ level: 'CMD', text: `$ ${text}` })
+  const cmd = (text: string): Line => ({ level: 'CMD', text: `$ ${text}`, step: text })
   const info = (text: string): Line => ({ level: 'INFO', text })
   switch (task.type) {
     case 'CODE_MINOR':
@@ -350,7 +388,8 @@ function scriptFor(task: Task, requestId: string): Line[] {
     case 'DATA_WRITE':
       return [cmd(task.content.query ?? '-- query'), info('쿼리 실행 완료')]
     case 'DOC':
-      return [info(`문서 작성 완료: ${task.target}`), info('문서 새 버전 저장')]
+      // 문서 작업에는 `$ 명령` 줄이 없다. 트리에 빈 가지가 남지 않게 첫 줄을 단계로 본다.
+      return [{ ...info(`문서 작성 완료: ${task.target}`), step: '문서 작성' }, info('문서 새 버전 저장')]
   }
 }
 
@@ -390,7 +429,16 @@ export function scheduleExecution(requestId: string) {
       task.status = 'RUNNING'
       emitEvent(request, { type: 'TASK_STARTED', taskId: task.id })
     }
-    webshellLog(request.id, current.level, current.taskId, current.text)
+    if (current.step) closeSteps(request, 'SUCCEEDED')
+    const seq = webshellLog(request.id, current.level, current.taskId, current.text)
+    if (current.step) {
+      emitStepEvent(request, task.id, {
+        id: `s-${seq}`,
+        label: current.step,
+        status: 'RUNNING',
+        logRange: { from: seq, to: null },
+      })
+    }
     if (current.endOf) {
       completeTask(request, task)
       request.execLine = 0
@@ -411,6 +459,7 @@ function completeTask(request: StoredRequest, task: Task) {
   if (shouldFail) {
     task.status = 'FAILED'
     webshellLog(request.id, 'ERROR', task.id, `[${task.id}] 실패: 종료 코드 1`)
+    closeSteps(request, 'FAILED')
     emitEvent(request, { type: 'TASK_FAILED', taskId: task.id })
     audit(SYSTEM_ACTOR, 'TASK_FAILED', { requestId: request.id, taskIds: [task.id] })
     finish(request)
@@ -418,6 +467,7 @@ function completeTask(request: StoredRequest, task: Task) {
   }
   task.status = plan.kind === 'ROLLBACK' ? 'ROLLED_BACK' : 'SUCCEEDED'
   webshellLog(request.id, 'SUCCESS', task.id, `[${task.id}] 성공`)
+  closeSteps(request, 'SUCCEEDED')
   emitEvent(request, { type: 'TASK_SUCCEEDED', taskId: task.id })
   audit(SYSTEM_ACTOR, 'TASK_SUCCEEDED', { requestId: request.id, taskIds: [task.id] })
   applyEffects(request, task)

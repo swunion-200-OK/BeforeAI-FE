@@ -5,24 +5,9 @@ import { auditApi } from '../../api/endpoints'
 import type { AuditLog, FailedCheck } from '../../api/types'
 import { NetworkBadge } from '../../components/badges'
 import { Banner, Drawer, ErrorState, Mono, Spinner } from '../../components/ui'
-import { FAILED_CHECK_LABEL } from '../../lib/labels'
+import { AUDIT_DETAIL_LABEL, FAILED_CHECK_LABEL } from '../../lib/labels'
 import { useProjects } from '../../lib/queries'
 import { AuditActionLabel } from './AuditActionLabel'
-
-const DETAIL_LABEL: Record<string, string> = {
-  reason: '사유',
-  keyId: '승인 키',
-  self: '본인 승인',
-  planHash: 'Plan 해시',
-  source: '요청 경로',
-  retry: '재시도',
-  changes: 'Plan 변경',
-  answer: '확인 질문 답변',
-  direct: '관리자 직접 추가',
-  documentId: '문서',
-  version: '문서 버전',
-  ownerIds: '담당자',
-}
 
 const MONO_KEYS = new Set(['keyId', 'planHash', 'documentId'])
 
@@ -108,7 +93,7 @@ function LogBody({ log }: { log: AuditLog }) {
         {log.target.projectId && <Row label="프로젝트">{projectName ?? log.target.projectId}</Row>}
         {log.target.label && <Row label="대상">{log.target.label}</Row>}
         {others.map(([key, value]) => (
-          <Row key={key} label={DETAIL_LABEL[key] ?? key}>
+          <Row key={key} label={AUDIT_DETAIL_LABEL[key] ?? key}>
             <DetailValue name={key} value={value} />
           </Row>
         ))}

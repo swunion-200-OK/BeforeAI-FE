@@ -1,5 +1,4 @@
 import type {
-  AuditLog,
   Dashboard,
   PendingApproval,
   RequestStatus,
@@ -24,7 +23,10 @@ import {
   taskDocument,
   toDetail,
 } from '../engine'
+import { auditExportRoutes } from '../auditExport'
+import { auditInScope, inDepartment, selectAuditLogs } from '../auditScope'
 import { isCandidate, isExternallyApprovable, matchRequirement } from '../policy'
+import { progressStream, progressTree } from '../progress'
 import { paginate, route, type Ctx, type Route } from '../router'
 import {
   HttpError,
@@ -65,13 +67,6 @@ function summarizeTasks(request: StoredRequest): RequestTaskSummary {
     succeeded: count('SUCCEEDED', 'ROLLED_BACK'),
     failed: count('FAILED'),
   }
-}
-
-function inDepartment(request: StoredRequest, departmentId: string | null): boolean {
-  if (!departmentId) return false
-  return (
-    request.requester.departmentId === departmentId || requireProject(request.projectId).departmentId === departmentId
-  )
 }
 
 /** 역할별 조회 범위 (기능 명세서 3.2) */
@@ -202,40 +197,6 @@ function buildDashboard(ctx: Ctx): Dashboard {
   return result
 }
 
-/** 역할별 감사 로그 범위: 관리자 전체, 부서 관리자 소속 부서, 직원 본인 요청 */
-function auditInScope(log: AuditLog, user: StoredUser): boolean {
-  if (user.role === 'ADMIN') return true
-  const request = log.target.requestId ? db().requests.find((r) => r.id === log.target.requestId) : undefined
-  if (user.role === 'DEPT_MANAGER') {
-    if (request) return inDepartment(request, user.departmentId)
-    const actor = db().users.find((u) => u.id === log.actor.id)
-    return actor?.departmentId === user.departmentId
-  }
-  return request?.requester.id === user.id
-}
-
-function auditMatches(log: AuditLog, query: URLSearchParams): boolean {
-  const actorId = query.get('actorId')
-  const departmentId = query.get('departmentId')
-  const projectId = query.get('projectId')
-  const requestId = query.get('requestId')
-  const action = query.get('action')
-  const network = query.get('network')
-  const from = query.get('from')
-  const to = query.get('to')
-  const database = db()
-  const request = log.target.requestId ? database.requests.find((r) => r.id === log.target.requestId) : undefined
-  if (actorId && log.actor.id !== actorId) return false
-  if (departmentId && database.users.find((u) => u.id === log.actor.id)?.departmentId !== departmentId) return false
-  if (projectId && (log.target.projectId ?? request?.projectId) !== projectId) return false
-  if (requestId && log.target.requestId !== requestId) return false
-  if (action && log.action !== action) return false
-  if (network && log.network !== network) return false
-  if (from && log.at < from) return false
-  if (to && log.at > to) return false
-  return true
-}
-
 export const requestRoutes: Route[] = [
   // ── 작업 요청·Plan·실행 ─────────────────────────────────
   route(
@@ -304,6 +265,11 @@ export const requestRoutes: Route[] = [
   }),
   route('GET', '/requests/:requestId/logs', (ctx) => paginate(db().logs[viewable(ctx).id] ?? [], ctx.query)),
   route('GET', '/requests/:requestId/logs/stream', logStream),
+  route('GET', '/requests/:requestId/progress', (ctx) => progressTree(viewable(ctx))),
+  route('GET', '/requests/:requestId/progress/stream', (ctx) => {
+    const request = viewable(ctx)
+    return progressStream(request, ctx.headers.get('Last-Event-ID'), ctx.signal, () => canView(request, ctx.me))
+  }),
 
   // ── 승인 ────────────────────────────────────────────────
   route('GET', '/approvals/pending', ({ me, network, query }) => paginate(pendingFor(me, network), query)),
@@ -329,12 +295,9 @@ export const requestRoutes: Route[] = [
 
   // ── 대시보드·감사 로그 ──────────────────────────────────
   route('GET', '/dashboard', buildDashboard),
-  route('GET', '/audit-logs', ({ me, query }) =>
-    paginate(
-      db().auditLogs.filter((log) => auditInScope(log, me) && auditMatches(log, query)),
-      query,
-    ),
-  ),
+  route('GET', '/audit-logs', ({ me, query }) => paginate(selectAuditLogs(me, query), query)),
+  // /audit-logs/:logId보다 먼저 와야 exports가 logId로 잡히지 않는다.
+  ...auditExportRoutes,
   route('GET', '/audit-logs/:logId', ({ me, params }) => {
     const log = db().auditLogs.find((l) => l.id === params.logId)
     if (!log || !auditInScope(log, me)) throw new HttpError(404, 'NOT_FOUND', '기록을 찾을 수 없습니다')

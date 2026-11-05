@@ -4,6 +4,7 @@ import { requestRoutes } from './routes/requests'
 import { resumeTimers } from './engine'
 import { matchRoute, type Route } from './router'
 import { buildSeed } from './seed'
+import { tamperDemo } from './tamperDemo'
 import { deviceStore } from '../../crypto/deviceStore'
 import {
   HttpError,
@@ -88,6 +89,7 @@ export async function mockFetch(input: string, init: RequestInit = {}): Promise<
       me: me as NonNullable<typeof me>,
       network,
       signal: init.signal ?? undefined,
+      headers,
     })
     if (method !== 'GET') persist()
     if (result instanceof Response) {
@@ -148,5 +150,7 @@ export const devControls = {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
     return match?.id ?? 'r-main'
   },
+  /** 변조 시연 화면용: 전용 요청을 만들고 공격을 실제로 저장소에 가한다. */
+  tamper: tamperDemo,
   subscribe: onDbChange,
 }

@@ -20,6 +20,11 @@ const ProjectsPage = lazy(() => import('../features/projects/ProjectsPage'))
 const ForbiddenPage = lazy(() => import('../features/forbidden/ForbiddenPage'))
 const SettingsPage = lazy(() => import('../features/admin/SettingsPage'))
 
+// 목 빌드에만 있는 시연 화면. 빌드할 때 값이 박히는 조건이라 VITE_API_BASE_URL을 주면 경로와 코드가 함께 빠진다.
+const mockOnlyRoutes = import.meta.env.VITE_API_BASE_URL
+  ? []
+  : [{ path: '/demo/tamper', Component: lazy(() => import('../features/demo/TamperDemoPage')) }]
+
 export const router = createBrowserRouter([
   {
     element: <Root />,
@@ -29,6 +34,8 @@ export const router = createBrowserRouter([
       {
         element: <RequireAuth />,
         children: [
+          // 창 전체를 시연에 쓰므로 사이드바가 있는 앱 뼈대 밖에 둔다.
+          ...mockOnlyRoutes,
           {
             element: <AppShell />,
             children: [

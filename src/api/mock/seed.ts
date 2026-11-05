@@ -39,7 +39,7 @@ import {
 } from './fixtures'
 import { buildRequiredApprovers } from './policy'
 import { SCHEMA_VERSION, SYSTEM_ACTOR, db, ipFor, setDb, type MockDb, type StoredRequest, type StoredUser } from './store'
-import { WEBSHELL_PUBLIC_KEY, signLogLine, signedExecution } from './webshell'
+import { WEBSHELL_PUBLIC_KEY, emitStepEvent, signLogLine, signedExecution } from './webshell'
 
 const DEMO_PASSWORD = 'demo1234!'
 const encoder = new TextEncoder()
@@ -97,6 +97,7 @@ function emptyDb(): MockDb {
     docVersions: [],
     files: { 'prj-auth': { ...AUTH_FILES }, 'prj-deploy': { ...DEPLOY_FILES } },
     auditLogs: [],
+    auditExports: [],
     slackOutbox: [],
     notificationSettings: {},
     webshell: {
@@ -284,7 +285,7 @@ interface SeedRequest {
   frozen?: boolean
 }
 
-function addRequest(seed: SeedRequest): StoredRequest {
+export function addRequest(seed: SeedRequest): StoredRequest {
   const database = db()
   const project = database.projects.find((p) => p.id === (seed.projectId ?? 'prj-auth'))!
   const requester = ref(seed.requesterId)
@@ -451,7 +452,7 @@ const testDiff = () =>
       "  it('rejects an unknown user', async () => {\n    expect(loginRoute).toBeDefined()\n  })\n\n  it('rejects a wrong password'",
     ),
   )
-const deployTask = (status: TaskStatus, target = 'staging'): SeedTask => ({
+export const deployTask = (status: TaskStatus, target = 'staging'): SeedTask => ({
   type: 'DEPLOY',
   title: target === 'staging' ? '스테이징 배포' : '운영 배포',
   description: `${target} 환경에 배포합니다.`,
@@ -568,6 +569,15 @@ function seedRequests() {
     ],
   })
   reapproval.changedTaskIds = ['t-1']
+  // 수정 지시 전의 Plan은 진행 상황 트리에 대체된 가지로 남는다.
+  const [changedTask, unchangedTask] = reapproval.plan!.tasks
+  const firstPlan = {
+    ...reapproval.plan!,
+    id: 'p-reapproval-v1',
+    tasks: [{ ...changedTask, content: { diff: loginDiff() } }, unchangedTask],
+  }
+  firstPlan.planHash = hashService.computePlanHash(firstPlan)
+  reapproval.planHistory = [{ version: 1, plan: firstPlan, supersededAt: minutesAgo(30) }]
 
   const verificationFailed = addRequest({
     id: 'r-verify-failed',
@@ -588,6 +598,7 @@ function seedRequests() {
       deployTask('APPROVED'),
     ],
   })
+  signFor(verificationFailed, 'u-07', ['t-1'])
   verificationFailed.failedChecks = ['PLAN_HASH_MISMATCH', 'MISSING_REQUIRED_APPROVER'] satisfies FailedCheck[]
 
   const running = addRequest({
@@ -730,6 +741,7 @@ function seedRequests() {
     ageMinutes: 1000,
     tasks: [{ ...deployTask('FAILED'), relatedDepartments: ['d-infra'] }],
   })
+  signFor(failed, 'u-mgr-in', ['t-1'])
   addLogs(
     failed.id,
     [
@@ -750,9 +762,10 @@ function seedRequests() {
     content: { body: AUTH_FILES['docs/api-guide.md'] },
     status,
   })
-  addRequest({ id: 'r-rolling-back', requesterId: 'u-01', prompt: '인증 API 가이드 오탈자를 고쳐줘', status: 'ROLLING_BACK', ageMinutes: 60, kind: 'ROLLBACK', frozen: true, tasks: [rollbackTask('RUNNING')] })
-  addRequest({ id: 'r-rolled-back', requesterId: 'u-01', prompt: '인증 API 가이드에 예시를 추가해줘', status: 'ROLLED_BACK', ageMinutes: 2000, kind: 'ROLLBACK', tasks: [rollbackTask('ROLLED_BACK')] })
-  addRequest({ id: 'r-rollback-failed', requesterId: 'u-01', prompt: '인증 API 가이드 구조를 바꿔줘', status: 'ROLLBACK_FAILED', ageMinutes: 2600, kind: 'ROLLBACK', tasks: [rollbackTask('FAILED')] })
+  const rollingBack = addRequest({ id: 'r-rolling-back', requesterId: 'u-01', prompt: '인증 API 가이드 오탈자를 고쳐줘', status: 'ROLLING_BACK', ageMinutes: 60, kind: 'ROLLBACK', frozen: true, tasks: [rollbackTask('RUNNING')] })
+  const rolledBack = addRequest({ id: 'r-rolled-back', requesterId: 'u-01', prompt: '인증 API 가이드에 예시를 추가해줘', status: 'ROLLED_BACK', ageMinutes: 2000, kind: 'ROLLBACK', tasks: [rollbackTask('ROLLED_BACK')] })
+  const rollbackFailed = addRequest({ id: 'r-rollback-failed', requesterId: 'u-01', prompt: '인증 API 가이드 구조를 바꿔줘', status: 'ROLLBACK_FAILED', ageMinutes: 2600, kind: 'ROLLBACK', tasks: [rollbackTask('FAILED')] })
+  for (const rollback of [rollingBack, rolledBack, rollbackFailed]) signFor(rollback, 'u-07', ['t-1'])
 
   // 김담당도 본인 요청이 있어야 "내 대시보드"가 비지 않는다.
   addRequest({ id: 'r-kim-review', requesterId: 'u-07', prompt: '세션 만료 안내 문구를 다듬어줘', status: 'REVIEWING', ageMinutes: 35, tasks: [testTask('PENDING')] })
@@ -884,11 +897,38 @@ function seedAudit() {
   db().auditLogs.sort((a, b) => b.at.localeCompare(a.at))
 }
 
+/** 시드의 실행 로그에 맞춰 웹쉘이 보냈을 실행 단계 이벤트를 서명해 넣는다. 진행 상황 트리는 이 이벤트로만 단계를 그린다. */
+function seedStepEvents() {
+  const database = db()
+  for (const request of database.requests) {
+    const logs = database.logs[request.id] ?? []
+    for (const task of request.plan?.tasks ?? []) {
+      const lines = logs.filter((line) => line.taskId === task.id)
+      if (lines.length === 0) continue
+      const commands = lines.filter((line) => line.level === 'CMD')
+      // `$ 명령` 줄이 없는 짧은 시드 로그는 작업 전체를 한 단계로 본다.
+      const starts = commands.length > 0 ? commands : [lines[0]]
+      starts.forEach((start, index) => {
+        const next = starts[index + 1]
+        const end = next ? lines[lines.indexOf(next) - 1] : lines[lines.length - 1]
+        const label =
+          start.level === 'CMD' ? start.text.replace(/^\$ /, '') : task.type === 'DOC' ? '문서 작성' : 'diff 적용'
+        const step = { id: `s-${start.seq}`, label }
+        emitStepEvent(request, task.id, { ...step, status: 'RUNNING', logRange: { from: start.seq, to: null } }, start.at)
+        if (!next && task.status === 'RUNNING') return
+        const status = !next && task.status === 'FAILED' ? 'FAILED' : 'SUCCEEDED'
+        emitStepEvent(request, task.id, { ...step, status, logRange: { from: start.seq, to: end.seq } }, end.at)
+      })
+    }
+  }
+}
+
 export function buildSeed() {
   setDb(emptyDb())
   seedPeople()
   seedProjects()
   seedRequests()
+  seedStepEvents()
   seedAudit()
   // 실행 중인 시드는 검증을 통과해 전용 세션이 열린 상태다.
   for (const request of db().requests) {

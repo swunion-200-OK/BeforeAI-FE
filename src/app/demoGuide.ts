@@ -77,6 +77,7 @@ export const DEMO_SCENARIOS: DemoGroup[] = [
   {
     title: '차단',
     steps: [
+      { label: '변조 시연: 웹 서비스가 뚫렸을 때 무엇이 막는지 직접 공격합니다', userId: KIM, network: 'INTERNAL', path: fixed('/demo/tamper') },
       { label: '금지 작업이 포함된 Plan', userId: HONG, network: 'INTERNAL', path: fixed('/requests/new/r-forbidden') },
       { label: '웹쉘 검증 실패와 실패 항목', userId: HONG, network: 'INTERNAL', path: fixed('/requests/r-verify-failed') },
       { label: 'Plan이 변조되어 서명이 잠긴 화면', userId: KIM, network: 'INTERNAL', path: fixed('/approvals/r-tampered-hash') },
@@ -93,6 +94,12 @@ export const DEMO_SCENARIOS: DemoGroup[] = [
         network: 'INTERNAL',
         path: fixed('/audit?network=EXTERNAL&action=APPROVAL_SUBMITTED'),
       },
+      {
+        label: '지금 조건 그대로 감사 로그 내보내기 (엑셀·CSV)',
+        userId: CTO,
+        network: 'INTERNAL',
+        path: fixed('/audit?network=EXTERNAL'),
+      },
     ],
   },
   {
@@ -102,6 +109,7 @@ export const DEMO_SCENARIOS: DemoGroup[] = [
       { label: 'AI 완성 문서를 적용 / 미적용', userId: KIM, network: 'INTERNAL', path: fixed('/approvals/r-doc') },
       { label: '문서 버전과 롤백', userId: HONG, network: 'INTERNAL', path: fixed('/documents/doc-readme') },
       { label: '실행 중 요청과 킬 스위치', userId: HONG, network: 'INTERNAL', path: fixed('/requests/r-running') },
+      { label: '진행 상황 트리에서 대체된 Plan 펼치기 (외부망 조회)', userId: HONG, network: 'EXTERNAL', path: fixed('/requests/r-reapproval') },
       { label: '부분완료와 실패 작업 재시도', userId: HONG, network: 'INTERNAL', path: fixed('/requests/r-partial') },
       { label: 'AI 확인 질문에 답하기', userId: HONG, network: 'INTERNAL', path: fixed('/requests/new/r-clarify') },
       { label: '분석 실패와 재시도', userId: HONG, network: 'INTERNAL', path: fixed('/requests/new/r-analysis-failed') },
