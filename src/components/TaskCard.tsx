@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { requestsApi } from '../api/endpoints'
-import type { ApproverRequirement, Task } from '../api/types'
-import { makeUnifiedDiff } from '../lib/diff'
-import { RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL } from '../lib/labels'
-import { useDepartmentNames } from '../lib/queries'
+import { documentsApi, requestsApi } from '../api/endpoints'
+import type { ApproverRequirement, PlanKind, RequestStatus, Task } from '../api/types'
+import { RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL, forbiddenReasonText } from '../lib/labels'
+import { useDepartmentNames, useRequest } from '../lib/queries'
+import { shownTaskStatus } from '../lib/settledTask'
+import { compareTaskDocument, compareWithCurrent, type DocumentCompare } from '../lib/taskDocument'
 import { RiskBadge, TaskStatusBadge } from './badges'
 import { ChangeDetails, ChangeStats, ChangeSummary, ImpactLine } from './ChangeExplanation'
 import { DiffViewer } from './DiffViewer'
@@ -15,11 +16,52 @@ export function approversText(required: ApproverRequirement[]): string {
   return required.map((r) => RULE_LABEL[r.rule]).join(' + ')
 }
 
+const BASE_UNVERIFIED = '서명 대상은 아래 문서 전체 내용입니다. 비교의 기준 문서는 서명으로 확인되지 않습니다.'
+
+/** 비교를 믿을 수 없거나 받지 못했을 때. 비교 없이 서명하지 않도록 그 사실을 먼저 말하고 전체 내용을 펼쳐 둔다. */
+function DocumentNotice({ title, detail = '아래 전체 내용을 확인한 뒤 결정해 주세요.', body }: { title: string; detail?: string; body: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Banner tone="warning" title={title}>
+        {detail}
+      </Banner>
+      <CodeBlock label="문서 전체 내용">{body}</CodeBlock>
+    </div>
+  )
+}
+
+/** 비교와 전체 내용. 기준 문서는 해시 대상이 아니라 숨길 수 있으므로 서명 대상이 전체 내용이라고 비교 위에 쓰고, 전체 내용을 펼쳐 둔다. */
+function DocumentDiff({ caption, diff, body }: { caption: string; diff: string; body: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium text-ink-2">{BASE_UNVERIFIED}</p>
+      <p className="text-xs text-ink-3">{caption}</p>
+      <DiffViewer diff={diff} />
+      <details open className="group">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden">
+          문서 전체 내용
+          <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
+        <div className="quiet-scroll mt-2 max-h-96 overflow-y-auto">
+          <CodeBlock>{body}</CodeBlock>
+        </div>
+      </details>
+    </div>
+  )
+}
+
+function DocumentCompareView({ compare, caption, body }: { compare: DocumentCompare; caption: string; body: string }) {
+  if (compare.kind === 'mismatch') return <DocumentNotice title="비교 자료가 서명할 문서와 맞지 않아 보여 주지 않습니다" body={body} />
+  if (compare.kind === 'noChange') return <DocumentNotice title="비교할 문서와 달라진 줄이 없습니다" detail={BASE_UNVERIFIED} body={body} />
+  return <DocumentDiff caption={caption} diff={compare.diff} body={body} />
+}
+
 /**
  * 실제 변경 내용: 코드 diff(좌우 비교), 배포 명령, 쿼리, 문서 본문.
- * 문서 비교는 서버가 준 diff를 믿지 않고, 해시로 검증한 content.body로 화면에서 직접 만든다.
+ * 문서 비교는 서버 diff를 믿지 않고, 해시로 검증한 content.body로 화면에서 다시 만든다 (lib/taskDocument.ts).
+ * planKind: 롤백 Plan이면 서버 비교 기준이 현재 문서가 아니라서 현재 문서를 따로 받아 비교한다.
  */
-export function TaskContentView({ task, requestId }: { task: Task; requestId?: string }) {
+export function TaskContentView({ task, requestId, planKind }: { task: Task; requestId?: string; planKind?: PlanKind }) {
   // 서버의 해시 대상은 내용 없는 작업을 빈 객체로 다룬다 (PlanHashService.contentTarget). 화면도 깨지지 않게 같게 본다.
   const content = task.content ?? {}
   const showDocument = task.type === 'DOC' && Boolean(requestId) && content.body !== undefined
@@ -28,35 +70,55 @@ export function TaskContentView({ task, requestId }: { task: Task; requestId?: s
     queryFn: () => requestsApi.taskDocument(requestId as string, task.id),
     enabled: showDocument,
   })
-  const currentBody = documentQuery.data?.currentBody
-  const documentDiff = useMemo(
-    () =>
-      currentBody === undefined || content.body === undefined
-        ? null
-        : makeUnifiedDiff(task.target, currentBody, content.body),
-    [currentBody, content.body, task.target],
+  const isRollback = planKind === 'ROLLBACK'
+  const currentDocumentId = showDocument && isRollback ? (documentQuery.data?.documentId ?? null) : null
+  // 현재 버전은 프로젝트의 문서 목록에 있다. 요청 상세는 화면들이 이미 받아 두는 값이다.
+  const owner = useRequest(currentDocumentId !== null ? requestId : undefined)
+  const projectId = owner.data?.projectId
+  const currentQuery = useQuery({
+    queryKey: ['task-document-current', projectId, currentDocumentId],
+    queryFn: () => documentsApi.current(projectId as string, currentDocumentId as string),
+    enabled: currentDocumentId !== null && Boolean(projectId),
+  })
+  // 요청 상세를 다시 받을 때마다 같은 비교를 다시 만들지 않는다.
+  const compare = useMemo(
+    () => (documentQuery.data && content.body !== undefined ? compareTaskDocument(documentQuery.data, content.body, task.target) : null),
+    [documentQuery.data, content.body, task.target],
   )
-  if (showDocument) {
-    if (documentQuery.isPending) return <Spinner label="문서 비교를 불러오는 중" />
-    if (documentDiff !== null) {
-      return (
-        <div className="flex flex-col gap-2">
-          <p className="text-xs text-ink-3">
-            {documentQuery.data?.currentVersion
-              ? `기존 문서 v${documentQuery.data.currentVersion}와 AI가 완성한 문서를 비교합니다.`
-              : 'AI가 새로 작성한 문서입니다.'}
-          </p>
-          <DiffViewer diff={documentDiff} />
-        </div>
-      )
+  const currentCompare = useMemo(
+    () => (currentQuery.data && content.body !== undefined ? compareWithCurrent(task.target, currentQuery.data.body, content.body) : null),
+    [currentQuery.data, content.body, task.target],
+  )
+
+  let documentView: ReactNode = null
+  if (showDocument && content.body !== undefined) {
+    const waitingCurrent = currentDocumentId !== null && (owner.isPending || (Boolean(projectId) && currentQuery.isPending))
+    if (documentQuery.isPending) documentView = <Spinner label="문서 비교를 불러오는 중" />
+    else if (!documentQuery.data) documentView = <DocumentNotice title="기존 문서와 비교하지 못했습니다" body={content.body} />
+    else if (isRollback && documentQuery.data.body !== content.body) documentView = <DocumentCompareView compare={{ kind: 'mismatch' }} caption="" body={content.body} />
+    else if (isRollback && waitingCurrent) documentView = <Spinner label="현재 문서를 불러오는 중" />
+    else if (isRollback && (!currentQuery.data || !currentCompare)) documentView = <DocumentNotice title="현재 문서와 비교하지 못했습니다" body={content.body} />
+    else if (isRollback && currentQuery.data && currentCompare) {
+      documentView = <DocumentCompareView compare={currentCompare} caption={`현재 문서 v${currentQuery.data.version}와 되돌릴 내용을 비교합니다.`} body={content.body} />
+    } else if (compare) {
+      const { baseVersion } = documentQuery.data
+      const caption =
+        compare.kind === 'diff' && compare.isNew
+          ? 'AI가 새로 작성한 문서입니다.'
+          : baseVersion
+            ? `기존 문서 v${baseVersion}와 AI가 완성한 문서를 비교합니다.`
+            : '기존 문서와 AI가 완성한 문서를 비교합니다.'
+      documentView = <DocumentCompareView compare={compare} caption={caption} body={content.body} />
     }
   }
   return (
     <div className="flex flex-col gap-2">
+      {documentView}
+      {/* 문서 작업이어도 다른 필드가 있으면 서명 대상이므로 숨기지 않는다. */}
       {content.diff !== undefined && <DiffViewer diff={content.diff} />}
       {content.command !== undefined && <CodeBlock label="실행 명령">{content.command}</CodeBlock>}
       {content.query !== undefined && <CodeBlock label="쿼리">{content.query}</CodeBlock>}
-      {content.body !== undefined && <CodeBlock label="문서 본문">{content.body}</CodeBlock>}
+      {content.body !== undefined && documentView === null && <CodeBlock label="문서 본문">{content.body}</CodeBlock>}
     </div>
   )
 }
@@ -86,6 +148,9 @@ const EDGE = {
 /**
  * Plan 작업 카드. 작업 요청·요청 상세·승인 상세가 같이 쓴다. TaskRows 안에 놓는다.
  * 위험도, 제목, 쉬운 설명 한 문장만 먼저 보여 주고 나머지는 "자세히"에 접어 둔다.
+ * - number: 화면에 쓰는 작업 번호. 1부터 센다 (lib/taskLabel.ts)
+ * - requestStatus: 끝난 요청의 작업을 승인 대기로 보이지 않게 한다
+ * - planKind: 롤백 Plan이면 문서를 현재 문서와 비교한다
  * - highlighted: 재승인 화면에서 바뀐 작업 강조
  * - spotlight: 실행 중이거나 실패한 작업 강조
  * - leading: 승인 체크박스 등 카드 왼쪽 요소
@@ -95,7 +160,10 @@ const EDGE = {
  */
 export function TaskCard({
   task,
+  number,
   requestId,
+  requestStatus,
+  planKind,
   highlighted,
   spotlight,
   leading,
@@ -105,7 +173,10 @@ export function TaskCard({
   defaultOpen = false,
 }: {
   task: Task
+  number: number
   requestId?: string
+  requestStatus?: RequestStatus
+  planKind?: PlanKind
   highlighted?: boolean
   spotlight?: 'running' | 'failed'
   leading?: ReactNode
@@ -127,23 +198,21 @@ export function TaskCard({
             <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
               <RiskBadge risk={task.risk} />
               <h3 className={`text-lg font-semibold ${forbidden ? 'text-forbidden' : ''}`}>{task.title}</h3>
-              <span className="font-mono text-xs text-ink-3">#{task.order}</span>
+              <span className="font-mono text-xs text-ink-3">#{number}</span>
               {highlighted && <span className="text-xs font-semibold text-medium">바뀐 작업</span>}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {showStatus && <TaskStatusBadge status={task.status} />}
+              {showStatus && <TaskStatusBadge status={shownTaskStatus(task.status, requestStatus)} />}
               {actions}
             </div>
           </div>
 
           {forbidden ? (
-            task.forbiddenReason && (
-              <div className="mt-2">
-                <Banner tone="neutral" title="부서 금지 작업이라 승인할 수 없습니다">
-                  {task.forbiddenReason}
-                </Banner>
-              </div>
-            )
+            <div className="mt-2">
+              <Banner tone="neutral" title="부서 금지 작업이라 승인할 수 없습니다">
+                {forbiddenReasonText(task)}
+              </Banner>
+            </div>
           ) : (
             <>
               {/* 펼치면 이전 → 이후와 영향이 아래 칸에 크게 나오므로 위에서는 뺀다 */}
@@ -189,7 +258,7 @@ export function TaskCard({
                       {task.explanation ? '위 설명은 AI가 쓴 참고 자료입니다. ' : ''}승인 서명의 기준은 이 실제 변경 내용입니다.
                     </p>
                   </div>
-                  <TaskContentView task={task} requestId={requestId} />
+                  <TaskContentView task={task} requestId={requestId} planKind={planKind} />
                 </section>
               </div>
             </details>

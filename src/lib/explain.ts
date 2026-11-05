@@ -1,5 +1,5 @@
 import type { Task, TaskChangeItem, TaskContent, TaskExplanation, TaskType } from '../api/types'
-import { parseUnifiedDiff } from './diff'
+import { parseUnifiedDiff, readUnifiedDiff } from './diff'
 
 /**
  * 변경 내용을 사람이 읽는 문장으로 푼다.
@@ -11,10 +11,14 @@ export interface DiffStats {
   files: number
   added: number
   removed: number
+  /** false면 형식이 틀려 읽은 만큼만 센 값이다. 화면은 숫자를 쓰지 않는다 */
+  wellFormed: boolean
 }
 
+export const UNCOUNTABLE_DIFF = '줄 수를 셀 수 없습니다'
+
 export function diffStats(diff: string): DiffStats {
-  const stats: DiffStats = { files: 0, added: 0, removed: 0 }
+  const stats: DiffStats = { files: 0, added: 0, removed: 0, wellFormed: readUnifiedDiff(diff).wellFormed }
   for (const row of parseUnifiedDiff(diff)) {
     if (row.type === 'file') stats.files += 1
     if (row.type === 'line') {
@@ -243,7 +247,8 @@ function factualExplanation({ title, target, content: taskContent }: Task): Task
     undo,
   })
   if (content.diff !== undefined) {
-    const { files, added, removed } = diffStats(content.diff)
+    const { files, added, removed, wellFormed } = diffStats(content.diff)
+    if (!wellFormed) return about(`의 코드가 바뀝니다. ${UNCOUNTABLE_DIFF}.`)
     return about(`의 코드가 바뀝니다. 파일 ${files}개, 추가 ${added}줄, 삭제 ${removed}줄입니다.`)
   }
   if (content.command !== undefined) return about('에 배포 명령을 실행합니다. 영향 범위는 명령을 직접 확인해 주세요.')

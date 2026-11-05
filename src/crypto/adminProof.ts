@@ -1,4 +1,4 @@
-import type { AdminProof } from '../api/types'
+import type { AdminProof, SigningKeyStatus } from '../api/types'
 import { deviceStore } from './deviceStore'
 
 /**
@@ -9,11 +9,26 @@ import { deviceStore } from './deviceStore'
 export const UNSIGNED_POLICY_SIGNATURE = 'UNSIGNED-PLACEHOLDER-TODO-SPEC'
 
 /** 화면이 서명된 변경이라고 말하지 않게 확인 창에 함께 보여 준다. */
-export const UNSIGNED_POLICY_NOTICE = '관리자 서명 규칙이 아직 정해지지 않아, 이 변경에는 실제 서명이 붙지 않습니다.'
+export const UNSIGNED_POLICY_NOTICE = '관리자 서명 규칙이 아직 정해지지 않아, 이 변경에는 이 기기의 키 ID만 함께 보내고 실제 서명은 붙지 않습니다.'
+
+export const NO_ADMIN_KEY_MESSAGE = '이 기기에 관리자 승인 키가 없습니다. 내 정보에서 키를 만들어 주세요'
+
+/** 눌러 보기 전에 알리려고 쓴다. 키 ID는 UUID여야 해서 키가 없으면 서버가 받을 값을 만들 수 없다. */
+export function adminKeyMissingReason(userId: string): string | null {
+  return deviceStore.get(userId).keyId ? null : NO_ADMIN_KEY_MESSAGE
+}
 
 /** 서버가 adminProof를 요구하는 정책 변경에만 쓴다. 키 ID는 UUID여야 해서 지어내지 않고 이 기기의 키를 쓴다. */
 export function policyAdminProof(userId: string): Required<AdminProof> {
   const { keyId } = deviceStore.get(userId)
-  if (!keyId) throw new Error('이 기기에 관리자 승인 키가 없습니다. 내 정보에서 키를 만들어 주세요')
+  if (!keyId) throw new Error(NO_ADMIN_KEY_MESSAGE)
   return { keyId, signature: UNSIGNED_POLICY_SIGNATURE }
+}
+
+/**
+ * 키 폐기의 관리자 서명. 등록된 키는 새 정책 버전을 만들어 필수이고, 등록 대기 키는 웹쉘 정책에 들어간 적이 없어 필요 없다.
+ * 서명 대상은 백엔드 문서(.docs/signing-key-admin-proof.md 3-3)에 없다. 서버는 키 ID와 서명 문자열이 있는지만 보므로 정책 변경과 같은 자리 표시 값을 쓴다.
+ */
+export function revokeAdminProof(status: SigningKeyStatus, userId: string): AdminProof | undefined {
+  return status === 'REGISTERED' ? policyAdminProof(userId) : undefined
 }

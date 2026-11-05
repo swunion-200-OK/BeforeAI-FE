@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router'
 import { PageHeader } from '../../components/ui'
+import { withoutSlackOnServer } from '../../lib/serverFeatures'
 import { ForbiddenAdminPanel } from '../forbidden/ForbiddenAdminPanel'
 import { AccountsTab } from './AccountsTab'
 import { proposalsQuery, signingKeysQuery } from './adminQueries'
@@ -10,7 +11,7 @@ import { PolicyTab } from './PolicyTab'
 import { ProjectsTab } from './ProjectsTab'
 import { SlackTab } from './SlackTab'
 
-const TABS = [
+const ALL_TABS = [
   { id: 'accounts', label: '계정·권한', Panel: AccountsTab },
   { id: 'policy', label: '정책·승인 기준표', Panel: PolicyTab },
   { id: 'forbidden', label: '금지 작업', Panel: ForbiddenAdminPanel },
@@ -20,7 +21,9 @@ const TABS = [
   { id: 'emergency', label: '전사 일괄 중단', Panel: KillAllTab },
 ] as const
 
-type TabId = (typeof TABS)[number]['id']
+type TabId = (typeof ALL_TABS)[number]['id']
+
+const TABS = withoutSlackOnServer(ALL_TABS, (tab) => tab.id === 'slack')
 
 /** 처리할 일이 있는 탭의 건수 */
 function useTabBadges(): Partial<Record<TabId, { count: number; label: string }>> {

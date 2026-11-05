@@ -8,6 +8,7 @@ import type {
   Department,
   DocumentSummary,
   DocumentVersion,
+  DocumentVersionSummary,
   ErrorCode,
   ExportFormat,
   ExportStatus,
@@ -146,7 +147,7 @@ export interface MockDb {
   requests: StoredRequest[]
   logs: Record<string, LogLine[]>
   documents: DocumentSummary[]
-  docVersions: DocumentVersion[]
+  docVersions: Array<DocumentVersion & Pick<DocumentVersionSummary, 'requestId' | 'createdBy'>>
   files: Record<string, Record<string, string>>
   auditLogs: AuditLog[]
   auditExports: StoredAuditExport[]
@@ -173,7 +174,7 @@ export interface MockDb {
 // ── 싱글턴 상태 ────────────────────────────────────────────
 
 const STORAGE_KEY = 'beforeai.mock.db.v1'
-export const SCHEMA_VERSION = 13
+export const SCHEMA_VERSION = 15
 
 export const mockConfig = {
   latencyMs: 180,

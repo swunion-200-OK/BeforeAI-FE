@@ -62,6 +62,7 @@ const EXPORT_FILTERS = {
   to: '2026-11-01T00:00:00Z',
 }
 const FORBIDDEN = { taskType: 'DEPLOY' as const, target: 'production', reason: '사유' }
+const ROLLBACK = { taskIds: ['task-1'], targetVersion: 3, reason: '잘못 적용' }
 const NEVER = new AbortController().signal
 
 interface Row {
@@ -244,8 +245,8 @@ const ROWS: Row[] = [
   { spec: 'GET /documents/{documentId}/versions/{version}', call: () => documentsApi.version('document-1', 3) },
   {
     spec: 'POST /requests/{requestId}/rollback',
-    call: () => requestsApi.rollback('request-1', { documentId: 'document-1', version: 3 }),
-    body: { documentId: 'document-1', version: 3 },
+    call: () => requestsApi.rollback('request-1', ROLLBACK),
+    body: ROLLBACK,
   },
 
   // 3.8 웹 코드 에디터 (4.7)
@@ -362,10 +363,29 @@ describe('API 명세 3장 표', () => {
     for (const [name, value] of Object.entries(headers)) expect(request.headers.get(name)).toBe(value)
   })
 
-  it('서버에 없는 API 목록은 16건이고 모두 표에 있다', () => {
+  it('서버에 없는 API 목록은 정해 둔 4건과 같고 모두 표에 있다', () => {
     const specs = ROWS.map((row) => row.spec)
-    expect(MISSING_ON_SERVER).toHaveLength(16)
+    expect(MISSING_ON_SERVER.map(({ operation }) => operation)).toEqual([
+      'GET /me/notification-settings',
+      'PUT /me/notification-settings',
+      'PUT /admin/integrations/slack',
+      'PUT /projects/{projectId}/owners',
+    ])
     for (const { operation } of MISSING_ON_SERVER) expect(specs).toContain(operation)
+  })
+
+  it('기획서 복원 사유는 있을 때만 본문에 싣는다', async () => {
+    useReply(() => ({ body: {} }))
+    await projectsApi.restoreSpec('project-1', 3, '  잘못 고침 ')
+    await projectsApi.restoreSpec('project-1', 3, '   ')
+    expect(sent.map((request) => request.body)).toEqual([{ reason: '잘못 고침' }, undefined])
+  })
+
+  it('등록된 키 폐기는 본문에 adminProof를 싣는다', async () => {
+    useReply(() => ({ body: {} }))
+    await adminApi.revokeKey('key-1', PROOF)
+    expect(sent[0].method).toBe('DELETE')
+    expect(sent[0].body).toEqual({ adminProof: PROOF })
   })
 
   it('표의 행은 겹치지 않는다', () => {

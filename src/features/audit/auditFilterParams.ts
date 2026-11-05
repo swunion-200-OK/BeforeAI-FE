@@ -1,3 +1,4 @@
+import { USE_MOCK } from '../../api/client'
 import type { AuditAction, AuditLogQuery, Network } from '../../api/types'
 
 export const FILTER_KEYS = [
@@ -13,11 +14,21 @@ export const FILTER_KEYS = [
 
 export type FilterKey = (typeof FILTER_KEYS)[number]
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** 서버의 ID 조건은 UUID라서 다른 값은 400이고, 다시 불러와도 같다. 목의 ID(r-main 등)는 UUID가 아니어서 목에서는 검사하지 않는다. */
+export function isRequestIdFilter(value: string, mock = USE_MOCK): boolean {
+  return mock || UUID.test(value)
+}
+
+const ID_KEYS: FilterKey[] = ['actorId', 'departmentId', 'projectId', 'requestId']
+
 export function countFilters(params: URLSearchParams): number {
-  // 내보내기와 목록에 실제로 적용되는 조건만 센다. 날짜가 아닌 값은 적용되지 않는다.
+  // 내보내기와 목록에 실제로 적용되는 조건만 센다. 날짜가 아닌 값이나 형식이 틀린 요청 ID는 적용되지 않는다.
   return FILTER_KEYS.filter((key) => {
     const value = params.get(key)
     if (!value) return false
+    if (ID_KEYS.includes(key)) return isRequestIdFilter(value)
     return key === 'from' || key === 'to' ? Boolean(dayBoundary(value, '00:00:00')) : true
   }).length
 }
@@ -31,11 +42,15 @@ function dayBoundary(day: string | null, time: string): string | undefined {
 
 export function toAuditQuery(params: URLSearchParams): AuditLogQuery {
   const network = params.get('network')
+  const id = (key: FilterKey) => {
+    const value = params.get(key)
+    return value && isRequestIdFilter(value) ? value : undefined
+  }
   return {
-    actorId: params.get('actorId') ?? undefined,
-    departmentId: params.get('departmentId') ?? undefined,
-    projectId: params.get('projectId') ?? undefined,
-    requestId: params.get('requestId') ?? undefined,
+    actorId: id('actorId'),
+    departmentId: id('departmentId'),
+    projectId: id('projectId'),
+    requestId: id('requestId'),
     action: params.get('action') ?? undefined,
     network: network === 'INTERNAL' || network === 'EXTERNAL' ? (network as Network) : undefined,
     from: dayBoundary(params.get('from'), '00:00:00'),

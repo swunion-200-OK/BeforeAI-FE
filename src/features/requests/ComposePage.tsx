@@ -10,6 +10,7 @@ import { Button, ErrorState, Field, PageHeader, Select, Sheet, Spinner, TextArea
 import { useAnalysisOverdue } from '../../lib/analysisWait'
 import { formatElapsed } from '../../lib/format'
 import { REQUEST_STATUS_LABEL } from '../../lib/labels'
+import { taskNumber } from '../../lib/taskLabel'
 import { useIsExternal, useProjects, useRefreshAll, useRequest } from '../../lib/queries'
 import { AnalysisFailedPanel, AnalysisOverdueBanner, RequestMeta, TaskEditButtons } from './RequestParts'
 import { pathFor } from './requestPaths'
@@ -187,6 +188,7 @@ function PlanCards({ request }: { request: RequestDetail }) {
             <TaskCard
               key={task.id}
               task={task}
+              number={taskNumber(task, tasks)}
               requestId={request.id}
               showStatus={false}
               actions={<TaskEditButtons task={task} request={request} />}

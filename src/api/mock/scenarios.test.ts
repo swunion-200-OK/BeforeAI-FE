@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { readUnifiedDiff } from '../../lib/diff'
+import { compareTaskDocument, compareWithCurrent } from '../../lib/taskDocument'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { cryptoService } from '../../crypto/cryptoService'
@@ -19,6 +21,7 @@ import {
   auditApi,
   authApi,
   dashboardApi,
+  documentsApi,
   editorApi,
   forbiddenApi,
   meApi,
@@ -478,8 +481,16 @@ describe('규칙', () => {
     await waitForStatus('r-doc', (s) => s === 'COMPLETED')
 
     asUser('u-01')
-    await requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 })
+    const accepted = await requestsApi.rollback('r-completed', { taskIds: ['t-1'], targetVersion: 1 })
     const rollback = await requestsApi.get('r-completed')
+    // 응답은 서버 RollbackResponse 모양이고, 같은 요청에 새 Plan이 붙는다.
+    expect(accepted).toEqual({
+      requestId: 'r-completed',
+      source: 'PROMPT',
+      status: 'PENDING_APPROVAL',
+      plan: { id: rollback.currentPlanId, kind: 'ROLLBACK' },
+      planHash: rollback.currentPlan!.planHash,
+    })
     expect(rollback.status).toBe('PENDING_APPROVAL')
     expect(rollback.currentPlan!.kind).toBe('ROLLBACK')
     await signAndSubmitApproval({
@@ -489,7 +500,74 @@ describe('규칙', () => {
     })
     const done = await waitForStatus('r-completed', (s) => s === 'ROLLED_BACK')
     expect(done.currentPlan!.tasks[0].status).toBe('ROLLED_BACK')
-    await expectError(requestsApi.rollback('r-partial', { documentId: 'doc-readme', version: 1 }), 'VALIDATION_ERROR')
+    // 문서가 아닌 작업은 서버처럼 받지 않는다.
+    await expectError(requestsApi.rollback('r-partial', { taskIds: ['t-1'], targetVersion: 1 }), 'VALIDATION_ERROR')
+  })
+
+  it('문서 롤백은 서버처럼 작업과 버전을 검사한다', async () => {
+    asUser('u-01')
+    await expectError(requestsApi.rollback('r-completed', { taskIds: [], targetVersion: 1 }), 'VALIDATION_ERROR')
+    await expectError(requestsApi.rollback('r-completed', { taskIds: ['없는 작업'], targetVersion: 1 }), 'NOT_FOUND')
+    await expectError(requestsApi.rollback('r-completed', { taskIds: ['t-1'], targetVersion: 99 }), 'VALIDATION_ERROR')
+    expect((await requestsApi.get('r-completed')).status).toBe('COMPLETED')
+  })
+
+  it('시연 데이터의 코드 변경은 모두 형식이 맞아 비교 화면에 그대로 나온다', () => {
+    const diffs = db().requests.flatMap((request) => request.plan?.tasks ?? []).flatMap((task) => (task.content?.diff === undefined ? [] : [task.content.diff]))
+    expect(diffs.length).toBeGreaterThan(0)
+    for (const diff of diffs) expect(readUnifiedDiff(diff).wellFormed, diff).toBe(true)
+  })
+
+  it('문서 작업 비교는 서버 모양으로 준다', async () => {
+    asUser('u-07')
+    const document = await requestsApi.taskDocument('r-doc', 't-1')
+    const body = (await requestsApi.get('r-doc')).currentPlan!.tasks[0].content.body
+    // baseVersion은 서버에 없는 목 전용 값이다.
+    expect(Object.keys(document).sort()).toEqual(['baseVersion', 'body', 'diff', 'documentId', 'taskId'])
+    expect(document).toMatchObject({ documentId: 'doc-api', taskId: 't-1', body, baseVersion: 1 })
+    expect(document.diff).toContain('--- a/docs/api-guide.md')
+    expect(compareTaskDocument(document, body!, 'docs/api-guide.md').kind).toBe('diff')
+  })
+
+  it('문서 비교 기준은 서버 규칙과 같다: 이 요청이 만든 첫 버전의 직전', async () => {
+    asUser('u-01')
+    // r-completed가 v2를 만들었으므로 v1과 비교한다. 현재 버전(v2)과 비교하면 비어 보인다.
+    const applied = await requestsApi.taskDocument('r-completed', 't-1')
+    expect(applied).toMatchObject({ documentId: 'doc-readme', baseVersion: 1 })
+    expect(compareTaskDocument(applied, applied.body, 'docs/README.md').kind).toBe('diff')
+  })
+
+  it('v2를 v1로 되돌리는 롤백은 서버 규칙으로 비교가 비고, 화면은 현재 문서와 비교해 달라진 줄을 보여 준다', async () => {
+    asUser('u-01')
+    await requestsApi.rollback('r-completed', { taskIds: ['t-1'], targetVersion: 1 })
+    const { currentPlan } = await requestsApi.get('r-completed')
+    const task = currentPlan!.tasks[0]
+    const document = await requestsApi.taskDocument('r-completed', task.id)
+    expect(document.diff).toBe('')
+    expect(compareTaskDocument(document, task.content.body!, task.target)).toEqual({ kind: 'noChange' })
+
+    const current = await documentsApi.current('prj-auth', document.documentId!)
+    expect(current.version).toBe(2)
+    const compare = compareWithCurrent(task.target, current.body, task.content.body!)
+    expect(compare.kind).toBe('diff')
+    if (compare.kind === 'diff') expect(compare.diff).toContain('-## 장애 대응')
+  })
+
+  it('문서 버전 상세는 서버 모양으로 준다: 작성자와 적용 요청이 없다', async () => {
+    asUser('u-01')
+    const { items } = await documentsApi.versions('doc-readme')
+    // 작성자는 서버에 없는 목 전용 값이다.
+    expect(items[0]).toMatchObject({ documentId: 'doc-readme', version: 2, requestId: 'r-completed', createdAt: expect.any(String) })
+    expect(items[0].createdBy?.name).toBeTruthy()
+    const version = await documentsApi.version('doc-readme', 2)
+    expect(Object.keys(version).sort()).toEqual(['body', 'createdAt', 'documentId', 'version'])
+  })
+
+  it('대시보드는 서버 이름 riskCounts로 위험도를 준다', async () => {
+    asUser('u-admin')
+    const { riskCounts } = await dashboardApi.get('COMPANY')
+    expect(Object.keys(riskCounts!).sort()).toEqual(['FORBIDDEN', 'HIGH', 'LOW', 'MEDIUM'])
+    expect(riskCounts!.HIGH).toBeGreaterThan(0)
   })
 
   it('승인 키 등록 흐름: 제출 → 대기 → 관리자 등록 → 승인 가능', async () => {
@@ -526,6 +604,16 @@ describe('규칙', () => {
     await expectError(meApi.submitSigningKey('짧은값'), 'VALIDATION_ERROR')
   })
 
+  it('등록된 키 폐기는 서버처럼 adminProof가 없으면 거부하고, 등록 대기 키는 본문 없이 폐기한다', async () => {
+    asUser('u-admin')
+    await expectError(adminApi.revokeKey('k-01-a'), 'VALIDATION_ERROR')
+    expect(db().signingKeys.find((key) => key.id === 'k-01-a')?.status).toBe('REGISTERED')
+    await adminApi.revokeKey('k-01-a', PROOF)
+    expect(db().signingKeys.find((key) => key.id === 'k-01-a')?.status).toBe('REVOKED')
+    await adminApi.revokeKey('k-09-a')
+    expect(db().signingKeys.find((key) => key.id === 'k-09-a')?.status).toBe('REVOKED')
+  })
+
   it('승인 키 등록은 관리자 본인의 등록된 키로 등록 대상에 서명해야 한다', async () => {
     const target = { id: 'k-09-a', publicKey: db().signingKeys.find((k) => k.id === 'k-09-a')!.publicKey }
     asUser('u-admin')
@@ -541,7 +629,7 @@ describe('규칙', () => {
 
   it('첫 관리자는 본인의 대기 키를 그 키 자신으로 서명해 등록하고, 그 키로 다른 키는 등록하지 못한다', async () => {
     asUser('u-admin')
-    await adminApi.revokeKey('k-admin-a')
+    await adminApi.revokeKey('k-admin-a', PROOF)
     const { publicKey } = signingService.generateDeviceKey('u-admin')
     const own = await meApi.submitSigningKey(publicKey)
     deviceStore.update('u-admin', { keyId: own.id })
@@ -774,7 +862,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     expect(alerted.sort()).toEqual(['u-admin', 'u-mgr-be'])
     const log = db().auditLogs.find((l) => l.action === 'VERIFICATION_FAILED' && l.target.requestId === 'r-main')
     expect(log?.detail.failedChecks).toEqual(['PLAN_HASH_MISMATCH'])
-    expect(log?.actor.name).toBe('웹쉘')
+    expect(log?.actor?.name).toBe('웹쉘')
   })
 
   it('이미 실행에 쓴 서명을 다시 보내면 NONCE_ALREADY_USED로 거부한다', async () => {
@@ -803,7 +891,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
   it('서명 뒤에 폐기된 키는 KEY_NOT_REGISTERED로 거부한다', async () => {
     asUser('u-admin')
-    await adminApi.revokeKey('k-01-a')
+    await adminApi.revokeKey('k-01-a', PROOF)
     expect(db().webshell.policy.keys.some((k) => k.keyId === 'k-01-a')).toBe(false)
     const result = await approveAs('u-07', 'r-main', ['t-2'])
     expect(result.status).toBe('VERIFICATION_FAILED')
@@ -1139,7 +1227,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DOC', target: 'docs/README.md', reason: '동결', adminProof: PROOF })
     asUser('u-01')
     const before = storedRequest('r-completed').status
-    await expectError(requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 }), 'FORBIDDEN_TASK')
+    await expectError(requestsApi.rollback('r-completed', { taskIds: ['t-1'], targetVersion: 1 }), 'FORBIDDEN_TASK')
     expect(storedRequest('r-completed').status).toBe(before)
   })
 
@@ -1200,7 +1288,7 @@ describe('웹쉘 연결 불가', () => {
     await expect(requestsApi.kill('r-running', '멈춤')).rejects.toMatchObject({
       status: 502,
       code: 'WEBSHELL_UNAVAILABLE',
-      message: '웹쉘에 연결할 수 없습니다',
+      message: '웹쉘에 연결할 수 없습니다. 계속되면 관리자에게 알려 주세요',
     })
     expect((await requestsApi.get('r-running')).status).toBe('RUNNING')
     asUser('u-admin')

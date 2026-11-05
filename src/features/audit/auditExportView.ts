@@ -50,8 +50,12 @@ export function exportSummary(item: Partial<AuditExport>): string {
   return joinParts(item.format && EXPORT_FORMAT_LABEL[item.format], rowCountText(item.rowCount))
 }
 
+/** 만든 시각은 목에만 있다. 서버 값이면 준비된 파일을 내려받을 수 있는 시한을 쓴다. */
 export function exportMeta(item: Partial<AuditExport> & Pick<AuditExport, 'status'>): string {
-  return joinParts(timeText(item.createdAt), EXPORT_STATUS_LABEL[item.status] ?? item.status)
+  const created = timeText(item.createdAt)
+  if (created) return joinParts(created, EXPORT_STATUS_LABEL[item.status] ?? item.status)
+  const expiry = timeText(item.expiresAt)
+  return joinParts(EXPORT_STATUS_LABEL[item.status] ?? item.status, expiry && `${expiry}까지`)
 }
 
 export function exportFileName(item: Partial<AuditExport> & Pick<AuditExport, 'exportId'>): string {

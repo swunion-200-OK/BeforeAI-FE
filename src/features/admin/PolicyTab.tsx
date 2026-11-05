@@ -8,9 +8,11 @@ import { useMe } from '../../app/AuthProvider'
 import { RiskBadge } from '../../components/badges'
 import { SegmentedTabs } from '../../components/rich'
 import { Button, ConfirmModal, EmptyState, ErrorState, Select, Sheet, Spinner } from '../../components/ui'
-import { UNSIGNED_POLICY_NOTICE, policyAdminProof } from '../../crypto/adminProof'
+import { UNSIGNED_POLICY_NOTICE, adminKeyMissingReason, policyAdminProof } from '../../crypto/adminProof'
 import { PRESET_LABEL, RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL } from '../../lib/labels'
 import { useRefreshAll } from '../../lib/queries'
+import { withoutSlackOnServer } from '../../lib/serverFeatures'
+import { AdminKeyNotice } from './AdminKeyNotice'
 import { policyQuery } from './adminQueries'
 import { notifyPolicySaved, onPolicyError } from './policyChange'
 
@@ -43,13 +45,16 @@ const PRESET_DETAILS: Record<PolicyPreset, PresetDetail> = {
   },
 }
 
-const PRESET_COMPARISON: Array<{ label: string; value: (detail: PresetDetail) => string }> = [
-  { label: '위험도 낮음·중간 작업 승인', value: (detail) => detail.lowApprover },
-  { label: '위험도 높음 작업 승인', value: (detail) => detail.highApprover },
-  { label: '위험도 높음 승인 인원', value: (detail) => `${detail.highApprovals}명` },
-  { label: 'Slack 알림', value: (detail) => detail.slack },
-  { label: '감사 로그 보관', value: (detail) => detail.audit },
-]
+const PRESET_COMPARISON = withoutSlackOnServer<{ label: string; value: (detail: PresetDetail) => string }>(
+  [
+    { label: '위험도 낮음·중간 작업 승인', value: (detail) => detail.lowApprover },
+    { label: '위험도 높음 작업 승인', value: (detail) => detail.highApprover },
+    { label: '위험도 높음 승인 인원', value: (detail) => `${detail.highApprovals}명` },
+    { label: 'Slack 알림', value: (detail) => detail.slack },
+    { label: '감사 로그 보관', value: (detail) => detail.audit },
+  ],
+  (row) => row.label === 'Slack 알림',
+)
 
 const EDITABLE_RISKS: Risk[] = ['LOW', 'MEDIUM', 'HIGH']
 const EDITABLE_RULES: ApproverRule[] = ['ANYONE', 'PROJECT_OWNER']
@@ -184,8 +189,8 @@ function PresetSection() {
       >
         <Button
           variant="primary"
-          disabled={selected === applied}
-          disabledReason="지금 적용된 프리셋입니다"
+          disabled={selected === applied || Boolean(adminKeyMissingReason(me.id))}
+          disabledReason={selected === applied ? '지금 적용된 프리셋입니다' : adminKeyMissingReason(me.id)}
           onClick={() => setConfirming(true)}
         >
           프리셋 적용
@@ -273,8 +278,8 @@ function MatrixSection() {
           {dirty && <Button onClick={() => setDraft(null)}>되돌리기</Button>}
           <Button
             variant="primary"
-            disabled={!dirty}
-            disabledReason="바뀐 내용이 없습니다"
+            disabled={!dirty || Boolean(adminKeyMissingReason(me.id))}
+            disabledReason={!dirty ? '바뀐 내용이 없습니다' : adminKeyMissingReason(me.id)}
             onClick={() => setConfirming(true)}
           >
             기준표 저장
@@ -388,6 +393,7 @@ export function PolicyTab() {
   const [segment, setSegment] = useState<Segment>('preset')
   return (
     <div className="flex flex-col gap-4">
+      <AdminKeyNotice />
       <div>
         <SegmentedTabs<Segment> label="정책 항목" value={segment} onChange={setSegment} items={SEGMENTS} />
       </div>

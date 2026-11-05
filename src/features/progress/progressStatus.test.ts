@@ -201,6 +201,17 @@ describe('지금 문장과 경로', () => {
     expect(ids.has('task:금지')).toBe(false)
   })
 
+  it('서버가 주지 않는 실패 항목, 거부, 중단 정보가 없어도 있는 만큼만 말한다', () => {
+    expect(progressNow(tree('VERIFICATION_FAILED', [task('배포', 'APPROVED')]), {}).text).toBe('웹쉘이 실행을 거부했습니다')
+    expect(progressNow(tree('REJECTED', [task('배포', 'REJECTED')]), {}).text).toBe('요청이 거부되었습니다')
+    expect(progressNow(tree('KILLED', [task('배포', 'SKIPPED')]), {}).text).toBe('킬 스위치로 중단했습니다')
+  })
+
+  it('모르는 상태값이 와도 값을 돌려주고 경로를 만들지 않는다', () => {
+    const now = progressNow(tree('NEW_STATUS' as RequestStatus, [task('배포', 'PENDING')]), {})
+    expect(now).toEqual({ text: '요청 상태를 확인해 주세요', leaves: [], mode: null })
+  })
+
   it('분석이 1분을 넘기면 분석하고 있다고 말하지 않는다', () => {
     const root = tree('ANALYZING', [])
     expect(progressNow(root, { updatedAt: new Date().toISOString() }).text).toBe('AI가 요청을 분석하고 있습니다')

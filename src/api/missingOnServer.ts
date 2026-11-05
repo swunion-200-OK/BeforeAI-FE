@@ -7,25 +7,12 @@ import { ApiError } from './errors'
  *
  * 서버에 생기면: 이 목록에서 지우고, endpoints.ts에서 그 호출의 whenOnServer를 벗긴다.
  * branches는 백엔드 저장소에서 구현을 찾은 브랜치다. 비어 있으면 어느 브랜치에도 없다.
- * 브랜치의 모양이 지금 호출과 다른 곳도 있으니 합칠 때 다시 맞춘다 (dashboard의 riskCounts, rollback의 taskIds·targetVersion).
  */
 export const MISSING_ON_SERVER = [
   { operation: 'GET /me/notification-settings', screen: 'features/me/MePage', branches: [] },
   { operation: 'PUT /me/notification-settings', screen: 'features/me/MePage', branches: [] },
   { operation: 'PUT /admin/integrations/slack', screen: 'features/admin/SlackTab', branches: [] },
   { operation: 'PUT /projects/{projectId}/owners', screen: 'features/projects/OwnersModal', branches: [] },
-  { operation: 'GET /requests/{requestId}/tasks/{taskId}/document', screen: 'components/TaskCard', branches: ['dev', 'feat/doc', 'feat/dashboard'] },
-  { operation: 'POST /requests/{requestId}/rollback', screen: 'features/documents/DocumentsPage', branches: ['dev', 'feat/doc', 'feat/dashboard'] },
-  { operation: 'GET /projects/{projectId}/documents', screen: 'features/documents/DocumentsPage', branches: ['dev', 'feat/doc', 'feat/dashboard'] },
-  { operation: 'GET /documents/{documentId}/versions', screen: 'features/documents/DocumentsPage', branches: ['dev', 'feat/doc', 'feat/dashboard'] },
-  { operation: 'GET /documents/{documentId}/versions/{version}', screen: 'features/documents/DocumentsPage', branches: ['dev', 'feat/doc', 'feat/dashboard'] },
-  { operation: 'GET /dashboard', screen: 'features/dashboard/DashboardPage', branches: ['feat/dashboard'] },
-  { operation: 'GET /audit-logs', screen: 'features/audit/AuditPage', branches: ['feat/dashboard'] },
-  { operation: 'GET /audit-logs/{logId}', screen: 'features/audit/AuditDetailDrawer', branches: ['feat/dashboard'] },
-  { operation: 'POST /audit-logs/exports', screen: 'features/audit/AuditExportModal', branches: ['feat/dashboard'] },
-  { operation: 'GET /audit-logs/exports', screen: 'features/audit/AuditExportModal', branches: ['feat/dashboard'] },
-  { operation: 'GET /audit-logs/exports/{exportId}', screen: 'features/audit/AuditExportModal', branches: ['feat/dashboard'] },
-  { operation: 'GET /audit-logs/exports/{exportId}/file', screen: 'features/audit/AuditExportModal', branches: ['feat/dashboard'] },
 ] as const
 
 export const MISSING_ON_SERVER_MESSAGE = '아직 서버에 없는 기능입니다'

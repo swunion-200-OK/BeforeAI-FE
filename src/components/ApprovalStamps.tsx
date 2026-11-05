@@ -1,6 +1,7 @@
-import type { RequirementStatus, TaskApprovalStatus } from '../api/types'
+import type { RequestStatus, RequirementStatus, TaskApprovalStatus } from '../api/types'
 import { formatDateTime } from '../lib/format'
 import { NETWORK_LABEL, RULE_LABEL } from '../lib/labels'
+import { isRequestEnded } from '../lib/settledTask'
 
 /**
  * 결재란. 이 앱을 대표하는 요소다.
@@ -44,8 +45,11 @@ export function approvalSummary(status: TaskApprovalStatus): string {
 export function ApprovalStamps({
   status,
   justStampedBy,
+  requestStatus,
 }: {
   status: TaskApprovalStatus
+  /** 끝난 요청의 빈 칸은 승인을 기다리지 않는다 */
+  requestStatus?: RequestStatus
   /** 방금 서명한 사람의 도장에만 찍히는 움직임을 준다 */
   justStampedBy?: string
 }) {
@@ -77,6 +81,8 @@ export function ApprovalStamps({
                     </>
                   )}
                 </>
+              ) : requestStatus && isRequestEnded(requestStatus) ? (
+                '승인 없음'
               ) : (
                 <>
                   대기
