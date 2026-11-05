@@ -18,7 +18,8 @@ import { pathFor } from './requestPaths'
 import { SubmitBar } from './SubmitBar'
 import { usePatchPlan } from './useRequestActions'
 
-const EXAMPLES = ['로그인 테스트를 보강해줘', 'README에 장애 대응 절차를 적어줘', '세션 만료 시간을 30분으로 늘려줘']
+// 시연에서 위험도 낮음과 높음을 하나씩 보여 준다. 기존 파일을 덮어쓰지 않도록 새 파일을 만드는 문장이다.
+const EXAMPLES = ['docs/incident-guide.md에 장애 대응 절차를 새로 작성해줘', 'docs/release-note.md 릴리스 노트를 새로 만들고 운영 서버에 배포해줘']
 
 function RecentRequests() {
   const external = useIsExternal()
