@@ -1,10 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { QRCodeSVG } from 'qrcode.react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { USE_MOCK } from '../../api/client'
 import { meApi } from '../../api/endpoints'
 import { ApiError, errorMessage } from '../../api/errors'
 import { isMissingOnServer, MISSING_ON_SERVER_MESSAGE } from '../../api/missingOnServer'
-import type { NotificationSettings } from '../../api/types'
+import type { NotificationSettings, OtpEnrollResponse } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { toast } from '../../components/toast'
 import { Button, ErrorState, Field, Modal, Mono, PageHeader, Sheet, Spinner, TextInput } from '../../components/ui'
@@ -65,17 +66,23 @@ function PasswordRow() {
  */
 function OtpRow() {
   const [enrolled, setEnrolled] = useState(false)
-  const [secret, setSecret] = useState<string | null>(null)
+  const [provisioning, setProvisioning] = useState<OtpEnrollResponse | null>(null)
   const [code, setCode] = useState('')
 
   const close = () => {
-    setSecret(null)
+    setProvisioning(null)
     setCode('')
   }
   const start = useMutation({
     meta: { silent: true },
     mutationFn: () => meApi.issueOtpSecret(),
-    onSuccess: (data) => setSecret(data.secret ?? null),
+    onSuccess: (data) => {
+      if (!data.secret && !data.otpauthUri) {
+        toast.error('OTP 등록 정보를 받지 못했습니다. 다시 시도해 주세요')
+        return
+      }
+      setProvisioning(data)
+    },
     onError: (reason) => {
       if (reason instanceof ApiError && reason.code === 'INVALID_STATE') {
         setEnrolled(true)
@@ -111,13 +118,34 @@ function OtpRow() {
         )
       }
     >
-      <Modal open={secret !== null} title="OTP 등록" onClose={close}>
+      <Modal open={provisioning !== null} title="OTP 등록" onClose={close}>
         <form onSubmit={submit} className="flex flex-col gap-3">
           <div className="text-sm text-ink-2">
-            <p>OTP 앱에 아래 비밀 키를 추가한 뒤, 앱에 표시된 6자리 번호를 입력해 주세요.</p>
-            <p className="mt-2 rounded-md bg-sheet-alt px-3 py-2">
-              <Mono>{secret}</Mono>
+            <p>
+              {provisioning?.otpauthUri
+                ? 'OTP 앱에서 QR 코드를 스캔한 뒤, 앱에 표시된 6자리 번호를 입력해 주세요.'
+                : 'OTP 앱에 아래 비밀 키를 추가한 뒤, 앱에 표시된 6자리 번호를 입력해 주세요.'}
             </p>
+            {provisioning?.otpauthUri && (
+              <div className="mt-3 flex justify-center rounded-lg bg-white p-4">
+                <QRCodeSVG
+                  value={provisioning.otpauthUri}
+                  size={220}
+                  level="M"
+                  marginSize={4}
+                  title="OTP 앱으로 스캔하는 등록 QR 코드"
+                />
+              </div>
+            )}
+            {provisioning?.secret && provisioning.otpauthUri && (
+              <details className="mt-3 rounded-md bg-sheet-alt px-3 py-2">
+                <summary className="cursor-pointer">QR 코드를 사용할 수 없나요? 비밀 키 직접 입력</summary>
+                <p className="mt-2 break-all"><Mono>{provisioning.secret}</Mono></p>
+              </details>
+            )}
+            {provisioning?.secret && !provisioning.otpauthUri && (
+              <p className="mt-2 break-all rounded-md bg-sheet-alt px-3 py-2"><Mono>{provisioning.secret}</Mono></p>
+            )}
           </div>
           <Field label="OTP 번호" hint={import.meta.env.VITE_API_BASE_URL ? undefined : '시연용 번호는 123456입니다'}>
             {(id) => (
