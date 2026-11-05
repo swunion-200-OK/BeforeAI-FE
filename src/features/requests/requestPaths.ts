@@ -17,11 +17,12 @@ export interface StatusGroup {
 /** 목록 탭의 상태 묶음. 지금 내가 봐야 할 것을 기준으로 나눴다. */
 export const STATUS_GROUPS: StatusGroup[] = [
   { id: 'progress', label: '진행 중', statuses: ['ANALYZING', 'REVIEWING', 'RUNNING', 'ROLLING_BACK'] },
-  { id: 'waiting', label: '승인 대기', statuses: ['PENDING_APPROVAL', 'REAPPROVAL_REQUIRED'] },
+  { id: 'waiting', label: '승인 대기', statuses: ['PENDING_APPROVAL'] },
   {
+    // 재승인필요는 승인권자가 아니라 요청자가 다시 제출해야 움직이므로 확인할 요청이다.
     id: 'attention',
     label: '확인 필요',
-    statuses: ['ANALYSIS_FAILED', 'VERIFICATION_FAILED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLBACK_FAILED'],
+    statuses: ['ANALYSIS_FAILED', 'VERIFICATION_FAILED', 'REAPPROVAL_REQUIRED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLBACK_FAILED'],
   },
   { id: 'done', label: '끝남', statuses: ['COMPLETED', 'ROLLED_BACK', 'REJECTED', 'CANCELED', 'KILLED'] },
 ]

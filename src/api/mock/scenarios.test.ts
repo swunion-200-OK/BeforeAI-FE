@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { readUnifiedDiff } from '../../lib/diff'
+import { interruptedTaskIds } from '../../lib/settledTask'
 import { compareTaskDocument, compareWithCurrent } from '../../lib/taskDocument'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { x25519 } from '@noble/curves/ed25519.js'
@@ -516,6 +517,34 @@ describe('규칙', () => {
     const diffs = db().requests.flatMap((request) => request.plan?.tasks ?? []).flatMap((task) => (task.content?.diff === undefined ? [] : [task.content.diff]))
     expect(diffs.length).toBeGreaterThan(0)
     for (const diff of diffs) expect(readUnifiedDiff(diff).wellFormed, diff).toBe(true)
+  })
+
+  it('부서별 비교의 합은 전체와 같다. 한 요청을 두 부서에서 세지 않는다', async () => {
+    asUser('u-admin')
+    const dashboard = await dashboardApi.get('COMPANY')
+    const sum = (key: 'requests' | 'pendingApprovals' | 'running') => dashboard.byDepartment!.reduce((total, department) => total + department[key], 0)
+    expect(sum('requests')).toBe(dashboard.requestCount)
+    expect(sum('pendingApprovals')).toBe(dashboard.pendingApprovalCount)
+    expect(sum('running')).toBe(dashboard.statusCounts!.RUNNING ?? 0)
+  })
+
+  it('외부망에서는 코드 작업도 거부할 수 없다. 내부망 전용 API다', async () => {
+    asUser('u-07', 'EXTERNAL')
+    const context = await approvalsApi.context('r-external')
+    await expectError(approvalsApi.reject('r-external', { planId: context.plan.id, taskIds: context.approvableTaskIds, reason: '사유' }), 'INTERNAL_NETWORK_ONLY')
+  })
+
+  it('킬 스위치로 멈춘 작업과 시작 전 작업을 트리로 구별한다', async () => {
+    asUser('u-01')
+    const before = (await requestsApi.get('r-running')).currentPlan!.tasks
+    const running = before.filter((task) => task.status === 'RUNNING').map((task) => task.id)
+    const notStarted = before.filter((task) => task.status === 'APPROVED' || task.status === 'PENDING').map((task) => task.id)
+    expect(running.length).toBeGreaterThan(0)
+    await requestsApi.kill('r-running', '중단')
+    const { root } = await requestsApi.progress('r-running')
+    const interrupted = interruptedTaskIds(root)
+    expect([...interrupted].sort()).toEqual(running.sort())
+    for (const id of notStarted) expect(interrupted.has(id)).toBe(false)
   })
 
   it('문서 작업 비교는 서버 모양으로 준다', async () => {

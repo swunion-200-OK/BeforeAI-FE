@@ -5,9 +5,10 @@ import { documentsApi, requestsApi } from '../api/endpoints'
 import type { ApproverRequirement, PlanKind, RequestStatus, Task } from '../api/types'
 import { RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL, forbiddenReasonText } from '../lib/labels'
 import { useDepartmentNames, useRequest } from '../lib/queries'
-import { shownTaskStatus } from '../lib/settledTask'
+import { INTERRUPTED_WORD, shownTaskStatus } from '../lib/settledTask'
+import { josa } from '../lib/josa'
 import { compareTaskDocument, compareWithCurrent, type DocumentCompare } from '../lib/taskDocument'
-import { RiskBadge, TaskStatusBadge } from './badges'
+import { RiskBadge, StatusText, TaskStatusBadge } from './badges'
 import { ChangeDetails, ChangeStats, ChangeSummary, ImpactLine } from './ChangeExplanation'
 import { DiffViewer } from './DiffViewer'
 import { Banner, CodeBlock, Spinner } from './ui'
@@ -99,14 +100,14 @@ export function TaskContentView({ task, requestId, planKind }: { task: Task; req
     else if (isRollback && waitingCurrent) documentView = <Spinner label="현재 문서를 불러오는 중" />
     else if (isRollback && (!currentQuery.data || !currentCompare)) documentView = <DocumentNotice title="현재 문서와 비교하지 못했습니다" body={content.body} />
     else if (isRollback && currentQuery.data && currentCompare) {
-      documentView = <DocumentCompareView compare={currentCompare} caption={`현재 문서 v${currentQuery.data.version}와 되돌릴 내용을 비교합니다.`} body={content.body} />
+      documentView = <DocumentCompareView compare={currentCompare} caption={`현재 문서 ${josa(`v${currentQuery.data.version}`, '과', '와')} 되돌릴 내용을 비교합니다.`} body={content.body} />
     } else if (compare) {
       const { baseVersion } = documentQuery.data
       const caption =
         compare.kind === 'diff' && compare.isNew
           ? 'AI가 새로 작성한 문서입니다.'
           : baseVersion
-            ? `기존 문서 v${baseVersion}와 AI가 완성한 문서를 비교합니다.`
+            ? `기존 문서 ${josa(`v${baseVersion}`, '과', '와')} AI가 완성한 문서를 비교합니다.`
             : '기존 문서와 AI가 완성한 문서를 비교합니다.'
       documentView = <DocumentCompareView compare={compare} caption={caption} body={content.body} />
     }
@@ -151,6 +152,7 @@ const EDGE = {
  * - number: 화면에 쓰는 작업 번호. 1부터 센다 (lib/taskLabel.ts)
  * - requestStatus: 끝난 요청의 작업을 승인 대기로 보이지 않게 한다
  * - planKind: 롤백 Plan이면 문서를 현재 문서와 비교한다
+ * - interrupted: 실행 중 킬 스위치로 멈춘 작업. 시작 전 작업과 구별해 보여 준다
  * - highlighted: 재승인 화면에서 바뀐 작업 강조
  * - spotlight: 실행 중이거나 실패한 작업 강조
  * - leading: 승인 체크박스 등 카드 왼쪽 요소
@@ -164,6 +166,7 @@ export function TaskCard({
   requestId,
   requestStatus,
   planKind,
+  interrupted,
   highlighted,
   spotlight,
   leading,
@@ -177,6 +180,7 @@ export function TaskCard({
   requestId?: string
   requestStatus?: RequestStatus
   planKind?: PlanKind
+  interrupted?: boolean
   highlighted?: boolean
   spotlight?: 'running' | 'failed'
   leading?: ReactNode
@@ -202,7 +206,14 @@ export function TaskCard({
               {highlighted && <span className="text-xs font-semibold text-medium">바뀐 작업</span>}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
-              {showStatus && <TaskStatusBadge status={shownTaskStatus(task.status, requestStatus)} />}
+              {showStatus &&
+                (interrupted ? (
+                  <StatusText tone="red" shape="stop">
+                    {INTERRUPTED_WORD}
+                  </StatusText>
+                ) : (
+                  <TaskStatusBadge status={shownTaskStatus(task.status, requestStatus)} />
+                ))}
               {actions}
             </div>
           </div>

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { USE_MOCK } from '../../api/client'
 import { projectsApi } from '../../api/endpoints'
+import { withRo } from '../../lib/josa'
 import type { Me, Project } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { AvatarStack, KeyValues } from '../../components/rich'
@@ -93,7 +94,7 @@ function ProjectBody({ project }: { project: Project }) {
     onSuccess: async (saved) => {
       await refreshAll()
       setDraft(null)
-      toast.success(`기획서를 v${saved.version}으로 저장했습니다`)
+      toast.success(`기획서를 ${withRo(`v${saved.version}`)} 저장했습니다`)
     },
   })
 

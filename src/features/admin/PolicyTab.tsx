@@ -8,7 +8,7 @@ import { useMe } from '../../app/AuthProvider'
 import { RiskBadge } from '../../components/badges'
 import { SegmentedTabs } from '../../components/rich'
 import { Button, ConfirmModal, EmptyState, ErrorState, Select, Sheet, Spinner } from '../../components/ui'
-import { UNSIGNED_POLICY_NOTICE, adminKeyMissingReason, policyAdminProof } from '../../crypto/adminProof'
+import { unsignedPolicyNotice, adminKeyMissingReason, policyAdminProof } from '../../crypto/adminProof'
 import { PRESET_LABEL, RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL } from '../../lib/labels'
 import { useRefreshAll } from '../../lib/queries'
 import { withoutSlackOnServer } from '../../lib/serverFeatures'
@@ -217,7 +217,7 @@ function PresetSection() {
         onConfirm={() => apply.mutate()}
       >
         {/* TODO(spec): 진행 중인 요청을 어떻게 다룰지 명세에 없다. 명세 5장대로 웹쉘은 실행 직전의 정책으로 검증한다. */}
-        웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 승인 인원으로 검증하므로, 인원이 늘면 진행 중인 요청은 검증에 실패할 수 있습니다. {UNSIGNED_POLICY_NOTICE}
+        웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 승인 인원으로 검증하므로, 인원이 늘면 진행 중인 요청은 검증에 실패할 수 있습니다. {unsignedPolicyNotice()}
       </ConfirmModal>
     </Sheet>
   )
@@ -376,7 +376,7 @@ function MatrixSection() {
         onClose={() => setConfirming(false)}
         onConfirm={() => save.mutate()}
       >
-        웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 기준표로 검증하므로, 승인권자가 늘면 진행 중인 요청은 검증에 실패할 수 있습니다. {UNSIGNED_POLICY_NOTICE}
+        웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 기준표로 검증하므로, 승인권자가 늘면 진행 중인 요청은 검증에 실패할 수 있습니다. {unsignedPolicyNotice()}
       </ConfirmModal>
     </Sheet>
   )

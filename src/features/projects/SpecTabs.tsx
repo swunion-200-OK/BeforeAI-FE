@@ -17,6 +17,7 @@ import {
   TextArea,
 } from '../../components/ui'
 import { MarkdownText } from '../documents/MarkdownText'
+import { josa, withRo } from '../../lib/josa'
 import { restoredFromText } from './specView'
 import { formatDateTime } from '../../lib/format'
 import { useRefreshAll } from '../../lib/queries'
@@ -140,7 +141,7 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
     mutationFn: (version: number) => projectsApi.restoreSpec(project.id, version, restoreReason),
     onSuccess: async (saved) => {
       await refreshAll()
-      toast.success(`이전 버전을 복원해 v${saved.version}으로 저장했습니다`)
+      toast.success(`이전 버전을 복원해 ${withRo(`v${saved.version}`)} 저장했습니다`)
     },
     onSettled: () => closeRestore(),
   })
@@ -202,7 +203,7 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
 
       <Modal
         open={restoring !== null}
-        title={`v${restoring?.version ?? ''}을 복원할까요?`}
+        title={`${josa(`v${restoring?.version ?? ''}`, '을', '를')} 복원할까요?`}
         onClose={closeRestore}
         footer={
           <>

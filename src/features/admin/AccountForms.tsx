@@ -6,6 +6,7 @@ import { ApiError, errorMessage } from '../../api/errors'
 import type { Role, User } from '../../api/types'
 import { toast } from '../../components/toast'
 import { Banner, Button, ErrorState, Field, Modal, Mono, Select, TextInput } from '../../components/ui'
+import { josa } from '../../lib/josa'
 import { ROLE_LABEL } from '../../lib/labels'
 import { useDepartments, useRefreshAll } from '../../lib/queries'
 import { usersQuery } from './adminQueries'
@@ -223,7 +224,7 @@ export function DepartmentsModal({ onClose }: { onClose: () => void }) {
   const create = useMutation({
     mutationFn: () => adminApi.createDepartment(name.trim()),
     onSuccess: async (department) => {
-      toast.success(`${department.name}을 만들었습니다`)
+      toast.success(`${josa(department.name, '을', '를')} 만들었습니다`)
       setName('')
       await refresh()
     },

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type { ApproverRule, FailedCheck, Plan, ProgressRequestNode, ProgressTaskNode, RequestEvent, RequestStatus } from '../../api/types'
-import { GATE_ID, gateView, pathIds, pendingRule, progressNow } from './progressStatus'
+import { GATE_ID, countForbidden, gateView, pathIds, pendingRule, progressNow } from './progressStatus'
 
 const at = '2026-11-05T01:00:00.000Z'
 const event = (status: RequestStatus): RequestEvent => ({ status, at, by: null })
@@ -210,6 +210,18 @@ describe('지금 문장과 경로', () => {
   it('모르는 상태값이 와도 값을 돌려주고 경로를 만들지 않는다', () => {
     const now = progressNow(tree('NEW_STATUS' as RequestStatus, [task('배포', 'PENDING')]), {})
     expect(now).toEqual({ text: '요청 상태를 확인해 주세요', leaves: [], mode: null })
+  })
+
+  it('금지 작업이 섞여 끝났으면 실행하지 않았다고 말한다', () => {
+    const blocked = { ...task('금지', 'BLOCKED'), risk: 'FORBIDDEN' as const }
+    expect(progressNow(tree('COMPLETED', [task('배포', 'SUCCEEDED'), blocked]), request).text).toBe('실행 대상 작업 1개를 끝냈습니다. 금지 작업 1개는 실행하지 않았습니다')
+    expect(progressNow(tree('PARTIALLY_COMPLETED', [task('배포', 'SUCCEEDED'), task('재시작', 'FAILED'), blocked]), request).text).toContain('금지 작업 1개는 실행하지 않았습니다')
+    expect(countForbidden([blocked, task('배포', 'SUCCEEDED')])).toBe(1)
+  })
+
+  it('받침과 영문 이름에 맞는 조사를 쓴다', () => {
+    const killed = progressNow(tree('KILLED', [task('배포', 'SKIPPED')]), { kill: { by: '박CTO', reason: '점검', at: 't' } })
+    expect(killed.text).toBe('박CTO가 킬 스위치로 중단했습니다: 점검')
   })
 
   it('분석이 1분을 넘기면 분석하고 있다고 말하지 않는다', () => {

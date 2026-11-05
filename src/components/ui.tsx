@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { MISSING_ON_SERVER_MESSAGE, isMissingOnServer } from '../api/missingOnServer'
 import { INTERNAL_ONLY_MESSAGE } from '../api/errors'
+import { josa } from '../lib/josa'
 import { useIsExternal } from '../lib/queries'
 import { refreshToastHost } from './toast'
 
@@ -405,7 +406,7 @@ export function ReasonModal({
           <Button
             variant={danger ? 'danger' : 'primary'}
             disabled={!reason.trim()}
-            disabledReason={`${label}를 입력해 주세요`}
+            disabledReason={`${josa(label, '을', '를')} 입력해 주세요`}
             loading={loading}
             onClick={() => onConfirm(reason.trim())}
           >
