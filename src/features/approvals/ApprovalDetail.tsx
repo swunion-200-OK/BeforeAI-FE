@@ -53,6 +53,7 @@ import {
   type SignStep,
 } from "./approvalFlow";
 import { ProgressSection } from "../progress/ProgressTree";
+import { ApprovalDocumentSection } from "./ApprovalDocumentSection";
 import { IntegrityCheck } from "./IntegrityCheck";
 import { SignProgress, type SignRunState } from "./SignProgress";
 
@@ -734,6 +735,11 @@ export function ApprovalDetail({
               </section>
             )}
           </div>
+
+          <ApprovalDocumentSection
+            request={request}
+            integrityFailed={integrity ? integrityFailed : undefined}
+          />
         </div>
       </div>
 

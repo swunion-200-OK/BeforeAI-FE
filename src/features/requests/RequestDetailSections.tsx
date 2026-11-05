@@ -28,7 +28,7 @@ const ERROR_END: RequestStatus[] = [
   'ROLLBACK_FAILED',
 ]
 
-const FOLD_LABEL =
+export const FOLD_LABEL =
   'inline-flex cursor-pointer list-none items-center gap-1.5 rounded text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden'
 
 /** 작업 카드 아래 한 줄: 작은 도장과 승인 현황. 도장이 없으면 글만 쓴다. 결재란 전체는 맨 아래 "자세히"에 있다. */

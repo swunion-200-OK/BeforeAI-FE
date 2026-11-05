@@ -257,13 +257,38 @@ export async function http<T>(method: string, path: string, options: RequestOpti
   }
 }
 
-/** 링크로 받으면 인증 토큰을 실을 수 없어, 토큰을 붙여 받은 내용을 브라우저 다운로드로 넘긴다. */
-export async function downloadFile(path: string, fileName: string): Promise<void> {
-  const response = await rawFetch('GET', path)
+async function fetchBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await rawFetch('GET', path, { signal })
   if (!response.ok) throw await toApiError(response)
-  const blob = await response.blob().catch((reason: unknown) => {
+  return response.blob().catch((reason: unknown) => {
     throw toNetworkError(reason)
   })
+}
+
+const PDF_HEADER = '%PDF-'
+
+/**
+ * PDF를 받는다. 프록시가 200으로 준 HTML을 .pdf로 저장하지 않게 머리를 확인하고,
+ * 그런 내용이 이 앱의 출처에서 실행되지 않게 형식을 PDF로 고정한다.
+ */
+export async function fetchPdf(path: string, signal?: AbortSignal): Promise<Blob> {
+  const blob = await fetchBlob(path, signal)
+  if ((await blob.slice(0, PDF_HEADER.length).text()) !== PDF_HEADER) {
+    throw new ApiError(200, 'BAD_RESPONSE', BAD_RESPONSE_MESSAGE)
+  }
+  return blob.slice(0, blob.size, 'application/pdf')
+}
+
+/** 링크로 받으면 인증 토큰을 실을 수 없어, 토큰을 붙여 받은 내용을 브라우저 다운로드로 넘긴다. */
+export async function downloadFile(path: string, fileName: string): Promise<void> {
+  saveBlob(await fetchBlob(path), fileName)
+}
+
+export async function downloadPdf(path: string, fileName: string): Promise<void> {
+  saveBlob(await fetchPdf(path), fileName)
+}
+
+function saveBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

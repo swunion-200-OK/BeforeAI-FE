@@ -38,6 +38,7 @@ import {
   DEPLOY_FILES,
   DEPLOY_SPEC,
 } from './fixtures'
+import { recordSubmission } from './approvalDocument'
 import { buildRequiredApprovers } from './policy'
 import { SCHEMA_VERSION, SYSTEM_ACTOR, db, ipFor, setDb, type MockDb, type StoredRequest, type StoredUser } from './store'
 import { WEBSHELL_PUBLIC_KEY, emitStepEvent, signLogLine, signedExecution } from './webshell'
@@ -352,7 +353,10 @@ export function addRequest(seed: SeedRequest): StoredRequest {
   if (tasks.length > 0) {
     request.plan = makePlan(request.id, project, tasks, seed.kind ?? 'NORMAL')
     request.currentPlanId = request.plan.id
-    if (path.includes('PENDING_APPROVAL')) request.plan.planHash = hashService.computePlanHash(request.plan, request.projectId)
+    if (path.includes('PENDING_APPROVAL')) {
+      request.plan.planHash = hashService.computePlanHash(request.plan, request.projectId)
+      recordSubmission(request, request.submittedAt ?? undefined)
+    }
     if (path.includes('RUNNING')) request.execution = signedExecution(request, randomUuid())
   }
   database.requests.push(request)
@@ -585,6 +589,10 @@ function seedRequests() {
   }
   firstPlan.planHash = hashService.computePlanHash(firstPlan, reapproval.projectId)
   reapproval.planHistory = [{ version: 1, plan: firstPlan, supersededAt: minutesAgo(30) }]
+  // 고친 Plan은 아직 다시 제출하지 않았으니 승인 기록 문서의 최신 판은 수정 전 Plan이다.
+  reapproval.documentVersions = [
+    { version: 1, planId: firstPlan.id, createdAt: reapproval.submittedAt as string, retired: { plan: firstPlan, approvals: [] } },
+  ]
 
   const verificationFailed = addRequest({
     id: 'r-verify-failed',
@@ -655,6 +663,25 @@ function seedRequests() {
   })
   signFor(completed, 'u-01', ['t-1'])
   signFor(completed, 'u-07', ['t-2'], 'EXTERNAL')
+  // 시연에서 판 목록을 바로 보여 준다. 로그인 테스트를 더하기 전의 Plan에 도장 하나를 받은 이전 판이다.
+  const earlierPlan = {
+    ...completed.plan!,
+    id: 'p-completed-v1',
+    tasks: [{ ...completed.plan!.tasks[0], status: 'APPROVED' as const }],
+  }
+  earlierPlan.planHash = hashService.computePlanHash(earlierPlan, completed.projectId)
+  completed.documentVersions = [
+    {
+      version: 1,
+      planId: earlierPlan.id,
+      createdAt: minutesAgo(500),
+      retired: {
+        plan: earlierPlan,
+        approvals: completed.approvals.filter((item) => item.taskId === 't-1').map((item) => ({ ...item, planId: earlierPlan.id, at: minutesAgo(480) })),
+      },
+    },
+    { version: 2, planId: completed.plan!.id, createdAt: completed.submittedAt as string },
+  ]
   addLogs(
     completed.id,
     [
