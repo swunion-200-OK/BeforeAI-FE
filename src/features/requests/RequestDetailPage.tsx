@@ -18,7 +18,7 @@ const LIVE: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
 /** 승인 현황 줄이 같은 말을 하므로 배지를 함께 그리지 않는 작업 상태 */
 const SAID_BY_APPROVAL_LINE: TaskStatus[] = ['PENDING', 'APPROVED']
 /** 실행을 시작한 뒤에만 갈 수 있는 상태. 이때는 실행 로그를 볼 수 있다 */
-const RAN: RequestStatus[] = ['RUNNING', 'ROLLING_BACK', 'KILLED', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLED_BACK', 'ROLLBACK_FAILED']
+const RAN: RequestStatus[] = ['RUNNING', 'ROLLING_BACK', 'KILLED', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLED_BACK', 'ROLLBACK_FAILED', 'VERIFICATION_FAILED']
 
 function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPlan: boolean }) {
   const statuses = useApprovalStatuses(request)

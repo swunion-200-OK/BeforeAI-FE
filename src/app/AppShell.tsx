@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   ListChecks,
   LogOut,
+  Menu,
   Plus,
   Send,
   Settings,
@@ -16,6 +17,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
+import { useEffect, useRef } from 'react'
+import type { MouseEvent } from 'react'
 import { INTERNAL_ONLY_MESSAGE } from '../api/errors'
 import { NetworkBadge } from '../components/badges'
 import { Button } from '../components/ui'
@@ -127,6 +130,107 @@ function Sidebar() {
   )
 }
 
+/** 모바일에서는 폭을 차지하는 사이드바 대신 접을 수 있는 메뉴를 쓴다. */
+function MobileNavigation() {
+  const me = useMe()
+  const { signOut } = useAuth()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const network = useNetwork()
+  const menuRef = useRef<HTMLDetailsElement>(null)
+  const pending = usePendingApprovals()
+  const projects = useProjects()
+  const pendingCount = new Set(pending.data?.map((item) => item.requestId)).size
+  const isOwner = projects.data?.some((p) => p.owners.some((o) => o.id === me.id)) ?? false
+  const groups = menuFor(me.role, { canApprove: pendingCount > 0 || isOwner })
+  const closeMenu = (event: MouseEvent<HTMLAnchorElement>) => {
+    const menu = event.currentTarget.closest('details')
+    if (menu) menu.open = false
+  }
+
+  useEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const closeOutside = (event: PointerEvent) => {
+      if (menu.open && !menu.contains(event.target as Node)) menu.open = false
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !menu.open) return
+      event.preventDefault()
+      menu.open = false
+      menu.querySelector('summary')?.focus()
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (menuRef.current) menuRef.current.open = false
+  }, [location.pathname])
+
+  return (
+    <div className="relative z-30 border-b border-rule bg-sheet xl:hidden">
+      <div className="flex h-12 items-center justify-between px-4">
+        <span className="text-base font-semibold tracking-tight text-ink">AI 작업 승인</span>
+        <details ref={menuRef} className="group relative">
+          <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-md px-3 text-sm font-medium text-ink hover:bg-sheet-alt [&::-webkit-details-marker]:hidden">
+            <Menu size={18} aria-hidden />
+            메뉴
+          </summary>
+          <nav aria-label="주 메뉴" className="absolute right-0 top-full mt-1 max-h-[75dvh] w-64 overflow-y-auto rounded-lg border border-rule bg-sheet p-2 shadow-lg">
+            {groups.map((group) => (
+              <div key={group.label} className="mt-3 first:mt-1">
+                <p className="px-2.5 pb-1 text-xs font-semibold text-ink-3">{group.label}</p>
+                {group.items.map((item) => {
+                  const Icon = ICONS[item.key]
+                  if (network === 'EXTERNAL' && !item.external) {
+                    return (
+                      <span key={item.key} aria-disabled="true" title={INTERNAL_ONLY_MESSAGE} className="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-3/70">
+                        <Icon size={17} aria-hidden />
+                        {item.label}
+                      </span>
+                    )
+                  }
+                  return (
+                    <NavLink
+                      key={item.key}
+                      to={item.to}
+                      end={item.key === 'requests'}
+                      onClick={closeMenu}
+                      className={({ isActive }) => `flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm ${isActive ? 'bg-nav-2 font-semibold text-ink' : 'text-ink-2 hover:bg-sheet-alt hover:text-ink'}`}
+                    >
+                      <Icon size={17} aria-hidden />
+                      {item.label}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            ))}
+            <div className="mt-2 border-t border-rule pt-2">
+              <p className="px-2.5 pb-1 text-xs text-ink-3">{me.name} · {ROLE_LABEL[me.role]}</p>
+              <button
+                type="button"
+                className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-2 hover:bg-sheet-alt hover:text-ink"
+                onClick={async () => {
+                  await signOut()
+                  navigate('/login', { replace: true })
+                }}
+              >
+                <LogOut size={17} aria-hidden />
+                로그아웃
+              </button>
+            </div>
+          </nav>
+        </details>
+      </div>
+    </div>
+  )
+}
+
 /** 경로별 화면 설정. back: 상세 화면에서 목록으로 돌아가는 링크 */
 interface RouteHandle {
   fullBleed?: boolean
@@ -144,9 +248,9 @@ function TopBar({ fullBleed }: { fullBleed: boolean }) {
     .find(Boolean)
   const external = network === 'EXTERNAL'
   // 보여 줄 것이 없으면 선을 긋지 않는다. 메뉴를 옮겨 다녀도 제목 높이가 그대로이도록 자리는 남긴다.
-  if (!back && !external && !showCompose) return fullBleed ? null : <div className="h-14 shrink-0" />
+  if (!back && !external && !showCompose) return fullBleed ? null : <div className="hidden h-14 shrink-0 xl:block" />
   return (
-    <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b border-rule bg-sheet px-5">
+    <header className="flex h-12 shrink-0 items-center justify-end gap-3 border-b border-rule bg-sheet px-3 xl:h-14 xl:px-5">
       {back && (
         <Link to={back.to} className="mr-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-ink-2 hover:bg-sheet-alt hover:text-ink">
           <ArrowLeft size={17} aria-hidden />
@@ -174,9 +278,10 @@ export function AppShell() {
   const fullBleed = useMatches().some((match) => (match.handle as RouteHandle | undefined)?.fullBleed)
   // main의 relative: 안쪽의 absolute 요소(sr-only 등)가 스크롤 영역 밖으로 나가 문서 전체를 늘리지 않게 한다.
   return (
-    <div className="flex h-dvh">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+    <div className="flex h-dvh flex-col xl:flex-row">
+      <div className="hidden xl:flex"><Sidebar /></div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <MobileNavigation />
         {/* 기능이 제한되는 외부망임을 화면 어디서나 알아보게 하는 띠 */}
         {network === 'EXTERNAL' && <div className="band-external h-1 shrink-0" role="presentation" />}
         <TopBar fullBleed={fullBleed} />
