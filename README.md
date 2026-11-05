@@ -89,13 +89,21 @@ npm run dev        # http://localhost:5173
 VITE_API_BASE_URL=https://service.example.com/api/v1 npm run build
 ```
 
+개발 중에 서버에 붙을 때는 `.env.example`을 `.env.development.local`로 복사해 `VITE_API_BASE_URL=/api/v1`과 `VITE_API_PROXY_TARGET`을 채웁니다. 개발 서버가 `/api`를 넘겨 주므로 CORS 설정이 필요 없습니다. 아무것도 없으면 `npm run dev`는 그대로 목 API로 뜹니다.
+
+배포할 때 주의할 점이 있습니다.
+
+- **HTTP 서버는 HTTPS 페이지에서 부를 수 없습니다.** 브라우저가 혼합 콘텐츠로 막습니다. 페이지를 HTTPS로 배포하면 API도 HTTPS여야 합니다.
+- **페이지와 API의 사이트가 다르면** 리프레시 쿠키에 `SameSite=None; Secure`가 필요하고, `Secure` 쿠키는 HTTPS에서만 저장됩니다. HTTP 서버에서는 새로고침할 때 로그인이 풀립니다. 같은 사이트로 묶어 프록시하면 이 문제가 없습니다.
+- **CORS를 쓰면** 서버가 정확한 출처와 `Access-Control-Allow-Credentials: true`를 주고, `Authorization`, `Last-Event-ID` 요청 헤더를 허용하고, `Access-Control-Expose-Headers: X-Network`로 망 헤더를 열어 줘야 합니다.
+
 ## 암호화 구현 범위
 
 | 인터페이스 | 상태 |
 |---|---|
 | `hashService.computePlanHash` | 실제 구현 (RFC 8785 JCS + SHA-256) |
 | `signingService.sign` / `verify*` | 실제 구현 (Ed25519) |
-| `cryptoService.encryptForWebshell` | **목**: HPKE 대신 base64로 감쌉니다. 봉투 모양은 명세와 같습니다 |
+| `cryptoService.encryptForWebshell` | 실제 구현 (RFC 9180 HPKE: DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / AES-256-GCM). `info`·AAD·키 표기는 명세에 없어 임시값이며 백엔드와 맞춰야 합니다 |
 | 기기 키 저장 (`deviceStore`) | **목**: localStorage에 둡니다. 운영에서는 내보낼 수 없는 키로 바꿔야 합니다 |
 | 웹쉘 (`src/api/mock/webshell.ts`) | **목**: 고정 키로 서명하지만, 서명·해시·1회용 ID 검증은 실제로 수행합니다. 연결 끊김은 `mockConfig.webshellReachable = false`로 재현합니다 |
 

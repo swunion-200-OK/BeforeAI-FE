@@ -228,6 +228,7 @@ export default function ComposePage() {
   const [params] = useSearchParams()
   if (requestId) return <ReviewStep requestId={requestId} />
   // 개발 도구의 시연 가이드가 ?prompt=로 입력칸을 채운다. 이미 이 화면에 있어도 다시 채우도록 key를 건다.
-  const initialPrompt = params.get('prompt') ?? ''
+  // 실제 백엔드에서는 받지 않는다. 다른 사람이 만든 링크로 입력칸이 채워지면 안 된다.
+  const initialPrompt = import.meta.env.VITE_API_BASE_URL ? '' : (params.get('prompt') ?? '')
   return <PromptForm key={initialPrompt} initialPrompt={initialPrompt} />
 }

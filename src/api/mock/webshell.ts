@@ -11,6 +11,7 @@ import { bytesToBase64 } from '../../crypto/encoding'
 import { canonicalize, hashService, toHashTarget } from '../../crypto/hashService'
 import { signingService } from '../../crypto/signingService'
 import type {
+  ApprovalEnvelope,
   ApproverRule,
   ExecutionRequestBody,
   FailedCheck,
@@ -61,6 +62,11 @@ export const WEBSHELL_PUBLIC_KEY: WebshellPublicKey = {
   encryptionKey: bytesToBase64(encryptionPublic),
   signingKey: bytesToBase64(signingPublic),
   fingerprint: `sha256:${bytesToHex(sha256(concatBytes(encryptionPublic, signingPublic)))}`,
+}
+
+/** 승인 봉투를 웹쉘 개인키로 연다. 개인키 대신 이 함수만 밖으로 내보낸다. */
+export function openEnvelope(envelope: ApprovalEnvelope): SignedApproval {
+  return cryptoService.decryptForWebshell(envelope, ENCRYPTION_SECRET)
 }
 
 /** 실행 결과·로그·콜백에 붙이는 웹쉘 서명: base64(Ed25519(JCS(value))) */
@@ -210,7 +216,7 @@ export function verifyExecution(body: ExecutionRequestBody, request: StoredReque
     }
     let signed: SignedApproval
     try {
-      signed = cryptoService.decryptForWebshell(envelope, WEBSHELL_PUBLIC_KEY.encryptionKey)
+      signed = openEnvelope(envelope)
     } catch {
       fail('DECRYPT_FAILED')
       continue

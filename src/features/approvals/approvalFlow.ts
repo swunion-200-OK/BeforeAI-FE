@@ -1,6 +1,7 @@
 /** 승인 서명 흐름 (명세 2.4, 4.3~4.5). 승인 상세와 제출 직후 본인 승인이 같은 코드를 쓴다. */
 import { approvalsApi, requestsApi } from '../../api/endpoints'
-import type { ApprovalContext, Me, SubmitApprovalResponse, SubmitResponse, Task } from '../../api/types'
+import { errorMessage } from '../../api/errors'
+import type { ApprovalContext, ApprovalEnvelope, Me, SubmitApprovalResponse, SubmitResponse, Task } from '../../api/types'
 import { cryptoService } from '../../crypto/cryptoService'
 import { deviceStore } from '../../crypto/deviceStore'
 import { hashService } from '../../crypto/hashService'
@@ -87,7 +88,13 @@ export async function signAndSubmitApproval({
   })
 
   await onStep?.('encrypt')
-  const envelope = cryptoService.encryptForWebshell(signed, device.pinnedWebshellKey.encryptionKey)
+  let envelope: ApprovalEnvelope
+  try {
+    envelope = cryptoService.encryptForWebshell(signed, device.pinnedWebshellKey.encryptionKey)
+  } catch (error) {
+    // 웹쉘이 열 수 없는 봉투를 보내지 않도록 제출 전에 멈춘다.
+    throw new Error(`승인을 암호화하지 못해 제출하지 않았습니다. ${errorMessage(error)}`, { cause: error })
+  }
 
   await onStep?.('submit')
   return approvalsApi.submit(context.requestId, {

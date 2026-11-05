@@ -128,7 +128,6 @@ function taskNodes(request: StoredRequest, plan: Plan): ProgressTaskNode[] {
       type: 'TASK',
       label: `${task.order}. ${task.title}`,
       taskType: task.type,
-      // TODO(spec): 2.6 예시에서 risk를 확인할 수 없어 5.12의 "위험도 배지"를 근거로 넣었다.
       risk: task.risk,
       status: task.status,
       dependsOn,
@@ -151,7 +150,6 @@ function planNodes(request: StoredRequest): ProgressPlanNode[] {
       type: 'PLAN',
       label: planLabel(request.plan, version),
       status: 'CURRENT',
-      // TODO(spec): 5.12의 "Plan v2 · 해시 4be1…"을 그리려고 넣었다. 2.6 예시에는 해시가 없다.
       planHash: request.plan.planHash,
       children: taskNodes(request, request.plan),
     })
@@ -291,7 +289,7 @@ onDbChange(() => {
 
 export function progressTree(request: StoredRequest): ProgressTree {
   const { version, updatedAt, root } = sync(request)
-  return { version, updatedAt, root }
+  return { requestId: request.id, version, updatedAt, root }
 }
 
 /** Last-Event-ID 뒤의 이벤트. 이어 받을 수 없으면 tree.replaced 하나로 전체를 다시 받게 한다 (명세 4.9). */

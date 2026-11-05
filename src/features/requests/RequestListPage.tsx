@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { requestsApi } from '../../api/endpoints'
 import type { RequestStatus, RequestSummary, Risk } from '../../api/types'
@@ -89,21 +89,20 @@ export default function RequestListPage() {
       state.state.data?.pages.some((page) => page.items.some((r) => LIVE.includes(r.status))) ? 3000 : false,
   })
 
-  // TODO(spec): 상태별 건수를 주는 API가 없어 목록 최대치(100건)로 센다. 그보다 많으면 건수가 실제보다 적게 보인다.
+  // TODO(spec): 상태별 건수를 주는 API가 없어 목록 최대치(100건)로 센다. 다음 쪽이 있으면 건수가 실제보다 적으므로 숫자를 쓰지 않는다.
   const counts = useQuery({
     queryKey: ['requests', 'counts', { mine, projectId }],
-    queryFn: async () =>
-      (await requestsApi.list({ mine: mine || undefined, projectId: projectId || undefined, limit: 100 })).items,
+    queryFn: () => requestsApi.list({ mine: mine || undefined, projectId: projectId || undefined, limit: 100 }),
     refetchInterval: 5000,
   })
   const tabs = useMemo(() => {
-    const all = counts.data ?? []
+    const all = counts.data && !counts.data.nextCursor ? counts.data.items : undefined
     return [
-      { id: 'all' as GroupId, label: '전체', count: counts.data ? all.length : undefined },
+      { id: 'all' as GroupId, label: '전체', count: all?.length },
       ...STATUS_GROUPS.map((item) => ({
         id: item.id as GroupId,
         label: item.label,
-        count: counts.data ? all.filter((r) => item.statuses.includes(r.status)).length : undefined,
+        count: all?.filter((r) => item.statuses.includes(r.status)).length,
       })),
     ]
   }, [counts.data])
@@ -112,6 +111,14 @@ export default function RequestListPage() {
   const items = group && !status ? loaded.filter((r) => group.statuses.includes(r.status)) : loaded
   const projectName = (id: string) => projects.data?.find((p) => p.id === id)?.name ?? id
   const filtered = Boolean(status || projectId || group)
+
+  // TODO(spec): 묶음 탭은 여러 상태라 서버에서 거를 수 없어 받은 쪽을 화면에서 거른다.
+  // 받은 쪽에 해당 요청이 적어도 다음 쪽에 있을 수 있으니, 한 화면이 찰 때까지 이어서 받는다.
+  const { hasNextPage, isFetchingNextPage, isFetchNextPageError, fetchNextPage } = query
+  const needsMore = Boolean(group && !status && hasNextPage && items.length < PAGE_SIZE)
+  useEffect(() => {
+    if (needsMore && !isFetchingNextPage && !isFetchNextPageError) void fetchNextPage()
+  }, [needsMore, isFetchingNextPage, isFetchNextPageError, fetchNextPage])
 
   // 라우터 상태는 전환(transition)으로 늦게 반영될 수 있어, 필터를 연달아 바꿔도 앞의 변경을 잃지 않도록 주소에서 직접 읽는다.
   const setFilter = (key: 'status' | 'projectId', value: string) => {
@@ -164,9 +171,9 @@ export default function RequestListPage() {
       </div>
 
       <Sheet flush className="overflow-hidden">
-        {query.isPending && <Spinner />}
+        {(query.isPending || (needsMore && items.length === 0 && !isFetchNextPageError)) && <Spinner />}
         {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
-        {query.isSuccess && items.length === 0 && (
+        {query.isSuccess && items.length === 0 && !hasNextPage && (
           <EmptyState
             title={filtered ? '조건에 맞는 요청이 없습니다' : '아직 요청이 없습니다'}
             action={

@@ -275,6 +275,7 @@ export interface Task {
 export interface Plan {
   id: string
   requestId: string
+  /** TODO(spec): 명세 2.2의 Plan에는 없고 2.3 해시 대상에만 있다. 목이 해시를 만들 때만 쓰고 화면은 읽지 않는다 */
   projectId: string
   kind: PlanKind
   repository: string
@@ -589,7 +590,7 @@ export interface ProgressPlanNode {
   status: PlanNodeStatus
   /** 대체된 Plan은 접혀 있고 children이 비어 있다 */
   collapsed?: boolean
-  /** TODO(spec): 5.12 도식의 "해시 4be1…". 2.6 예시에는 없다. 제출 전이면 null이다 */
+  /** 명세 2.6은 지금 Plan에만 보여 준다. TODO(spec): 대체된 Plan과 제출 전 값은 명세에 없어 없거나 null로 본다 */
   planHash?: string | null
   /** TODO(spec): 대체된 Plan을 펼쳤을 때 보여 줄 변경 이력. 명세의 children은 비어 있다 */
   supersededAt?: string
@@ -602,8 +603,7 @@ export interface ProgressTaskNode {
   type: 'TASK'
   label: string
   taskType: TaskType
-  /** TODO(spec): 5.12의 "위험도 배지"를 위한 값. 2.6 예시에서 확인할 수 없어 없을 수 있다 */
-  risk?: Risk
+  risk: Risk
   status: TaskStatus
   dependsOn: string[]
   children: ProgressNode[]
@@ -638,6 +638,7 @@ export type ProgressNode =
   | ProgressStepNode
 
 export interface ProgressTree {
+  requestId: string
   version: number
   updatedAt: string
   root: ProgressRequestNode
@@ -743,12 +744,13 @@ export interface DepartmentStat {
 }
 
 // TODO(spec): 응답 필드 이름은 명세의 "요청 수, 승인 대기, 위험도 분포, 상태별 건수"에서 정했다.
+// null은 서버가 주지 않아 모른다는 뜻이다. 0건과 구별해서 화면에 "-"로 보여 준다.
 export interface Dashboard {
   scope: DashboardScope
-  requestCount: number
-  pendingApprovalCount: number
-  riskDistribution: Record<Risk, number>
-  statusCounts: Partial<Record<RequestStatus, number>>
+  requestCount: number | null
+  pendingApprovalCount: number | null
+  riskDistribution: Record<Risk, number> | null
+  statusCounts: Partial<Record<RequestStatus, number>> | null
   byDepartment?: DepartmentStat[]
 }
 
@@ -824,7 +826,7 @@ export interface AuditExportAccepted {
   rowCount: number
 }
 
-// TODO(spec): 명세의 상태 조회 예시는 READY뿐이고 목록 응답 모양은 없다. 목록도 같은 모양으로 두되 exportId·status 밖의 값은 없을 수 있다고 본다. format·createdAt은 명세에 없다.
+// TODO(spec): 명세의 상태 조회 예시는 READY뿐이고 목록 응답 모양은 없다. 목록도 같은 모양으로 두되 exportId·status 밖의 값은 없을 수 있다고 본다. createdAt은 명세에 없다.
 export interface AuditExport {
   exportId: string
   status: ExportStatus

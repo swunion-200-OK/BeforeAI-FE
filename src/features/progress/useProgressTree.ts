@@ -26,6 +26,7 @@ export function useProgressTree(requestId: string) {
       getTree: () => client.getQueryData<ProgressTree>(queryKey),
       setTree: (tree) => client.setQueryData(queryKey, tree),
       fetchTree: () => client.fetchQuery({ queryKey, queryFn: () => requestsApi.progress(requestId), staleTime: 0 }),
+      readTree: () => requestsApi.progress(requestId),
       openStream: (onEvent, signal, lastVersion) => requestsApi.streamProgress(requestId, onEvent, signal, lastVersion),
     })
     sync.start()

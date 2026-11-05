@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
-import { USE_MOCK } from '../../api/client'
 import { meApi } from '../../api/endpoints'
 import type { Me, NotificationSettings } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
@@ -102,7 +101,7 @@ function OtpRow({ me }: { me: Me }) {
               <Mono>{secret}</Mono>
             </p>
           </div>
-          <Field label="OTP 번호" hint={USE_MOCK ? '시연용 번호는 123456입니다' : undefined}>
+          <Field label="OTP 번호" hint={import.meta.env.VITE_API_BASE_URL ? undefined : '시연용 번호는 123456입니다'}>
             {(id) => (
               <TextInput
                 id={id}

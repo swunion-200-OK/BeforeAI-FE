@@ -31,7 +31,7 @@ import { toTask } from './analysis'
 import { findForbiddenReason, hitsForbiddenTarget, requiredRules } from './policy'
 import { buildSeed } from './seed'
 import { db, mockConfig } from './store'
-import { WEBSHELL_PUBLIC_KEY, contentFitsType, isAwaitingExecution, requestExecution, scheduleExecution, verifyExecution } from './webshell'
+import { WEBSHELL_PUBLIC_KEY, contentFitsType, isAwaitingExecution, openEnvelope, requestExecution, scheduleExecution, verifyExecution } from './webshell'
 
 class MemoryStorage {
   private map = new Map<string, string>()
@@ -700,12 +700,20 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     expect(checked.failed).toContain('DECRYPT_FAILED')
   })
 
+  it('고정한 웹쉘 공개키 모양이 잘못됐으면 봉투를 보내지 않고 이유를 알려 준다', async () => {
+    const before = storedRequest('r-main').approvalRecords.length
+    deviceStore.update('u-07', { pinnedWebshellKey: { ...WEBSHELL_PUBLIC_KEY, encryptionKey: bytesToBase64(new Uint8Array(44)) } })
+    await expect(approveAs('u-07', 'r-main', ['t-2'])).rejects.toThrow('승인을 암호화하지 못해 제출하지 않았습니다. 웹쉘 공개키는 32바이트')
+    expect(storedRequest('r-main').approvalRecords).toHaveLength(before)
+    expect(storedRequest('r-main').status).toBe('PENDING_APPROVAL')
+  })
+
   it('서명이 공개키로 검증되지 않거나 키 주인이 승인자와 다르면 SIGNATURE_INVALID다', () => {
     const request = storedRequest('r-main')
     const plan = toHashTarget(request.plan!)
     const encryption = WEBSHELL_PUBLIC_KEY.encryptionKey
     const [record] = request.approvalRecords
-    const signed = cryptoService.decryptForWebshell(record.envelope, encryption)
+    const signed = openEnvelope(record.envelope)
     const widened = { ...signed, payload: { ...signed.payload, taskIds: ['t-1', 't-2'] } }
     const forged = verifyExecution(
       { plan, approvals: [{ keyId: record.keyId, envelope: cryptoService.encryptForWebshell(widened, encryption) }] },

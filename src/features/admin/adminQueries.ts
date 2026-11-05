@@ -21,7 +21,8 @@ export const policyQuery = queryOptions({
 
 export const runningRequestsQuery = queryOptions({
   queryKey: ['requests', 'running-all'],
-  queryFn: async () => (await requestsApi.list({ status: 'RUNNING', limit: 100 })).items,
+  // 일괄 중단 대상이라 100건에서 끊으면 안 된다.
+  queryFn: async () => (await requestsApi.listAll({ status: 'RUNNING' })).items,
 })
 
 export const proposalsQuery = (status: ForbiddenProposalStatus) =>

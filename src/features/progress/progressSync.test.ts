@@ -6,6 +6,7 @@ import { applyProgressEvent } from '../../lib/progressTree'
 import { createProgressSync, RECONNECT_BASE_MS, RECONNECT_MAX_MS } from './progressSync'
 
 const tree = (version: number): ProgressTree => ({
+  requestId: 'r',
   version,
   updatedAt: '',
   root: {
@@ -19,6 +20,7 @@ const tree = (version: number): ProgressTree => ({
         type: 'TASK',
         label: '1. a',
         taskType: 'DEPLOY',
+        risk: 'HIGH',
         status: 'RUNNING',
         dependsOn: [],
         children: [],
@@ -54,10 +56,12 @@ function setup(initial = tree(5)) {
         closeStream = (reason) => (reason ? reject(reason) : resolve())
       }),
   )
-  const sync = createProgressSync({ getTree: () => current, setTree: (next) => (current = next), fetchTree, openStream })
+  const readTree = vi.fn((): Promise<ProgressTree> => new Promise(() => {}))
+  const sync = createProgressSync({ getTree: () => current, setTree: (next) => (current = next), fetchTree, readTree, openStream })
   return {
     sync,
     fetchTree,
+    readTree,
     openStream,
     emit: (event: ProgressStreamEvent) => emit(event),
     close: async (reason?: unknown) => {
@@ -207,6 +211,38 @@ describe('다시 연결', () => {
     await t.close(new TypeError('failed to fetch'))
     await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS)
     expect(t.openStream).toHaveBeenCalledTimes(2)
+    t.sync.stop()
+  })
+
+  it('연결이 계속 안 되면 다시 연결할 때마다 트리를 조용히 읽고, 실패해도 오류 화면으로 넘기지 않는다', async () => {
+    const t = setup()
+    t.readTree.mockResolvedValueOnce(tree(9)).mockRejectedValueOnce(new ApiError(0, 'NETWORK_ERROR', 'x'))
+    t.sync.start()
+    for (const wait of [RECONNECT_BASE_MS, RECONNECT_BASE_MS * 2]) {
+      await t.close(new ApiError(0, 'NETWORK_ERROR', 'x'))
+      await vi.advanceTimersByTimeAsync(wait)
+    }
+    expect(t.readTree).not.toHaveBeenCalled()
+    await t.close(new ApiError(0, 'NETWORK_ERROR', 'x'))
+    expect(t.readTree).toHaveBeenCalledTimes(1)
+    expect(t.tree().version).toBe(9)
+    await vi.advanceTimersByTimeAsync(RECONNECT_BASE_MS * 4)
+    await t.close(new ApiError(0, 'NETWORK_ERROR', 'x'))
+    expect(t.readTree).toHaveBeenCalledTimes(2)
+    expect(t.fetchTree).not.toHaveBeenCalled()
+    t.sync.stop()
+  })
+
+  it('읽다가 볼 수 없게 됐으면 쿼리 상태로 알린다', async () => {
+    const t = setup()
+    t.readTree.mockRejectedValue(new ApiError(404, 'NOT_FOUND', 'x'))
+    t.sync.start()
+    for (const wait of [RECONNECT_BASE_MS, RECONNECT_BASE_MS * 2]) {
+      await t.close(new TypeError('x'))
+      await vi.advanceTimersByTimeAsync(wait)
+    }
+    await t.close(new TypeError('x'))
+    expect(t.fetchTree).toHaveBeenCalledTimes(1)
     t.sync.stop()
   })
 
