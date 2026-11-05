@@ -90,7 +90,7 @@ function RequestLine({ request, projectName, external }: { request: RequestSumma
       <span>
         <RequestStatusBadge status={request.status} />
       </span>
-      <span className="line-clamp-2 text-base font-medium text-ink">{request.prompt}</span>
+      <span className="line-clamp-2 text-base font-medium text-ink" title={request.prompt}>{request.prompt}</span>
       <span className="truncate text-sm text-ink-2">
         {request.requester.name}, {projectName}
       </span>

@@ -77,7 +77,7 @@ function Sidebar() {
                     aria-label={`${item.label}: ${INTERNAL_ONLY_MESSAGE}`}
                     title={INTERNAL_ONLY_MESSAGE}
                     tabIndex={0}
-                    className={`${base} cursor-not-allowed text-ink-3/70`}
+                    className={`${base} cursor-not-allowed text-ink-3`}
                   >
                     <Icon size={17} strokeWidth={1.75} aria-hidden className="shrink-0" />
                     <span className="truncate">{item.label}</span>
@@ -193,7 +193,7 @@ function MobileNavigation() {
                   const Icon = ICONS[item.key]
                   if (network === 'EXTERNAL' && !item.external) {
                     return (
-                      <span key={item.key} aria-disabled="true" title={INTERNAL_ONLY_MESSAGE} className="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-3/70">
+                      <span key={item.key} aria-disabled="true" title={INTERNAL_ONLY_MESSAGE} className="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-3">
                         <Icon size={17} aria-hidden />
                         {item.label}
                       </span>

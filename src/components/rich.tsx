@@ -10,7 +10,7 @@ function initials(name: string) {
 }
 
 export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
-  const dimension = { sm: 'size-7 text-[0.6875rem] tracking-tighter', md: 'size-8 text-xs', lg: 'size-10 text-sm' }[size]
+  const dimension = { sm: 'size-7 text-[0.75rem] tracking-tighter', md: 'size-8 text-xs', lg: 'size-10 text-sm' }[size]
   return (
     <span
       aria-hidden

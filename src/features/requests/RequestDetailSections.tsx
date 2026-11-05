@@ -37,7 +37,7 @@ export function TaskApprovalLine({ status }: { status: TaskApprovalStatus }) {
   return (
     <p className="flex items-center gap-2.5 text-sm text-ink-2">
       {signer && (
-        <span className="inline-flex size-11 shrink-0 -rotate-6 items-center justify-center rounded-full border-2 border-stamp text-[0.6875rem] leading-none font-bold tracking-tight text-stamp">
+        <span className="inline-flex size-11 shrink-0 -rotate-6 items-center justify-center rounded-full border-2 border-stamp text-[0.75rem] leading-none font-bold tracking-tight text-stamp">
           {signer.name}
         </span>
       )}
