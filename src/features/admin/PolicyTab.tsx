@@ -11,6 +11,7 @@ import { Button, ConfirmModal, EmptyState, ErrorState, Select, Sheet, Spinner } 
 import { unsignedPolicyNotice, adminKeyMissingReason, policyAdminProof } from '../../crypto/adminProof'
 import { PRESET_LABEL, RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL } from '../../lib/labels'
 import { useRefreshAll } from '../../lib/queries'
+import { USE_MOCK } from '../../api/client'
 import { withoutSlackOnServer } from '../../lib/serverFeatures'
 import { AdminKeyNotice } from './AdminKeyNotice'
 import { policyQuery } from './adminQueries'
@@ -45,15 +46,24 @@ const PRESET_DETAILS: Record<PolicyPreset, PresetDetail> = {
   },
 }
 
+/** 실제 서버 기준표 (PresetApprovalMatrix). 표에 없는 조합은 높음 담당자, 중간 같은 부서, 낮음 누구나다 (ApproverResolver). */
+const SERVER_PRESET_DETAILS: Record<PolicyPreset, PresetDetail> = {
+  SMALL: { lowApprover: '누구나 1명', highApprover: '담당자 1명', highApprovals: 1, slack: '', audit: '' },
+  MEDIUM: { lowApprover: '같은 부서 다른 사람 1명', highApprover: '담당자 1명', highApprovals: 1, slack: '', audit: '' },
+  LARGE: { lowApprover: '같은 부서 다른 사람 1명', highApprover: '부서 관리자 + 담당자', highApprovals: 2, slack: '', audit: '' },
+}
+const SHOWN_PRESET_DETAILS = USE_MOCK ? PRESET_DETAILS : SERVER_PRESET_DETAILS
+
 const PRESET_COMPARISON = withoutSlackOnServer<{ label: string; value: (detail: PresetDetail) => string }>(
   [
-    { label: '위험도 낮음·중간 작업 승인', value: (detail) => detail.lowApprover },
-    { label: '위험도 높음 작업 승인', value: (detail) => detail.highApprover },
-    { label: '위험도 높음 승인 인원', value: (detail) => `${detail.highApprovals}명` },
+    { label: USE_MOCK ? '위험도 낮음·중간 작업 승인' : '기능 코드(중간) 승인', value: (detail) => detail.lowApprover },
+    { label: USE_MOCK ? '위험도 높음 작업 승인' : '배포(높음) 승인', value: (detail) => detail.highApprover },
+    { label: USE_MOCK ? '위험도 높음 승인 인원' : '배포(높음) 승인 인원', value: (detail) => `${detail.highApprovals}명` },
     { label: 'Slack 알림', value: (detail) => detail.slack },
     { label: '감사 로그 보관', value: (detail) => detail.audit },
   ],
-  (row) => row.label === 'Slack 알림',
+  // 서버 기준표에 없는 약속은 실제 서버 화면에서 말하지 않는다.
+  (row) => row.label === 'Slack 알림' || row.label === '감사 로그 보관',
 )
 
 const EDITABLE_RISKS: Risk[] = ['LOW', 'MEDIUM', 'HIGH']
@@ -94,7 +104,7 @@ function PresetCard({
   applied: boolean
   onSelect: () => void
 }) {
-  const detail = PRESET_DETAILS[preset]
+  const detail = SHOWN_PRESET_DETAILS[preset]
   return (
     <label
       className={`flex cursor-pointer flex-col gap-1.5 rounded-lg border p-4 transition-colors ${
@@ -113,8 +123,8 @@ function PresetCard({
         <span className="text-base font-semibold text-ink">{PRESET_LABEL[preset]}</span>
         {applied && <span className="ml-auto text-sm font-medium text-seal">적용 중</span>}
       </span>
-      <span className="text-sm text-ink-2">낮음·중간은 {detail.lowApprover}</span>
-      <span className="text-sm text-ink-2">높음은 {detail.highApprover}</span>
+      <span className="text-sm text-ink-2">{USE_MOCK ? '낮음·중간은' : '기능 코드(중간)는'} {detail.lowApprover}</span>
+      <span className="text-sm text-ink-2">{USE_MOCK ? '높음은' : '배포(높음)는'} {detail.highApprover}</span>
     </label>
   )
 }
@@ -141,7 +151,7 @@ function PresetComparison() {
               <tr key={row.label}>
                 <td className="whitespace-nowrap text-ink-2">{row.label}</td>
                 {PRESETS.map((preset) => (
-                  <td key={preset}>{row.value(PRESET_DETAILS[preset])}</td>
+                  <td key={preset}>{row.value(SHOWN_PRESET_DETAILS[preset])}</td>
                 ))}
               </tr>
             ))}
