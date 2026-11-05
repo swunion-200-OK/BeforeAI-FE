@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import type { RequestDetail, RequestStatus } from '../../api/types'
 import { approvalSummary } from '../../components/ApprovalStamps'
 import { Banner, Button, Mono, ReasonModal } from '../../components/ui'
-import { approvalToShow } from './requestPaths'
+import { allApprovalsCollected, approvalToShow } from './requestPaths'
 import { AnalysisFailedPanel, CancelRequestButton } from './RequestParts'
 import { useKillRequest, useRetryFailed, useSubmitRequest } from './useRequestActions'
 
@@ -41,6 +41,7 @@ function waitingRows(request: RequestDetail) {
 }
 
 function WaitingFor({ rows }: { rows: ReturnType<typeof waitingRows> }) {
+  if (rows.length === 0) return null
   return (
     <ul className="mt-2 mb-1 flex flex-col gap-1.5 text-base text-ink">
       {rows.map((row) => (
@@ -128,7 +129,7 @@ export function RequestStatusBanner({
     case 'PENDING_APPROVAL': {
       const waiting = waitingRows(request)
       // 승인이 다 모였는데 승인대기면 웹쉘에 연결되지 않아 웹 서비스가 실행 요청을 다시 시도하는 중이다 (API 명세 4.5).
-      if (request.plan && waiting.length === 0) {
+      if (allApprovalsCollected(request) && waiting.length === 0) {
         return (
           <Banner tone="warning" title="승인은 모두 모였지만 웹쉘에 연결할 수 없습니다" action={action}>
             연결되면 실행을 자동으로 다시 요청합니다.
@@ -181,7 +182,12 @@ export function RequestStatusBanner({
         <Banner tone="danger" title={`${request.kill?.by ?? '사용자'} 님이 킬 스위치로 중단했습니다`}>
           <p>{request.kill?.reason}</p>
           {request.kill && request.kill.skippedTaskIds.length > 0 && (
-            <p className="mt-1">실행하지 않은 작업: {request.kill.skippedTaskIds.join(', ')}</p>
+            <p className="mt-1">
+              실행하지 않은 작업:{' '}
+              {request.kill.skippedTaskIds
+                .map((id) => request.plan?.tasks.find((task) => task.id === id)?.title ?? id)
+                .join(', ')}
+            </p>
           )}
         </Banner>
       )

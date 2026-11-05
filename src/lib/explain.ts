@@ -3,7 +3,8 @@ import { parseUnifiedDiff } from './diff'
 
 /**
  * 변경 내용을 사람이 읽는 문장으로 푼다.
- * 목 서버는 이 결과를 "AI 설명"으로 내려주고, 실제 백엔드가 설명을 주지 않으면 화면이 이 함수로 대신 만든다.
+ * explainTask는 목 서버가 "AI 설명"으로 내려주는 값을 만든다. 시드 데이터에 맞춘 추측이 섞여 있어(세션 시간, 순차 재시작 등)
+ * 화면에서 직접 쓰면 안 된다. 서버가 설명을 주지 않으면 explanationOf가 데이터로 확인되는 사실만 쓴다.
  */
 
 export interface DiffStats {
@@ -229,7 +230,28 @@ export function explainTask(input: {
   return { summary: title, changes: [], impact: [], undo: NO_UNDO }
 }
 
-/** 서버가 준 설명을 쓰고, 없으면 화면에서 만든다. */
+/**
+ * TODO(spec): explanation은 명세에 없는 필드다. 승인자가 믿고 판단하는 문장이라 추측하지 않는다.
+ * 대상과 내용 종류, diff에서 센 값만 쓰고, 영향과 안전 여부("운영에는 영향 없음" 등)는 말하지 않는다.
+ */
+function factualExplanation({ title, target, content }: Task): TaskExplanation {
+  const about = (what: string, undo = NO_UNDO): TaskExplanation => ({
+    summary: `${title}: ${target}${what}`,
+    changes: [],
+    impact: [],
+    undo,
+  })
+  if (content.diff !== undefined) {
+    const { files, added, removed } = diffStats(content.diff)
+    return about(`의 코드가 바뀝니다. 파일 ${files}개, 추가 ${added}줄, 삭제 ${removed}줄입니다.`)
+  }
+  if (content.command !== undefined) return about('에 배포 명령을 실행합니다. 영향 범위는 명령을 직접 확인해 주세요.')
+  if (content.query !== undefined) return about('에 쿼리를 실행합니다. 무엇이 바뀌는지는 쿼리를 직접 확인해 주세요.')
+  if (content.body !== undefined) return about(' 문서 내용이 바뀝니다.', DOC_UNDO)
+  return about(' 작업입니다.')
+}
+
+/** 서버가 준 설명을 쓰고, 없으면 확인되는 사실만 쓴다. */
 export function explanationOf(task: Task): TaskExplanation {
-  return task.explanation ?? explainTask(task)
+  return task.explanation ?? factualExplanation(task)
 }

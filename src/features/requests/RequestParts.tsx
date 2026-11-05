@@ -3,13 +3,17 @@ import { useNavigate } from 'react-router'
 import type { RequestDetail, Task } from '../../api/types'
 import { Banner, Button, ConfirmModal, ReasonModal } from '../../components/ui'
 import { formatDateTime } from '../../lib/format'
+import { useProjects } from '../../lib/queries'
 import { useCancelRequest, usePatchPlan, useRetryAnalysis } from './useRequestActions'
 
 const MAX_ANALYSIS_ATTEMPTS = 3
 
 /** 조용한 메타 한 줄: 프로젝트, 요청자, 시각 */
 export function RequestMeta({ request }: { request: RequestDetail }) {
-  const parts = [request.projectName, request.requester.name, formatDateTime(request.createdAt)]
+  const projects = useProjects()
+  // 프로젝트 이름은 명세의 Request에 없어 프로젝트 목록에서 먼저 찾는다.
+  const projectName = projects.data?.find((project) => project.id === request.projectId)?.name ?? request.projectName
+  const parts = [projectName, request.requester.name, formatDateTime(request.createdAt)]
   if (request.plan?.kind === 'ROLLBACK') parts.push('문서 롤백')
   return <span className="text-ink-3">{parts.join(', ')}</span>
 }

@@ -19,10 +19,10 @@ function isSelfApprovable(task: Task) {
   )
 }
 
-/** "t-1, t-3은" 처럼 작업 번호에 맞는 조사를 붙인다. 1·3·6·7·8·0으로 끝나면 받침이 있다. */
+/** "작업 1, 3은" 처럼 순서에 맞는 조사를 붙인다. 1·3·6·7·8·0으로 끝나면 받침이 있다. 작업 ID는 UUID라 문장에 쓰지 않는다. */
 function topic(tasks: Task[]) {
-  const ids = tasks.map((task) => task.id)
-  return `${ids.join(', ')}${/[136780]$/.test(ids[ids.length - 1]) ? '은' : '는'}`
+  const orders = tasks.map((task) => String(task.order))
+  return `작업 ${orders.join(', ')}${/[136780]$/.test(orders[orders.length - 1]) ? '은' : '는'}`
 }
 
 function whoApproves(request: RequestDetail, task: Task) {

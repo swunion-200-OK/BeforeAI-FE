@@ -6,7 +6,7 @@ import { useMe } from '../../app/AuthProvider'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useDepartmentNames, usePendingApprovals } from '../../lib/queries'
 import { groupByRequest } from '../approvals/queueGroups'
-import { DashboardDetails, KillAllAction, RequestsPanel, TodoPanel } from './DashboardPanels'
+import { DashboardDetails, KillAllAction, REQUEST_LIMIT, RequestsPanel, TodoPanel } from './DashboardPanels'
 import { ATTENTION_STATUSES } from './statusGroups'
 
 const SCOPE_BY_ROLE: Record<Role, DashboardScope> = {
@@ -34,12 +34,13 @@ function Stat({
   onSelect,
 }: {
   label: string
-  value: number
+  /** null이면 서버가 주지 않아 모른다. 0건과 구별한다 */
+  value: number | null
   selected: boolean
   alert?: boolean
   onSelect: () => void
 }) {
-  const number = value === 0 ? 'text-ink-3' : alert ? 'text-high' : 'text-ink'
+  const number = !value ? 'text-ink-3' : alert ? 'text-high' : 'text-ink'
   return (
     <button
       type="button"
@@ -51,8 +52,8 @@ function Stat({
     >
       <span className={`block text-sm ${selected ? 'font-semibold text-ink' : 'text-ink-2'}`}>{label}</span>
       <span className={`mt-0.5 block text-[2.25rem] leading-tight font-semibold tracking-[-0.02em] tabular-nums ${number}`}>
-        {value}
-        <span className="ml-1 text-base font-normal tracking-normal text-ink-3">건</span>
+        {value ?? '-'}
+        {value !== null && <span className="ml-1 text-base font-normal tracking-normal text-ink-3">건</span>}
       </span>
     </button>
   )
@@ -78,7 +79,9 @@ export default function DashboardPage() {
     wholeScope ? `/requests?status=${status}&scope=all` : `/requests?status=${status}`
 
   const data = query.data
-  const count = (status: RequestStatus) => data?.statusCounts[status] ?? 0
+  // 상태별 건수를 받지 못했으면 0건이 아니라 모르는 것이다.
+  const countsKnown = Boolean(data?.statusCounts)
+  const count = (status: RequestStatus) => data?.statusCounts?.[status] ?? 0
   const attention = ATTENTION_STATUSES.filter((status) => count(status) > 0)
   const attentionTotal = attention.reduce((sum, status) => sum + count(status), 0)
   const myPending = groupByRequest(pending.data ?? []).length
@@ -90,10 +93,22 @@ export default function DashboardPage() {
   const view = picked && VIEWS.includes(picked) ? picked : firstView
   const select = (next: DashboardView) => setParams({ view: next }, { replace: true })
 
-  // TODO(spec): 여러 상태를 한 번에 거르는 목록 API가 없어 최대치(100건)를 받아 화면에서 거른다.
+  // 한 쪽만 받아 화면에서 거르면 요청이 많을 때 "실행 중"이 비어 보인다. 상태는 서버에서 거른다.
+  // TODO(spec): 여러 상태를 한 번에 거르는 방법이 명세에 없어 "확인 필요"는 상태마다 따로 받는다.
+  const attentionStatuses = countsKnown ? attention : ATTENTION_STATUSES
   const requests = useQuery({
-    queryKey: ['dashboard', 'requests', scope],
-    queryFn: async () => (await requestsApi.list({ mine: wholeScope ? undefined : true, limit: 100 })).items,
+    queryKey: ['dashboard', 'requests', scope, view, attentionStatuses.join()],
+    queryFn: async () => {
+      const mine = wholeScope ? undefined : true
+      if (view === 'attention') {
+        const pages = await Promise.all(
+          attentionStatuses.map((status) => requestsApi.list({ mine, status, limit: REQUEST_LIMIT })),
+        )
+        return pages.flatMap((page) => page.items).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      }
+      const status = view === 'running' ? ('RUNNING' as const) : undefined
+      return (await requestsApi.list({ mine, status, limit: REQUEST_LIMIT })).items
+    },
     enabled: view !== 'todo',
     refetchInterval: 3000,
   })
@@ -111,7 +126,8 @@ export default function DashboardPage() {
       <PageHeader
         title={TITLE[scope]}
         description={<span className="text-lg font-medium text-ink">{headline}</span>}
-        actions={me.role === 'ADMIN' ? <KillAllAction visible={count('RUNNING') > 0} /> : undefined}
+        // 건수를 모를 때 비상 버튼을 숨기면 실행 중인데도 못 멈춘다.
+        actions={me.role === 'ADMIN' ? <KillAllAction visible={Boolean(data) && (!countsKnown || count('RUNNING') > 0)} /> : undefined}
       />
       {query.isPending && <Spinner />}
       {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
@@ -119,10 +135,10 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-6">
           <div role="group" aria-label="아래 목록 고르기" className="grid grid-cols-4 border-b border-rule">
             <Stat label="내 승인 대기" value={myPending} selected={view === 'todo'} onSelect={() => select('todo')} />
-            <Stat label="실행 중" value={count('RUNNING')} selected={view === 'running'} onSelect={() => select('running')} />
+            <Stat label="실행 중" value={countsKnown ? count('RUNNING') : null} selected={view === 'running'} onSelect={() => select('running')} />
             <Stat
               label="확인 필요"
-              value={attentionTotal}
+              value={countsKnown ? attentionTotal : null}
               alert
               selected={view === 'attention'}
               onSelect={() => select('attention')}
@@ -132,7 +148,7 @@ export default function DashboardPage() {
 
           {view === 'todo' && (
             // "확인 필요"가 남아 있는데 "처리할 일이 없다"고 하면 위 숫자와 어긋난다.
-            <TodoPanel emptyText={attentionTotal > 0 ? '지금 승인할 작업이 없습니다' : '지금 처리할 일이 없습니다'} />
+            <TodoPanel emptyText={attentionTotal > 0 || !countsKnown ? '지금 승인할 작업이 없습니다' : '지금 처리할 일이 없습니다'} />
           )}
           {view === 'running' && (
             <RequestsPanel

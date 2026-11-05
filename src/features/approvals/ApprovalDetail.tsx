@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowRight, ChevronDown } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
+import { USE_MOCK } from "../../api/client";
 import { approvalsApi, meApi } from "../../api/endpoints";
 import { ApiError, errorMessage } from "../../api/errors";
 import type {
@@ -36,6 +37,7 @@ import { formatDateTime } from "../../lib/format";
 import { REQUEST_STATUS_LABEL, SOURCE_LABEL } from "../../lib/labels";
 import {
   useDepartmentNames,
+  useProjects,
   useRefreshAll,
   useRequest,
 } from "../../lib/queries";
@@ -48,8 +50,8 @@ import { ProgressSection } from "../progress/ProgressTree";
 import { IntegrityCheck } from "./IntegrityCheck";
 import { SignProgress, type SignRunState } from "./SignProgress";
 
-/** 단계가 눈에 보이도록 시연용으로 잠깐씩 멈춘다. */
-const STEP_DELAY_MS = 350;
+/** 단계가 눈에 보이도록 시연용으로 잠깐씩 멈춘다. 실제 서명을 일부러 늦추지는 않는다. */
+const STEP_DELAY_MS = USE_MOCK ? 350 : 0;
 /** 웹쉘이 실행을 시작한 뒤의 상태 */
 const EXECUTION_STARTED: RequestStatus[] = [
   "RUNNING",
@@ -78,9 +80,12 @@ function RequestMeta({
   taskCount: number;
 }) {
   const departmentName = useDepartmentNames();
+  const projects = useProjects();
+  // 프로젝트 이름은 명세의 Request에 없어 프로젝트 목록에서 먼저 찾는다.
   const parts = [
     request.requester.name,
-    request.projectName,
+    projects.data?.find((project) => project.id === request.projectId)?.name ??
+      request.projectName,
     `작업 ${taskCount}개`,
   ];
   // 롤백인지, 에디터에서 온 요청인지는 승인 판단에 필요해서 접지 않는다.

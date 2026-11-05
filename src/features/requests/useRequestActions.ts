@@ -15,7 +15,7 @@ async function announceSubmit(requestId: string, outcome: SubmitOutcome) {
     toast.info('승인받을 작업이 남아 있지 않아 요청을 끝냈습니다')
     return
   }
-  const approved = `제출과 함께 본인 승인됨: ${outcome.selfApprovedTaskIds.join(', ')}`
+  const approved = `제출과 함께 작업 ${outcome.selfApprovedTaskIds.length}건을 본인 승인했습니다`
   if (outcome.executionRequested) {
     const current = await requestsApi.get(requestId).catch(() => null)
     if (current?.status === 'VERIFICATION_FAILED') {
@@ -109,7 +109,7 @@ export function useKillRequest(requestId: string, onDone?: () => void) {
   return useMutation({
     mutationFn: (reason: string) => requestsApi.kill(requestId, reason),
     onSuccess: async (result) => {
-      const skipped = result.skippedTaskIds.length ? ` 실행 안 한 작업: ${result.skippedTaskIds.join(', ')}` : ''
+      const skipped = result.skippedTaskIds.length ? ` 작업 ${result.skippedTaskIds.length}건은 실행하지 않았습니다.` : ''
       toast.success(`실행을 중단했습니다.${skipped}`)
       await refresh()
       onDone?.()

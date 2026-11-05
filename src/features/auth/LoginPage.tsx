@@ -1,9 +1,8 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router'
-import { USE_MOCK } from '../../api/client'
 import { authApi } from '../../api/endpoints'
-import { errorMessage } from '../../api/errors'
+import { ApiError, errorMessage } from '../../api/errors'
 import { useAuth } from '../../app/AuthProvider'
 import { NetworkBadge } from '../../components/badges'
 import { Button, Spinner } from '../../components/ui'
@@ -12,6 +11,7 @@ import { useNetwork } from '../../lib/queries'
 import { AUTH_BUTTON_CLASS, AuthField } from './AuthField'
 import { AuthFrame } from './AuthFrame'
 
+// 빌드할 때 값이 박히는 조건으로 그려서, 실제 백엔드 빌드에는 시연 계정과 비밀번호가 남지 않는다.
 const DEMO_ACCOUNTS = [
   { employeeNo: 'E1101', name: '홍길동', role: '직원, 요청자' },
   { employeeNo: 'E1107', name: '김담당', role: 'auth-service 담당자' },
@@ -24,6 +24,12 @@ const DEMO_ACCOUNTS = [
 ]
 const DEMO_PASSWORD = 'demo1234!'
 const DEMO_OTP = '123456'
+
+/** TODO(spec): 로그인 실패 코드가 명세에 없다. 401이면 표의 "다시 로그인해 주세요"가 되어 무엇이 틀렸는지 모르므로 여기서 바꾼다. */
+function loginErrorMessage(reason: unknown): string {
+  if (reason instanceof ApiError && reason.code === 'UNAUTHENTICATED') return '사번 또는 비밀번호가 맞지 않습니다'
+  return errorMessage(reason)
+}
 
 export default function LoginPage() {
   const { me, booting, signIn } = useAuth()
@@ -39,13 +45,16 @@ export default function LoginPage() {
     meta: { silent: true },
     mutationFn: async () => {
       const result = await authApi.login(employeeNo.trim(), password)
+      // TODO(spec): 토큰 필드 이름은 명세에 없다. 값이 없을 때 조용히 멈추지 않고 알린다.
       if (result.otpRequired) {
-        setTempToken(result.tempToken ?? null)
+        if (!result.tempToken) throw new Error('OTP 확인에 필요한 값을 받지 못했습니다. 관리자에게 알려 주세요')
+        setTempToken(result.tempToken)
         return
       }
-      await signIn(result.accessToken as string)
+      if (!result.accessToken) throw new Error('로그인 응답에 토큰이 없습니다. 관리자에게 알려 주세요')
+      await signIn(result.accessToken)
     },
-    onError: (reason) => setError(errorMessage(reason)),
+    onError: (reason) => setError(loginErrorMessage(reason)),
   })
 
   const verify = useMutation({
@@ -159,7 +168,7 @@ export default function LoginPage() {
         )}
       </section>
 
-      {USE_MOCK && (
+      {!import.meta.env.VITE_API_BASE_URL && (
         <section aria-label="시연 계정" className="border-t border-rule pt-5">
           <p className="mb-3 text-sm text-ink-2">
             시연 계정을 고르면 입력해 줍니다. 비밀번호 <code className="font-mono text-ink">{DEMO_PASSWORD}</code>, OTP{' '}

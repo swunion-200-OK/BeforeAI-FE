@@ -28,6 +28,7 @@ const PENDING_LIMIT = 7
 
 export function TodoPanel({ emptyText }: { emptyText: string }) {
   const pending = usePendingApprovals()
+  const projects = useProjects()
   // 승인 대기 목록과 같게 요청 하나를 한 줄로 보여 준다.
   const items = groupByRequest(pending.data ?? [])
   return (
@@ -65,7 +66,8 @@ export function TodoPanel({ emptyText }: { emptyText: string }) {
                     )}
                   </span>
                   <span className="truncate text-sm text-ink-2">
-                    {group.requester.name}, {group.projectName}
+                    {/* 프로젝트 이름은 명세의 승인 대기 항목에 없어 프로젝트 목록에서 먼저 찾는다 */}
+                    {group.requester.name}, {projects.data?.find((project) => project.id === group.tasks[0].projectId)?.name ?? group.projectName}
                   </span>
                   <span className="text-right text-sm whitespace-nowrap text-ink-3 tabular-nums">
                     {formatElapsed(group.requestedAt)} 대기
@@ -82,7 +84,7 @@ export function TodoPanel({ emptyText }: { emptyText: string }) {
 
 // ── 숫자 칸을 눌렀을 때 보이는 요청 목록 ───────────────────
 
-const REQUEST_LIMIT = 7
+export const REQUEST_LIMIT = 7
 
 const ago = (iso: string) => {
   const elapsed = formatElapsed(iso)
@@ -179,7 +181,7 @@ const DEPARTMENT_MEASURES: Array<{ key: 'requests' | 'pendingApprovals' | 'runni
 
 const SUBTITLE = 'mb-3 text-sm font-semibold text-ink'
 
-function RiskDistribution({ distribution, total }: { distribution: Dashboard['riskDistribution']; total: number }) {
+function RiskDistribution({ distribution, total }: { distribution: NonNullable<Dashboard['riskDistribution']>; total: number }) {
   return (
     <section>
       <h3 className={SUBTITLE}>위험도 분포</h3>
@@ -204,7 +206,7 @@ function StatusCounts({
   statusTo,
 }: {
   groups: typeof STATUS_GROUPS
-  counts: Dashboard['statusCounts']
+  counts: NonNullable<Dashboard['statusCounts']>
   statusTo: (status: RequestStatus) => string
 }) {
   return (
@@ -276,10 +278,11 @@ export function DashboardDetails({
   data: Dashboard
   statusTo: (status: RequestStatus) => string
 }) {
-  const riskTotal = RISK_ORDER.reduce((sum, risk) => sum + data.riskDistribution[risk], 0)
+  const { riskDistribution, statusCounts } = data
+  const riskTotal = riskDistribution ? RISK_ORDER.reduce((sum, risk) => sum + riskDistribution[risk], 0) : 0
   const groups = STATUS_GROUPS.map((group) => ({
     ...group,
-    statuses: group.statuses.filter((status) => (data.statusCounts[status] ?? 0) > 0),
+    statuses: group.statuses.filter((status) => (statusCounts?.[status] ?? 0) > 0),
   })).filter((group) => group.statuses.length > 0)
   const departments = data.byDepartment ?? []
 
@@ -292,14 +295,14 @@ export function DashboardDetails({
         <ChevronDown size={16} className="text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
       <div className="flex flex-wrap gap-x-16 gap-y-6 border-t border-rule p-5">
-        {riskTotal > 0 && (
+        {riskDistribution && riskTotal > 0 && (
           <div className="w-48 shrink-0">
-            <RiskDistribution distribution={data.riskDistribution} total={riskTotal} />
+            <RiskDistribution distribution={riskDistribution} total={riskTotal} />
           </div>
         )}
-        {groups.length > 0 && (
+        {statusCounts && groups.length > 0 && (
           <div className="min-w-[28rem] flex-1">
-            <StatusCounts groups={groups} counts={data.statusCounts} statusTo={statusTo} />
+            <StatusCounts groups={groups} counts={statusCounts} statusTo={statusTo} />
           </div>
         )}
         {departments.length > 0 && (

@@ -2,7 +2,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@ta
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router'
-import { setTransport } from './api/client'
+import { isTransientError, setTransport } from './api/client'
 import { ApiError, errorMessage } from './api/errors'
 import { toast } from './components/toast'
 import './index.css'
@@ -19,7 +19,8 @@ async function bootstrap() {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: {
-        retry: (count, error) => !(error instanceof ApiError) && count < 2,
+        // 서버가 코드로 답한 오류는 다시 보내도 같다. 쓰기 요청은 여기서 다시 보내지 않는다 (react-query 기본값).
+        retry: (count, error) => count < 2 && (!(error instanceof ApiError) || isTransientError(error)),
       },
     },
     queryCache: new QueryCache({

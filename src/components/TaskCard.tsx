@@ -126,7 +126,7 @@ export function TaskCard({
             <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
               <RiskBadge risk={task.risk} />
               <h3 className={`text-lg font-semibold ${forbidden ? 'text-forbidden' : ''}`}>{task.title}</h3>
-              <span className="font-mono text-xs text-ink-3">{task.id}</span>
+              <span className="font-mono text-xs text-ink-3">#{task.order}</span>
               {highlighted && <span className="text-xs font-semibold text-medium">바뀐 작업</span>}
             </div>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
