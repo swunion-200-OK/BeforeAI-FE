@@ -10,16 +10,16 @@ export function verificationFailedTitle(mock = USE_MOCK): string {
 
 /**
  * 승인이 다 모였는데 웹쉘에 연결하지 못한 경우. 서명은 저장되고 실행 시작만 실패한다 (서버 ApprovalService.approve).
- * 실제 서버에는 실행 요청을 다시 보내는 코드가 없어 다시 시도한다고 말하지 않는다. 목은 다시 시도한다.
+ * 실제 서버는 스스로 다시 시도하지 않아 화면의 버튼으로 다시 요청한다. 목은 스스로 다시 시도한다.
  */
 export function executionDeferredText(mock = USE_MOCK): string {
-  return mock ? '웹쉘에 연결할 수 없어 실행 요청을 다시 시도합니다' : '웹쉘에 연결할 수 없어 실행하지 못했습니다. 관리자에게 알려 주세요'
+  return mock ? '웹쉘에 연결할 수 없어 실행 요청을 다시 시도합니다' : '웹쉘에 연결할 수 없어 실행하지 못했습니다. 연결되면 실행을 다시 요청해 주세요'
 }
 
 export function executionDeferredBanner(mock = USE_MOCK): { title: string; body: string } {
   return mock
     ? { title: '승인은 모두 모였지만 웹쉘에 연결할 수 없습니다', body: '연결되면 실행을 자동으로 다시 요청합니다.' }
-    : { title: '승인 서명은 저장했지만 실행하지 못했습니다', body: '웹쉘에 연결할 수 없습니다. 자동으로 다시 시도하지 않으니 관리자에게 알려 주세요.' }
+    : { title: '승인 서명은 저장했지만 실행하지 못했습니다', body: '웹쉘에 연결할 수 없습니다. 자동으로 다시 시도하지 않으니, 연결되면 실행을 다시 요청해 주세요.' }
 }
 
 export function allApprovedNowText(mock = USE_MOCK): string {

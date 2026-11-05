@@ -309,6 +309,8 @@ export const requestsApi = {
   kill: (requestId: string, reason: string) =>
     http<KillResponse>('POST', `/requests/${requestId}/kill`, { body: { reason } }),
   retryFailed: (requestId: string) => http<PlanRetryResponse>('POST', `/requests/${requestId}/retry`),
+  /** 승인이 다 모였는데 웹쉘 연결 실패로 멈춘 요청의 실행을 다시 요청한다. */
+  startExecution: (requestId: string) => http<AcceptedRequest>('POST', `/requests/${requestId}/execution`),
   logs: (requestId: string, query?: { cursor?: string; limit?: number }) =>
     http<Page<LogLine>>('GET', `/requests/${requestId}/logs`, { query }),
   /** 이벤트 이름은 log이고 id가 없으며 지난 줄을 다시 보내지 않는다. 연결 유지는 SSE 주석이라 메시지로 오지 않는다 (RequestStreamService) */

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
+import { USE_MOCK } from '../../api/client'
 import type { RequestDetail, RequestStatus, TaskApprovalStatus } from '../../api/types'
 import { approvalSummary } from '../../components/ApprovalStamps'
 import { useAnalysisOverdue } from '../../lib/analysisWait'
@@ -11,7 +12,7 @@ import { Banner, Button, Mono, ReasonModal } from '../../components/ui'
 import { allApprovalsCollected, approvalToShow } from './requestPaths'
 import { executionDeferredBanner, rollbackFailedText, verificationFailedTitle } from './statusBannerText'
 import { AnalysisFailedPanel, AnalysisOverdueBanner, CancelRequestButton } from './RequestParts'
-import { useKillRequest, useRetryFailed, useSubmitRequest } from './useRequestActions'
+import { useKillRequest, useRetryFailed, useStartExecution, useSubmitRequest } from './useRequestActions'
 
 const CANCELABLE: RequestStatus[] = ['REVIEWING', 'PENDING_APPROVAL', 'REAPPROVAL_REQUIRED', 'VERIFICATION_FAILED']
 
@@ -65,6 +66,7 @@ function NextActions({ request, isRequester, canKill }: { request: RequestDetail
   const navigate = useNavigate()
   const resubmit = useSubmitRequest(request)
   const retry = useRetryFailed(request)
+  const startExecution = useStartExecution(request.id)
   const { status } = request
 
   const actions: ReactNode[] = []
@@ -79,7 +81,14 @@ function NextActions({ request, isRequester, canKill }: { request: RequestDetail
       </Button>,
     )
   }
-  if (status === 'PENDING_APPROVAL') {
+  // 목은 스스로 다시 시도하므로 버튼이 없다.
+  if (!USE_MOCK && status === 'PENDING_APPROVAL' && allApprovalsCollected(request)) {
+    actions.push(
+      <Button key="execute" variant="primary" internalOnly loading={startExecution.isPending} onClick={() => startExecution.mutate()}>
+        실행 다시 요청
+      </Button>,
+    )
+  } else if (status === 'PENDING_APPROVAL') {
     actions.push(
       <Button key="approval" variant="primary" onClick={() => navigate(`/approvals/${request.id}`)}>
         승인 상세
