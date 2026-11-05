@@ -373,13 +373,12 @@ describe('API 명세 3장 표', () => {
     for (const [name, value] of Object.entries(headers)) expect(request.headers.get(name)).toBe(value)
   })
 
-  it('서버에 없는 API 목록은 정해 둔 4건과 같고 모두 표에 있다', () => {
+  it('서버에 없는 API 목록은 정해 둔 3건과 같고 모두 표에 있다', () => {
     const specs = ROWS.map((row) => row.spec)
     expect(MISSING_ON_SERVER.map(({ operation }) => operation)).toEqual([
       'GET /me/notification-settings',
       'PUT /me/notification-settings',
       'PUT /admin/integrations/slack',
-      'PUT /projects/{projectId}/owners',
     ])
     for (const { operation } of MISSING_ON_SERVER) expect(specs).toContain(operation)
   })

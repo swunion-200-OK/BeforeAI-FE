@@ -60,14 +60,13 @@ describe('서버에 없는 API (실제 서버 모드)', () => {
     expect(expired).not.toHaveBeenCalled()
   })
 
-  it('목록의 4건은 404면 모두 "아직 없는 기능" 오류가 된다', async () => {
+  it('목록의 3건은 404면 모두 "아직 없는 기능" 오류가 된다', async () => {
     const { endpoints, missing } = await realMode(routeNotFound)
-    const { adminApi, meApi, projectsApi } = endpoints
+    const { adminApi, meApi } = endpoints
     const calls = [
       () => meApi.notificationSettings(),
       () => meApi.updateNotificationSettings({ slackUserId: null, approvalRequests: true, requestResults: true }),
       () => adminApi.updateSlack({ workspace: 'w', defaultChannel: '#c' }),
-      () => projectsApi.updateOwners('p', ['a', 'b']),
     ]
     expect(calls).toHaveLength(missing.MISSING_ON_SERVER.length)
     for (const call of calls) {
@@ -126,7 +125,7 @@ describe('서버에 없는 API (실제 서버 모드)', () => {
     )
     expect(missing.isMissingOnServer(await endpoints.meApi.notificationSettings().catch((reason: unknown) => reason))).toBe(false)
     status = 403
-    expect(missing.isMissingOnServer(await endpoints.projectsApi.updateOwners('p', ['a', 'b']).catch((reason: unknown) => reason))).toBe(false)
+    expect(missing.isMissingOnServer(await endpoints.adminApi.updateSlack({ workspace: 'w', defaultChannel: '#c' }).catch((reason: unknown) => reason))).toBe(false)
   })
 })
 

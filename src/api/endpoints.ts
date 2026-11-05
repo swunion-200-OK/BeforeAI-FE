@@ -261,7 +261,7 @@ export const projectsApi = {
   restoreSpec: (projectId: string, version: number, reason?: string) =>
     http<ProjectSpec>('POST', `/projects/${projectId}/spec/versions/${version}/restore`, reason?.trim() ? { body: { reason: reason.trim() } } : undefined),
   updateOwners: (projectId: string, ownerIds: string[]) =>
-    whenOnServer(http<Project>('PUT', `/projects/${projectId}/owners`, { body: { ownerIds } })),
+    http<Project>('PUT', `/projects/${projectId}/owners`, { body: { ownerIds } }),
   createChangeRequest: (projectId: string, body: { content: string; reason: string }) =>
     http<SpecChangeRequest>('POST', `/projects/${projectId}/spec/change-requests`, { body }),
   changeRequests: (projectId: string, status?: ChangeRequestStatus) =>

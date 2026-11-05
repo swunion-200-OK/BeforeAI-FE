@@ -12,7 +12,6 @@ export const MISSING_ON_SERVER = [
   { operation: 'GET /me/notification-settings', screen: 'features/me/MePage', branches: [] },
   { operation: 'PUT /me/notification-settings', screen: 'features/me/MePage', branches: [] },
   { operation: 'PUT /admin/integrations/slack', screen: 'features/admin/SlackTab', branches: [] },
-  { operation: 'PUT /projects/{projectId}/owners', screen: 'features/projects/OwnersModal', branches: [] },
 ] as const
 
 export const MISSING_ON_SERVER_MESSAGE = '아직 서버에 없는 기능입니다'

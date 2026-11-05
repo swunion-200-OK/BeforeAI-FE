@@ -1,7 +1,6 @@
 import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { USE_MOCK } from '../../api/client'
 import { projectsApi } from '../../api/endpoints'
 import { withRo } from '../../lib/josa'
 import type { Me, Project } from '../../api/types'
@@ -116,16 +115,11 @@ function ProjectBody({ project }: { project: Project }) {
               {ownerNames.join(', ')}
             </span>
             {inactiveOwners > 0 && <span className="font-medium text-medium">비활성 계정 {inactiveOwners}명</span>}
-            {canEdit &&
-              (USE_MOCK ? (
-                <button type="button" className={META_BUTTON} onClick={() => setManagingOwners(true)}>
-                  담당자 관리
-                </button>
-              ) : (
-                <span role="status" className="text-sm text-ink-3">
-                  담당자 변경은 현재 서버에서 지원하지 않습니다
-                </span>
-              ))}
+            {canEdit && (
+              <button type="button" className={META_BUTTON} onClick={() => setManagingOwners(true)}>
+                담당자 관리
+              </button>
+            )}
             <button
               type="button"
               aria-expanded={showInfo}
