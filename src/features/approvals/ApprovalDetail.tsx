@@ -25,6 +25,7 @@ import { toast } from "../../components/toast";
 import {
   Banner,
   Button,
+  ConfirmModal,
   EmptyState,
   ErrorState,
   Mono,
@@ -858,19 +859,25 @@ export function ApprovalDetail({
                   >
                     {rejectLabel}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    disabled={
-                      selected.length === 0 ||
-                      sign.isPending ||
-                      !accepting ||
-                      external
-                    }
-                    onClick={() => setDecision("change")}
-                  >
-                    수정 요청
-                  </Button>
+                  {USE_MOCK ? (
+                    <Button
+                      variant="ghost"
+                      size="md"
+                      disabled={
+                        selected.length === 0 ||
+                        sign.isPending ||
+                        !accepting ||
+                        external
+                      }
+                      onClick={() => setDecision("change")}
+                    >
+                      수정 요청
+                    </Button>
+                  ) : (
+                    <p role="status" className="self-center text-xs text-ink-3">
+                      현재 서버는 수정 요청을 지원하지 않습니다.
+                    </p>
+                  )}
                 </div>
               </>
             )}
@@ -879,7 +886,7 @@ export function ApprovalDetail({
       </aside>
 
       <ReasonModal
-        open={decision === "reject"}
+        open={USE_MOCK && decision === "reject"}
         title={docMode ? "문서를 적용하지 않습니다" : "작업을 거부합니다"}
         description="선택한 작업을 거부하면 요청 전체가 거부 상태가 되고 요청자에게 알립니다."
         label="사유"
@@ -889,8 +896,19 @@ export function ApprovalDetail({
         onConfirm={(reason) => decide.mutate({ reason, kind: "reject" })}
         onClose={() => setDecision(null)}
       />
+      <ConfirmModal
+        open={!USE_MOCK && decision === "reject"}
+        title={docMode ? "문서를 미적용 처리할까요?" : "요청을 거부할까요?"}
+        confirmLabel={rejectLabel}
+        danger
+        loading={decide.isPending}
+        onConfirm={() => decide.mutate({ reason: "", kind: "reject" })}
+        onClose={() => setDecision(null)}
+      >
+        선택한 작업과 요청 전체가 거부 상태로 바뀝니다. 현재 서버는 거부 사유를 저장하지 않습니다.
+      </ConfirmModal>
       <ReasonModal
-        open={decision === "change"}
+        open={USE_MOCK && decision === "change"}
         title="수정을 요청합니다"
         description="요청은 거부 상태가 되고, 적은 내용이 요청자에게 전달됩니다."
         label="수정할 내용"
