@@ -2,18 +2,29 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { requestsApi } from '../../api/endpoints'
-import type { RequestStatus, RequestSummary, Risk } from '../../api/types'
-import { RequestStatusBadge, RiskBadge } from '../../components/badges'
-import { SegmentedTabs, TaskProgress } from '../../components/rich'
+import type { RequestStatus, RequestSummary } from '../../api/types'
+import { RequestStatusBadge } from '../../components/badges'
+import { SegmentedTabs } from '../../components/rich'
 import { Button, EmptyState, ErrorState, PageHeader, Select, Sheet, Spinner } from '../../components/ui'
+import { analysisPollMs } from '../../lib/analysisWait'
 import { formatDateTime } from '../../lib/format'
 import { REQUEST_STATUS_LABEL } from '../../lib/labels'
 import { useIsExternal, useProjects } from '../../lib/queries'
 import { STATUS_GROUPS, pathFor, type StatusGroup } from './requestPaths'
 
-const LIVE: RequestStatus[] = ['ANALYZING', 'RUNNING', 'ROLLING_BACK']
+const LIVE: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
+const LIST_POLL_MS = 3000
+
+/** 목록을 얼마 만에 다시 읽을지. 끝나지 않는 분석 하나 때문에 계속 빠르게 읽지 않는다. */
+function listPollMs(requests: RequestSummary[]): number | false {
+  const intervals = requests.flatMap((request) => {
+    if (LIVE.includes(request.status)) return [LIST_POLL_MS]
+    const interval = request.status === 'ANALYZING' ? analysisPollMs(request, LIST_POLL_MS) : false
+    return interval === false ? [] : [interval]
+  })
+  return intervals.length > 0 ? Math.min(...intervals) : false
+}
 const PAGE_SIZE = 50
-const RISK_HIGHEST_FIRST: Risk[] = ['FORBIDDEN', 'HIGH', 'MEDIUM', 'LOW']
 
 type GroupId = StatusGroup['id'] | 'all'
 
@@ -34,8 +45,6 @@ function RequestRow({
 }) {
   const navigate = useNavigate()
   const to = pathFor(request, external)
-  const summary = request.taskSummary
-  const risk = summary && RISK_HIGHEST_FIRST.find((item) => summary.risks[item] > 0)
   return (
     <tr data-clickable="true" onClick={() => navigate(to)}>
       <td className="w-px whitespace-nowrap">
@@ -51,8 +60,6 @@ function RequestRow({
         </Link>
       </td>
       <td className="whitespace-nowrap text-ink-2">{projectName}</td>
-      <td className="whitespace-nowrap">{risk && <RiskBadge risk={risk} />}</td>
-      <td className="whitespace-nowrap">{summary && <TaskProgress summary={summary} />}</td>
       {showRequester && <td className="whitespace-nowrap text-ink-2">{request.requester.name}</td>}
       <td className="whitespace-nowrap text-ink-2 tabular-nums">{formatDateTime(request.createdAt)}</td>
     </tr>
@@ -85,8 +92,7 @@ export default function RequestListPage() {
         limit: PAGE_SIZE,
       }),
     getNextPageParam: (last) => last.nextCursor ?? undefined,
-    refetchInterval: (state) =>
-      state.state.data?.pages.some((page) => page.items.some((r) => LIVE.includes(r.status))) ? 3000 : false,
+    refetchInterval: (state) => listPollMs(state.state.data?.pages.flatMap((page) => page.items) ?? []),
   })
 
   // TODO(spec): 상태별 건수를 주는 API가 없어 목록 최대치(100건)로 센다. 다음 쪽이 있으면 건수가 실제보다 적으므로 숫자를 쓰지 않는다.
@@ -195,8 +201,6 @@ export default function RequestListPage() {
                   <th>상태</th>
                   <th>요청</th>
                   <th>프로젝트</th>
-                  <th>위험도</th>
-                  <th>진행</th>
                   {!mine && <th>요청자</th>}
                   <th>시각</th>
                 </tr>

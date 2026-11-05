@@ -3,9 +3,9 @@ import { ChevronDown, Plus } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { forbiddenApi, type ForbiddenInput } from '../../api/endpoints'
 import type { ForbiddenProposal, ForbiddenProposalStatus, ForbiddenRule } from '../../api/types'
+import { useMe } from '../../app/AuthProvider'
 import { toast } from '../../components/toast'
 import {
-  Banner,
   Button,
   ConfirmModal,
   ErrorState,
@@ -17,10 +17,11 @@ import {
   Sheet,
   Spinner,
 } from '../../components/ui'
-import { formatDateTime } from '../../lib/format'
+import { UNSIGNED_POLICY_NOTICE, policyAdminProof } from '../../crypto/adminProof'
 import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames, useDepartments, useRefreshAll } from '../../lib/queries'
 import { proposalsQuery } from '../admin/adminQueries'
+import { onPolicyError } from '../admin/policyChange'
 import { ForbiddenFields } from './ForbiddenFields'
 import { EMPTY_FORBIDDEN_INPUT, isForbiddenInputComplete } from './forbiddenInput'
 import { ForbiddenRuleTable, RELEASE_PENDING_NOTICE } from './ForbiddenRuleTable'
@@ -28,18 +29,24 @@ import { ForbiddenRuleTable, RELEASE_PENDING_NOTICE } from './ForbiddenRuleTable
 const STATUSES: ForbiddenProposalStatus[] = ['OPEN', 'CONFIRMED', 'REJECTED']
 
 function AddRuleModal({ onClose }: { onClose: () => void }) {
+  const me = useMe()
   const refresh = useRefreshAll()
   const { data: departments } = useDepartments()
   const [departmentId, setDepartmentId] = useState('')
   const [input, setInput] = useState<ForbiddenInput>(EMPTY_FORBIDDEN_INPUT)
   const selected = departmentId || departments?.[0]?.id || ''
+  const finish = async () => {
+    await refresh()
+    onClose()
+  }
   const add = useMutation({
-    mutationFn: () => forbiddenApi.addRule({ ...input, departmentId: selected }),
+    mutationFn: () => forbiddenApi.addRule({ ...input, departmentId: selected, adminProof: policyAdminProof(me.id) }),
+    meta: { silent: true },
     onSuccess: async () => {
       toast.success('금지 규칙을 추가했습니다. 웹쉘 정책에도 바로 반영됩니다')
-      await refresh()
-      onClose()
+      await finish()
     },
+    onError: onPolicyError(finish),
   })
   return (
     <Modal
@@ -74,6 +81,7 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
           )}
         </Field>
         <ForbiddenFields value={input} onChange={setInput} />
+        <p className="text-sm text-ink-3">{UNSIGNED_POLICY_NOTICE}</p>
       </div>
     </Modal>
   )
@@ -96,7 +104,7 @@ function ProposalTable({
             <th>유형</th>
             <th>대상</th>
             <th>사유</th>
-            <th>제안자</th>
+            <th>부서</th>
             <th aria-label="처리" />
           </tr>
         </thead>
@@ -107,16 +115,8 @@ function ProposalTable({
               <td>
                 <Mono className="whitespace-nowrap">{proposal.target}</Mono>
               </td>
-              <td className="min-w-40">
-                {proposal.reason}
-                {proposal.rejectReason && <p className="mt-0.5 text-[0.875rem] text-high">반려 사유: {proposal.rejectReason}</p>}
-              </td>
-              <td className="whitespace-nowrap">
-                {proposal.proposer.name}
-                <p className="mt-0.5 text-[0.875rem] text-ink-3">
-                  {departmentName(proposal.departmentId)}, {formatDateTime(proposal.createdAt)}
-                </p>
-              </td>
+              <td className="min-w-40">{proposal.reason}</td>
+              <td className="whitespace-nowrap">{departmentName(proposal.departmentId)}</td>
               <td className="text-right">{renderLast(proposal, index)}</td>
             </tr>
           ))}
@@ -127,17 +127,23 @@ function ProposalTable({
 }
 
 function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
+  const me = useMe()
   const refresh = useRefreshAll()
   const departmentName = useDepartmentNames()
   const [confirming, setConfirming] = useState<ForbiddenProposal | null>(null)
   const [rejecting, setRejecting] = useState<ForbiddenProposal | null>(null)
+  const finishConfirm = async () => {
+    setConfirming(null)
+    await refresh()
+  }
   const confirm = useMutation({
-    mutationFn: (proposal: ForbiddenProposal) => forbiddenApi.confirm(proposal.id),
+    mutationFn: (proposal: ForbiddenProposal) => forbiddenApi.confirm(proposal.id, policyAdminProof(me.id)),
+    meta: { silent: true },
     onSuccess: async () => {
       toast.success('제안을 확정했습니다. 서비스 정책과 웹쉘 정책에 반영됩니다')
-      setConfirming(null)
-      await refresh()
+      await finishConfirm()
     },
+    onError: onPolicyError(finishConfirm),
   })
   const reject = useMutation({
     mutationFn: ({ proposal, reason }: { proposal: ForbiddenProposal; reason: string }) =>
@@ -177,7 +183,7 @@ function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
             <p>
               {departmentName(confirming.departmentId)}의 <Mono>{confirming.target}</Mono> 작업을 금지합니다.
             </p>
-            <p className="mt-2">확정하면 서비스 정책과 웹쉘 정책에 함께 반영됩니다.</p>
+            <p className="mt-2">확정하면 서비스 정책과 웹쉘 정책에 함께 반영됩니다. {UNSIGNED_POLICY_NOTICE}</p>
           </>
         )}
       </ConfirmModal>
@@ -234,13 +240,19 @@ function RulesSection({
   const refresh = useRefreshAll()
   const [adding, setAdding] = useState(false)
   const [releasing, setReleasing] = useState<ForbiddenRule | null>(null)
+  const finishRelease = async () => {
+    setReleasing(null)
+    await refresh()
+  }
   const release = useMutation({
-    mutationFn: (rule: ForbiddenRule) => forbiddenApi.release(rule.id),
+    // 해제 요청은 adminProof가 선택이라 자리 표시 값을 보내지 않는다. 서버가 요청만 저장하고 다음 정책 변경 때 웹쉘에 함께 보낸다.
+    mutationFn: ({ rule, reason }: { rule: ForbiddenRule; reason: string }) => forbiddenApi.release(rule.id, { reason }),
+    meta: { silent: true },
     onSuccess: async () => {
       toast.info(`해제를 요청했습니다. ${RELEASE_PENDING_NOTICE}`)
-      setReleasing(null)
-      await refresh()
+      await finishRelease()
     },
+    onError: onPolicyError(finishRelease),
   })
 
   return (
@@ -261,7 +273,7 @@ function RulesSection({
           rules={rules}
           showDepartment
           renderAction={(rule) =>
-            rule.status === 'ACTIVE' && (
+            rule.status === 'CONFIRMED' && (
               <Button size="sm" onClick={() => setReleasing(rule)}>
                 해제 요청
               </Button>
@@ -270,27 +282,24 @@ function RulesSection({
         />
       )}
       {adding && <AddRuleModal onClose={() => setAdding(false)} />}
-      <ConfirmModal
+      <ReasonModal
         open={Boolean(releasing)}
         title="금지 규칙 해제 요청"
+        description={
+          releasing && (
+            <>
+              <Mono>{releasing.target}</Mono> 금지 규칙의 해제를 요청합니다. 요청만으로는 풀리지 않습니다. 상태가 해제 대기로 바뀌고,{' '}
+              {RELEASE_PENDING_NOTICE}.
+            </>
+          )
+        }
+        label="해제 사유"
         confirmLabel="해제 요청"
+        danger={false}
         loading={release.isPending}
         onClose={() => setReleasing(null)}
-        onConfirm={() => releasing && release.mutate(releasing)}
-      >
-        {releasing && (
-          <>
-            <p>
-              <Mono>{releasing.target}</Mono> 금지 규칙의 해제를 요청합니다.
-            </p>
-            <div className="mt-3">
-              <Banner tone="warning">
-                요청만으로는 풀리지 않습니다. 상태가 해제 대기로 바뀌고, {RELEASE_PENDING_NOTICE}.
-              </Banner>
-            </div>
-          </>
-        )}
-      </ConfirmModal>
+        onConfirm={(reason) => releasing && release.mutate({ rule: releasing, reason })}
+      />
     </Sheet>
   )
 }
@@ -307,9 +316,7 @@ export function ForbiddenAdminPanel() {
   })
 
   const open = proposalResults[0].data ?? []
-  const past = [...(proposalResults[1].data ?? []), ...(proposalResults[2].data ?? [])].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt),
-  )
+  const past = [...(proposalResults[1].data ?? []), ...(proposalResults[2].data ?? [])]
   const proposalError = proposalResults.find((result) => result.isError)
   const ruleError = ruleResults.find((result) => result.isError)
 

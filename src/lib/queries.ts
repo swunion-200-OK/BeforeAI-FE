@@ -3,6 +3,7 @@ import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { networkStore } from '../api/client'
 import { approvalsApi, orgApi, projectsApi, requestsApi } from '../api/endpoints'
 import type { Network, RequestStatus } from '../api/types'
+import { analysisPollMs } from './analysisWait'
 
 /** 응답 헤더 X-Network로 받은 현재 접속 환경. 모르면 더 좁은 쪽(외부망)으로 본다. */
 export function useNetwork(): Network {
@@ -35,11 +36,11 @@ export function useDepartmentNames(): (id: string | null | undefined) => string 
   return useCallback((id) => (id ? (names.get(id) ?? id) : '소속 없음'), [names])
 }
 
-const LIVE_STATUSES: RequestStatus[] = ['ANALYZING', 'RUNNING', 'ROLLING_BACK']
+const LIVE_STATUSES: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
 /** 다른 사람의 승인·수정으로 바뀔 수 있는 상태 */
 const WAITING_STATUSES: RequestStatus[] = ['PENDING_APPROVAL', 'REAPPROVAL_REQUIRED', 'VERIFICATION_FAILED']
 
-/** 분석·실행 중에는 1초, 승인을 기다리는 동안에는 3초마다 다시 읽어 상태 변화를 따라간다. */
+/** 실행 중에는 1초, 승인을 기다리는 동안에는 3초마다 다시 읽는다. 분석은 끝나지 않을 수도 있어 오래 걸릴수록 줄이다가 멈춘다. */
 export function useRequest(requestId: string | undefined) {
   return useQuery({
     queryKey: ['request', requestId],
@@ -47,6 +48,7 @@ export function useRequest(requestId: string | undefined) {
     enabled: Boolean(requestId),
     refetchInterval: (query) => {
       const status = query.state.data?.status
+      if (status === 'ANALYZING') return analysisPollMs(query.state.data as { updatedAt: string }, 1000)
       if (status && LIVE_STATUSES.includes(status)) return 1000
       return status && WAITING_STATUSES.includes(status) ? 3000 : false
     },

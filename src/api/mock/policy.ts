@@ -1,17 +1,16 @@
 import type {
-  ApprovalMatrixRow,
+  ApprovalMatrixRule,
   ApproverRequirement,
   ApproverRule,
   PolicyPreset,
   Project,
   Risk,
   Task,
-  TaskApprovalStatus,
   TaskContent,
   TaskType,
   UserRef,
 } from '../types'
-import { db, requireProject, type StoredRequest, type StoredUser } from './store'
+import { HttpError, db, requireProject, type StoredRequest, type StoredUser } from './store'
 
 /**
  * 승인 기준표(기능 명세서 5.2)와 규모별 프리셋(5.5)으로 필요한 승인 규칙을 정한다.
@@ -21,19 +20,33 @@ export function requiredRules(
   type: TaskType,
   risk: Risk,
   preset: PolicyPreset,
-  matrix: ApprovalMatrixRow[],
+  matrix: ApprovalMatrixRule[],
 ): ApproverRule[] {
   if (risk === 'FORBIDDEN') return []
   const row = matrix.find((m) => m.taskType === type)
   // 위험도는 기준표의 기본값보다 내릴 수 없다 (5.2). 기준표에 없는 유형은 가장 엄격하게 본다.
-  if (risk === 'HIGH' || (row?.defaultRisk ?? 'HIGH') === 'HIGH') {
+  if (risk === 'HIGH' || (row?.risk ?? 'HIGH') === 'HIGH') {
     const rules: ApproverRule[] = ['PROJECT_OWNER']
     if (preset !== 'SMALL') rules.push('DEPT_MANAGER')
     if (preset === 'LARGE') rules.push('ADMIN')
     return rules
   }
-  if (row?.approverRule === 'PROJECT_OWNER') return ['PROJECT_OWNER']
+  if (row?.requiredApprovers.some((approver) => approver.rule === 'PROJECT_OWNER')) return ['PROJECT_OWNER']
   return [preset === 'LARGE' ? 'SAME_DEPT_OTHER' : 'ANYONE']
+}
+
+/** 서버의 StubAdminProofVerifier와 같게 키 ID와 서명이 있는지만 본다. 웹쉘이 검증할 내용은 아직 정해지지 않았다. */
+export function assertAdminProof(proof: { keyId?: unknown; signature?: unknown } | null | undefined) {
+  if (!proof?.keyId || typeof proof.signature !== 'string' || !proof.signature.trim()) {
+    throw new HttpError(400, 'VALIDATION_ERROR', '관리자 서명(adminProof)이 필요합니다')
+  }
+}
+
+/** 정책 변경이 새 버전을 만든다. 서버처럼 응답의 policyVersion으로 돌려준다. */
+export function nextPolicyVersion(): number {
+  const { policy } = db()
+  policy.version += 1
+  return policy.version
 }
 
 function candidatesOf(rule: ApproverRule, project: Project, requester: UserRef): string[] | undefined {
@@ -119,51 +132,9 @@ export function isTaskFullyApproved(task: Task, request: StoredRequest): boolean
   )
 }
 
-/** 외부망에서 승인할 수 있는 작업: 코드 수정이고 위험도 낮음·중간 (5.6) */
+/** 외부망에서 막는 작업: 배포이거나 고위험이다 (서버 ApprovalPolicy.internalOnly) */
 export function isExternallyApprovable(task: Task): boolean {
-  return (task.type === 'CODE_MINOR' || task.type === 'CODE_FEATURE') && (task.risk === 'LOW' || task.risk === 'MEDIUM')
-}
-
-/**
- * 제출과 함께 본인 승인이 되는 작업.
- * TODO(spec): 문서 작업은 완성본을 보고 적용/미적용을 정해야 하므로(5.4) 자동 승인에서 뺐다.
- */
-export function isSelfApprovable(task: Task): boolean {
-  return (
-    task.status === 'PENDING' &&
-    task.type !== 'DOC' &&
-    (task.risk === 'LOW' || task.risk === 'MEDIUM') &&
-    task.requiredApprovers.every((r) => r.rule === 'ANYONE')
-  )
-}
-
-export function toApprovalStatus(request: StoredRequest): TaskApprovalStatus[] {
-  if (!request.plan) return []
-  const { users } = db()
-  return request.plan.tasks
-    .filter((task) => task.status !== 'BLOCKED')
-    .map((task) => ({
-      taskId: task.id,
-      requirements: task.requiredApprovers.map((requirement) => {
-        const approvedBy = approvalsFor(request, task.id, requirement.rule).map((a) => ({
-          userId: a.userId,
-          name: a.name,
-          network: a.network,
-          at: a.at,
-          self: a.self,
-        }))
-        return {
-          rule: requirement.rule,
-          count: requirement.count,
-          candidates: (requirement.candidates ?? []).map((id) => ({
-            id,
-            name: users.find((u) => u.id === id)?.name ?? id,
-          })),
-          approvedBy,
-          satisfied: approvedBy.length >= requirement.count,
-        }
-      }),
-    }))
+  return task.type !== 'DEPLOY' && task.risk !== 'HIGH'
 }
 
 export function isCandidate(user: StoredUser, request: StoredRequest): boolean {

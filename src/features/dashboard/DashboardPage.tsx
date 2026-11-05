@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router'
 import { dashboardApi, requestsApi } from '../../api/endpoints'
+import { MissingOnServerError } from '../../api/missingOnServer'
 import type { DashboardScope, RequestStatus, Role } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useDepartmentNames, usePendingApprovals } from '../../lib/queries'
 import { groupByRequest } from '../approvals/queueGroups'
 import { DashboardDetails, KillAllAction, REQUEST_LIMIT, RequestsPanel, TodoPanel } from './DashboardPanels'
+import { dashboardFromRequests, unknownDashboard } from './fallbackDashboard'
 import { ATTENTION_STATUSES } from './statusGroups'
 
 const SCOPE_BY_ROLE: Record<Role, DashboardScope> = {
@@ -65,11 +67,17 @@ export default function DashboardPage() {
   const departmentName = useDepartmentNames()
   const pending = usePendingApprovals()
   const scope = SCOPE_BY_ROLE[me.role]
+  // null이면 서버에 집계 API가 아직 없다는 뜻이다 (api/missingOnServer.ts). 없는 API를 5초마다 묻지 않는다.
   const query = useQuery({
     queryKey: ['dashboard', scope],
-    queryFn: () => dashboardApi.get(scope),
-    refetchInterval: 5000,
+    queryFn: () =>
+      dashboardApi.get(scope).catch((reason: unknown) => {
+        if (reason instanceof MissingOnServerError) return null
+        throw reason
+      }),
+    refetchInterval: (current) => (current.state.data === null ? false : 5000),
   })
+  const noAggregateApi = query.data === null
 
   // 직원의 요청 목록은 원래 본인 요청뿐이라 범위를 넓히지 않는다.
   const wholeScope = me.role !== 'EMPLOYEE'
@@ -78,7 +86,15 @@ export default function DashboardPage() {
   const statusTo = (status: RequestStatus) =>
     wholeScope ? `/requests?status=${status}&scope=all` : `/requests?status=${status}`
 
-  const data = query.data
+  // 집계 API가 없는 동안에는 서버에 있는 요청 목록을 직접 센다. 위험도 분포는 목록에 없어 모른다고 둔다.
+  const counted = useQuery({
+    queryKey: ['dashboard', 'counted', scope],
+    queryFn: async () => dashboardFromRequests(scope, await requestsApi.listAll({ mine: wholeScope ? undefined : true })),
+    enabled: noAggregateApi,
+    refetchInterval: 15_000,
+  })
+  // 세지도 못했으면 숫자만 비우고, 승인 대기와 요청 목록은 그대로 쓰게 한다.
+  const data = query.data ?? counted.data ?? (noAggregateApi && counted.isError ? unknownDashboard(scope) : undefined)
   // 상태별 건수를 받지 못했으면 0건이 아니라 모르는 것이다.
   const countsKnown = Boolean(data?.statusCounts)
   const count = (status: RequestStatus) => data?.statusCounts?.[status] ?? 0
@@ -129,10 +145,16 @@ export default function DashboardPage() {
         // 건수를 모를 때 비상 버튼을 숨기면 실행 중인데도 못 멈춘다.
         actions={me.role === 'ADMIN' ? <KillAllAction visible={Boolean(data) && (!countsKnown || count('RUNNING') > 0)} /> : undefined}
       />
-      {query.isPending && <Spinner />}
+      {(query.isPending || (noAggregateApi && counted.isPending)) && <Spinner />}
       {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
       {data && (
         <div className="flex flex-col gap-6">
+          {noAggregateApi && (
+            <p className="text-sm text-ink-3">
+              {counted.isError ? '요청 건수를 불러오지 못했습니다. ' : '집계 API가 아직 서버에 없어, 볼 수 있는 요청을 직접 세었습니다. '}
+              위험도 분포와 부서별 비교는 서버에 추가되면 보입니다.
+            </p>
+          )}
           <div role="group" aria-label="아래 목록 고르기" className="grid grid-cols-4 border-b border-rule">
             <Stat label="내 승인 대기" value={myPending} selected={view === 'todo'} onSelect={() => select('todo')} />
             <Stat label="실행 중" value={countsKnown ? count('RUNNING') : null} selected={view === 'running'} onSelect={() => select('running')} />

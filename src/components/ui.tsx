@@ -10,6 +10,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from 'react'
+import { MISSING_ON_SERVER_MESSAGE, isMissingOnServer } from '../api/missingOnServer'
 import { INTERNAL_ONLY_MESSAGE } from '../api/errors'
 import { useIsExternal } from '../lib/queries'
 import { refreshToastHost } from './toast'
@@ -212,6 +213,8 @@ export function Spinner({ label }: { label?: string }) {
 }
 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  // 없는 API는 다시 불러와도 같으니 오류처럼 보이지 않게 하고 다시 시도 버튼도 두지 않는다.
+  if (isMissingOnServer(error)) return <EmptyState title={MISSING_ON_SERVER_MESSAGE}>서버에 API가 추가되면 여기에 표시됩니다.</EmptyState>
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
       <p className="text-base text-high">{error instanceof Error ? error.message : '불러오지 못했습니다'}</p>

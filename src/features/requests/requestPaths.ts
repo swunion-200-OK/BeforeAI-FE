@@ -27,17 +27,24 @@ export const STATUS_GROUPS: StatusGroup[] = [
 
 /**
  * 승인대기인데 승인이 다 모였는지. 그러면 웹쉘에 연결되지 않아 다시 시도하는 중이다 (API 명세 4.5).
- * 승인 현황은 명세에 모양이 없는 필드라 비어 있을 수 있다. 명세가 약속한 작업 상태로 판단해야
- * 승인 현황을 못 받았을 때 "모두 모였다"고 잘못 말하지 않는다.
+ * 서버가 알려 주는 작업 상태로 판단한다. 승인된 작업이 하나도 없으면 "모두 모였다"고 말하지 않는다.
  */
-export function allApprovalsCollected(request: Pick<RequestDetail, 'status' | 'plan'>): boolean {
-  const tasks = request.plan?.tasks ?? []
-  return request.status === 'PENDING_APPROVAL' && tasks.length > 0 && !tasks.some((task) => task.status === 'PENDING')
+export function allApprovalsCollected(request: Pick<RequestDetail, 'status' | 'currentPlan'>): boolean {
+  const tasks = request.currentPlan?.tasks ?? []
+  return (
+    request.status === 'PENDING_APPROVAL' &&
+    tasks.some((task) => task.status === 'APPROVED') &&
+    !tasks.some((task) => task.status === 'PENDING')
+  )
 }
 
 /** 제출 전이나 승인을 받지 않고 끝난 작업에는 승인 현황을 그리지 않는다. */
-export function approvalToShow(request: RequestDetail, task: Task): TaskApprovalStatus | undefined {
-  const status = request.approvalStatus.find((item) => item.taskId === task.id)
+export function approvalToShow(
+  statuses: TaskApprovalStatus[],
+  request: Pick<RequestDetail, 'status'>,
+  task: Task,
+): TaskApprovalStatus | undefined {
+  const status = statuses.find((item) => item.taskId === task.id)
   if (!status || request.status === 'REVIEWING') return undefined
   const hasRecords = status.requirements.some((requirement) => requirement.approvedBy.length > 0)
   const waiting = request.status === 'PENDING_APPROVAL' || request.status === 'REAPPROVAL_REQUIRED'

@@ -84,17 +84,16 @@ export interface UserRef {
 }
 
 export interface User extends UserRef {
-  employeeNo: string
+  employeeNumber: string
   role: Role
-  slackUserId: string | null
   active: boolean
-  mustChangePassword: boolean
 }
 
+/** OTP 등록 여부와 키 대기 상태는 서버가 알려 주지 않는다. 키 상태는 GET /me/signing-keys로 본다. */
 export interface Me extends User {
   network: Network
-  signingKeyStatus: SigningKeyStatus | 'NONE'
-  otpEnrolled: boolean
+  passwordChangeRequired: boolean
+  hasRegisteredSigningKey: boolean
 }
 
 export interface Department {
@@ -105,24 +104,49 @@ export interface Department {
 export interface LoginResponse {
   otpRequired: boolean
   /** 외부망이면 OTP 확인에 쓰는 임시 토큰 */
-  tempToken?: string
+  temporaryToken?: string
   accessToken?: string
-  mustChangePassword?: boolean
+  passwordChangeRequired?: boolean
 }
 
 export interface TokenResponse {
   accessToken: string
-  mustChangePassword?: boolean
+}
+
+/** POST /me/otp. 발급 단계에는 secret과 otpauthUri가 오고, 확인을 마치면 verified만 온다. */
+export interface OtpEnrollResponse {
+  secret?: string
+  otpauthUri?: string
+  verified: boolean
 }
 
 export interface SigningKey {
-  keyId: string
-  userId: string
-  userName: string
+  id: string
+  algorithm: string
   publicKey: string
   status: SigningKeyStatus
   createdAt: string
-  registeredAt: string | null
+}
+
+export interface AdminSigningKey extends SigningKey {
+  userId: string
+}
+
+/** 관리자 서명. 서명 대상은 API마다 다르다. */
+export interface AdminProof {
+  keyId: string
+  signature?: string
+}
+
+export interface RegisterKeyResponse {
+  keyId: string
+  status: SigningKeyStatus
+  policyVersion: number
+}
+
+export interface ResetPasswordResponse {
+  userId: string
+  initialPassword: string
 }
 
 // TODO(spec): 알림 설정의 항목은 명세에 없어 DEP-04와 권한 매트릭스 문구에서 뽑았다.
@@ -139,21 +163,28 @@ export interface CreateUserResponse {
 
 // ── 프로젝트·기획서 ────────────────────────────────────────
 
+export interface ProjectOwner {
+  id: string
+  name: string
+}
+
 export interface Project {
   id: string
   name: string
   departmentId: string
   repository: string
-  baseCommit: string
-  owners: UserRef[]
+  owners: ProjectOwner[]
 }
 
 export interface ProjectSpec {
   projectId: string
   version: number
   body: string
-  updatedAt: string
-  updatedBy: { id: string; name: string }
+  createdAt: string
+  /** 저장한 사람의 ID. 서버는 이름을 주지 않는다 */
+  createdBy: string
+  /** 복원으로 만든 버전이면 원본 버전 */
+  restoredFromVersion: number | null
 }
 
 export type ChangeRequestStatus = 'OPEN' | 'ACCEPTED' | 'REJECTED'
@@ -163,21 +194,32 @@ export interface SpecChangeRequest {
   projectId: string
   content: string
   reason: string
-  requester: UserRef
+  requesterId: string
   status: ChangeRequestStatus
-  rejectReason: string | null
+  rejectionReason: string | null
   createdAt: string
-  decidedAt: string | null
+}
+
+export interface SpecChangeRequestAccepted {
+  changeRequest: SpecChangeRequest
+  spec: ProjectSpec
 }
 
 // ── 정책·승인 기준표 ───────────────────────────────────────
 
 export interface Policy {
   preset: PolicyPreset
-  slackNotifications: 'OPTIONAL' | 'ON'
-  auditRetention: string
-  // TODO(spec): Slack 연동은 PUT만 있어, 현재 값을 정책 조회에 함께 담았다.
-  slackIntegration: SlackIntegration | null
+  version: number
+  approvalMatrix: ApprovalMatrixRule[]
+  policyHash: string
+  /** 서버에 없는 값이다 (api/missingOnServer.ts). 목만 준다. 없으면 Slack 화면이 아직 없는 기능이라고 말한다 */
+  slackIntegration?: SlackIntegration | null
+}
+
+export interface ApplyPresetResponse {
+  preset: PolicyPreset
+  policyVersion: number
+  webshellApplied: boolean
 }
 
 export interface SlackIntegration {
@@ -185,17 +227,31 @@ export interface SlackIntegration {
   defaultChannel: string
 }
 
-export interface ApprovalMatrixRow {
+/** 작업 유형·위험도별 필요한 승인권자. 서버 기준표에 모든 유형이 있지는 않다 */
+export interface ApprovalMatrixRule {
   taskType: TaskType
-  label: string
-  examples: string
-  defaultRisk: Exclude<Risk, 'FORBIDDEN'>
-  approverRule: ApproverRule
+  risk: Risk
+  requiredApprovers: ApproverRequirement[]
+}
+
+export interface ApprovalMatrixResponse {
+  rules: ApprovalMatrixRule[]
+}
+
+export interface UpdateApprovalMatrixResponse {
+  policyVersion: number
+  webshellApplied: boolean
+  rules: ApprovalMatrixRule[]
+}
+
+export interface KillAllResponse {
+  status: string
+  executionIds: string[]
 }
 
 // ── 금지 작업 ──────────────────────────────────────────────
 
-export type ForbiddenRuleStatus = 'ACTIVE' | 'RELEASE_PENDING'
+export type ForbiddenRuleStatus = 'CONFIRMED' | 'RELEASE_PENDING'
 export type ForbiddenProposalStatus = 'OPEN' | 'CONFIRMED' | 'REJECTED'
 
 export interface ForbiddenRule {
@@ -205,7 +261,11 @@ export interface ForbiddenRule {
   target: string
   reason: string
   status: ForbiddenRuleStatus
-  createdAt: string
+}
+
+export interface ForbiddenRuleStatusResponse {
+  ruleId: string
+  status: ForbiddenRuleStatus
 }
 
 export interface ForbiddenProposal {
@@ -215,9 +275,16 @@ export interface ForbiddenProposal {
   target: string
   reason: string
   status: ForbiddenProposalStatus
-  proposer: UserRef
-  rejectReason: string | null
-  createdAt: string
+}
+
+export interface ForbiddenProposalStatusResponse {
+  proposalId: string
+  status: ForbiddenProposalStatus
+}
+
+export interface ForbiddenProposalConfirmResponse extends ForbiddenProposalStatusResponse {
+  rule: ForbiddenRule
+  policyVersion: number
 }
 
 // ── 요청·Plan·작업 (명세 2.1, 2.2) ──────────────────────────
@@ -244,8 +311,8 @@ export interface TaskChangeItem {
 }
 
 /**
- * TODO(spec): 명세에 없는 필드. 승인권자가 코드를 읽지 않아도 이해하도록 AI가 풀어 쓴 설명이다.
- * Plan 해시 대상(명세 2.3)이 아니므로 참고용이고, 서명 기준은 항상 content다.
+ * TODO(spec): 서버 TaskResponse에 없는 목 전용 필드. 승인권자가 코드를 읽지 않아도 이해하도록 AI가 풀어 쓴 설명이다.
+ * 서버 응답에는 없어서 화면이 content에서 직접 풀어 쓴다 (lib/explain.ts). Plan 해시 대상이 아니므로 서명 기준은 항상 content다.
  */
 export interface TaskExplanation {
   summary: string
@@ -260,12 +327,13 @@ export interface Task {
   type: TaskType
   risk: Risk
   title: string
-  description?: string
   target: string
   content: TaskContent
   relatedDepartments: string[]
   requiredApprovers: ApproverRequirement[]
   status: TaskStatus
+  // TODO(spec): 아래는 서버 TaskResponse에 없는 목 전용 필드다. 서버 응답이면 없다.
+  description?: string
   /** AI가 기본 위험도보다 올렸을 때만 있음 */
   riskRaised?: { from: Risk; reason: string }
   forbiddenReason?: string
@@ -275,8 +343,6 @@ export interface Task {
 export interface Plan {
   id: string
   requestId: string
-  /** TODO(spec): 명세 2.2의 Plan에는 없고 2.3 해시 대상에만 있다. 목이 해시를 만들 때만 쓰고 화면은 읽지 않는다 */
-  projectId: string
   kind: PlanKind
   repository: string
   baseCommit: string
@@ -285,6 +351,10 @@ export interface Plan {
   tasks: Task[]
 }
 
+/**
+ * 서명 대상. 서버 PlanHashService.hashTarget과 같은 모양이다.
+ * 금지 작업은 빠지고 작업은 order 순이며, content의 null 필드는 없다.
+ */
 export interface PlanHashTarget {
   requestId: string
   planId: string
@@ -301,17 +371,6 @@ export interface PlanHashTarget {
   }>
 }
 
-/** TODO(spec): 목록에서 한눈에 보려고 넣은 요약. 명세의 Request에는 없어 선택 필드로 둔다. */
-export interface RequestTaskSummary {
-  total: number
-  risks: Record<Risk, number>
-  /** 승인이 필요한 작업 수 (금지 제외) */
-  required: number
-  approved: number
-  succeeded: number
-  failed: number
-}
-
 export interface RequestSummary {
   id: string
   projectId: string
@@ -323,10 +382,19 @@ export interface RequestSummary {
   currentPlanId: string | null
   createdAt: string
   updatedAt: string
-  taskSummary?: RequestTaskSummary
 }
 
-/** 결재란에 찍는 한 사람의 승인. 2.5 승인 기록의 평문 항목으로 만든 화면용 값이다. */
+/** 요청 상세의 승인 현황 한 건 (서버 ApprovalResponse). 현재 Plan의 승인만 온다. 봉투는 내려 주지 않는다 */
+export interface RequestApproval {
+  id: string
+  planId: string
+  approverId: string
+  taskIds: string[]
+  network: Network
+  createdAt: string
+}
+
+/** 결재란에 찍는 한 사람의 승인. 서버 응답이 아니라 requiredApprovers와 approvals로 화면이 계산한 값이다 (lib/approvalStatus.ts). */
 export interface ApproverStamp {
   userId: string
   name: string
@@ -338,6 +406,7 @@ export interface ApproverStamp {
 export interface RequirementStatus {
   rule: ApproverRule
   count: number
+  /** 서버는 후보를 UUID로만 준다. 모두 이름을 알 때만 채우고, 아니면 비어 있다 */
   candidates: Array<{ id: string; name: string }>
   approvedBy: ApproverStamp[]
   satisfied: boolean
@@ -354,21 +423,23 @@ export interface RequestEvent {
   by: string | null
 }
 
-/** TODO(spec): 요청 상세의 추가 필드 이름은 명세에 없어 화면 요구에서 정했다. */
 export interface RequestDetail extends RequestSummary {
-  projectName: string
-  plan: Plan | null
-  approvalStatus: TaskApprovalStatus[]
-  clarification: { question: string } | null
-  analysisError: string | null
-  changedTaskIds: string[]
-  removedTaskTitles: string[]
-  failedChecks: FailedCheck[]
-  /** TODO(spec): 명세에 없는 필드. 현재 Plan의 평문 승인 기록(2.5) 개수다. 0이거나 없으면 화면이 서명 검사를 통과라고 말하지 않는다 */
+  /** 분석 전이면 null이다 */
+  currentPlan: Plan | null
+  approvals: RequestApproval[]
+  /** AI 확인 질문. 없으면 null이다 */
+  clarification: string | null
+  // TODO(spec): 아래는 서버 RequestDetailResponse에 없는 목 전용 필드다. 서버 응답이면 없고, 화면은 없을 때 모른다고 말한다.
+  /** 재승인 화면에서 강조할 바뀐 작업 */
+  changedTaskIds?: string[]
+  removedTaskTitles?: string[]
+  /** 웹쉘 검증 실패 항목. 없으면 관문이 검사별 결과를 말하지 않는다 */
+  failedChecks?: FailedCheck[]
+  /** 변조 시연 전용: 평문 approvals와 달리 실제 서명 봉투가 있는 기록의 개수. 없으면 approvals 개수로 본다 */
   approvalRecordCount?: number
-  rejection: { by: string; reason: string; at: string; taskIds: string[] } | null
-  kill: { by: string; reason: string; at: string; skippedTaskIds: string[] } | null
-  events: RequestEvent[]
+  rejection?: { by: string; reason: string; at: string; taskIds: string[] } | null
+  kill?: { by: string; reason: string; at: string } | null
+  events?: RequestEvent[]
 }
 
 export interface CreateRequestBody {
@@ -402,18 +473,27 @@ export interface SubmitResponse {
   selfApprovableTaskIds: string[]
 }
 
+/** 실패 작업 재시도 응답 (서버 PlanRetryResponse). 새 Plan을 만들 뿐 제출 응답과 달리 본인 승인 목록이 없다 */
+export interface PlanRetryResponse {
+  id: string
+  status: RequestStatus
+  planId: string
+  planHash: string
+}
+
 // ── 승인 (명세 2.4, 2.5, 4.4, 4.5) ──────────────────────────
 
 export interface ApprovalContext {
   requestId: string
   /** 화면에 보여 줄 Plan. hashTarget과 내용이 같을 때만 서명한다 */
-  plan: Pick<Plan, 'id' | 'tasks'>
+  plan: Plan
   planHash: string
   /** 해시를 직접 다시 계산할 대상 (명세 2.3) */
   hashTarget: PlanHashTarget
   approvableTaskIds: string[]
   blockedTaskIds: string[]
-  blockedReason: 'INTERNAL_NETWORK_ONLY' | null
+  /** 서버 문자열이다. 지금은 INTERNAL_NETWORK_ONLY만 온다 */
+  blockedReason: string | null
   network: Network
 }
 
@@ -478,22 +558,24 @@ export interface SubmitApprovalResponse {
 }
 
 export interface RejectBody {
+  planId: string
   taskIds: string[]
-  reason: string
+  reason?: string
 }
 
-// TODO(spec): 목록 항목 모양은 "위험도·요청자·요청 시각"만 명세되어 있다.
+export interface RejectionResponse {
+  requestId: string
+  status: RequestStatus
+}
+
+/** 내 승인 대기 작업 한 건. 프로젝트와 내부망 차단 여부는 없다. 차단은 승인 자료에서만 알 수 있다 */
 export interface PendingApproval {
   requestId: string
-  taskId: string
-  taskTitle: string
-  type: TaskType
-  risk: Risk
+  planId: string
   requester: UserRef
-  projectId: string
-  projectName: string
+  /** 요청을 만든 시각이다 */
   requestedAt: string
-  blockedReason: 'INTERNAL_NETWORK_ONLY' | null
+  task: Task
 }
 
 export interface KillResponse {
@@ -502,27 +584,30 @@ export interface KillResponse {
   skippedTaskIds: string[]
 }
 
-export type LogLevel = 'INFO' | 'CMD' | 'ERROR' | 'SUCCESS'
-
+/** 실행 로그 한 줄 (서버 ExecutionLogResponse). sequence는 실행 세션 안에서만 유일하다 */
 export interface LogLine {
-  seq: number
+  sequence: number
   at: string
-  level: LogLevel
   taskId: string | null
-  text: string
-  /** 웹쉘 서명: base64(Ed25519(JCS({ requestId, seq, at, level, taskId, text }))) (명세 3.5) */
+  message: string
+  /** TODO(spec): 웹쉘 서명. 서명 대상의 모양은 서버 코드에도 없다. 서버는 받은 값을 그대로 내려 준다 */
   webshellSignature: string
 }
 
 // ── 웹쉘 (명세 5장) ────────────────────────────────────────
 
-/** TODO(spec): 명세는 "X25519·Ed25519 공개키와 지문"이라고만 한다. 필드 이름과 지문 형식은 여기서 정했다. */
+/** publicKey는 표준 base64, fingerprint는 "sha256:" + base64를 푼 바이트의 SHA-256 hex다. */
+export interface WebshellKeyInfo {
+  algorithm: string
+  publicKey: string
+  fingerprint: string
+}
+
 export interface WebshellPublicKey {
   /** 승인 서명 암호화용 X25519 */
-  encryptionKey: string
+  encryption: WebshellKeyInfo
   /** 실행 결과·로그 확인용 Ed25519 */
-  signingKey: string
-  fingerprint: string
+  signing: WebshellKeyInfo
 }
 
 /** POST /v1/executions 본문 (명세 5.1). 웹 서비스 서버만 호출한다 */
@@ -555,7 +640,7 @@ export interface WebshellEvent {
 
 export type StepStatus = 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'SKIPPED'
 
-/** 실행 로그 seq 구간. 아직 진행 중이면 to가 null이다 (명세 2.6) */
+/** 실행 로그 sequence 구간. 아직 진행 중이면 to가 null이다 (명세 2.6) */
 export interface LogRange {
   from: number
   to: number | null
@@ -573,7 +658,7 @@ export interface WebshellStep {
 
 export type ProgressNodeType = 'REQUEST' | 'PLAN' | 'TASK' | 'APPROVAL' | 'STEP'
 export type PlanNodeStatus = 'CURRENT' | 'SUPERSEDED'
-export type ApprovalNodeStatus = 'PENDING' | 'APPROVED' | 'REJECTED'
+export type ApprovalNodeStatus = 'PENDING' | 'APPROVED'
 
 export interface ProgressRequestNode {
   id: string
@@ -612,16 +697,16 @@ export interface ProgressTaskNode {
 export interface ProgressApprovalNode {
   id: string
   type: 'APPROVAL'
-  /** 승인 대기 중이면 없고 candidates가 있다 */
+  /** 승인한 사람의 이름. 승인 대기 중이면 없다 */
   label?: string
   status: ApprovalNodeStatus
-  /** TODO(spec): 모양이 명세에 없다. 목은 결재 현황과 같은 { id, name }을 주고, requiredApprovers처럼 ID만 올 수도 있다. rule이 ANYONE이면 비어 있다 */
-  candidates?: Array<{ id: string; name: string } | string>
-  rule?: ApproverRule
+  /** 승인 후보의 사용자 ID. 후보 목록이 없는 규칙(누구나)이면 없다 */
+  candidates?: string[]
   network?: Network
   at?: string
 }
 
+/** TODO(spec): 서버는 아직 STEP 노드를 보내지 않는다(웹쉘 콜백 계약 전). 목의 시연에서만 나온다 */
 export interface ProgressStepNode {
   id: string
   type: 'STEP'
@@ -644,21 +729,18 @@ export interface ProgressTree {
   root: ProgressRequestNode
 }
 
-/** 값이 null인 속성은 지운다. 승인되면 candidates가 없어지고 label이 생긴다 */
+/** 노드 하나의 상태가 바뀌었다는 알림 (서버 publishNodeUpdated) */
 export interface ProgressNodeUpdate {
   nodeId: string
+  status: string
   at: string
-  status?: string
-  label?: string | null
-  [field: string]: unknown
 }
 
-/** id는 version이다. heartbeat는 버전을 올리지 않아 id가 없다 (명세 4.9) */
+/** id는 version이다. heartbeat는 버전을 올리지 않아 id가 없다. 서버는 이 세 이벤트만 보낸다 (RequestStreamService) */
 export type ProgressStreamEvent =
   | { id: number; event: 'node.updated'; data: ProgressNodeUpdate }
-  | { id: number; event: 'node.added'; data: { parentId: string; node: ProgressNode } }
-  | { id: number; event: 'tree.replaced'; data: { at: string } }
-  | { id: null; event: 'heartbeat'; data: { at: string } }
+  | { id: number; event: 'tree.replaced'; data: { version: number } }
+  | { id: null; event: 'heartbeat'; data: Record<string, never> }
 
 // ── 문서 ───────────────────────────────────────────────────
 
@@ -703,19 +785,19 @@ export interface RollbackBody {
 export interface FileEntry {
   name: string
   path: string
-  type: 'file' | 'dir'
+  type: 'FILE' | 'DIR'
 }
 
 export interface FileListing {
   path: string
-  ref: string
   baseCommit: string
-  entries: FileEntry[]
+  items: FileEntry[]
 }
 
 export interface FileContent {
   path: string
   ref: string
+  baseCommit: string
   content: string
 }
 

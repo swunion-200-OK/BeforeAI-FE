@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { documentsApi, requestsApi } from '../../api/endpoints'
 import { ApiError, errorMessage } from '../../api/errors'
+import { isMissingOnServer } from '../../api/missingOnServer'
 import type { DocumentSummary, DocumentVersionSummary, RequestStatus } from '../../api/types'
 import { DiffViewer } from '../../components/DiffViewer'
 import { toast } from '../../components/toast'
@@ -13,6 +14,7 @@ import {
   EmptyState,
   ErrorState,
   Mono,
+  PageHeader,
   Select,
   Sheet,
   Spinner,
@@ -262,12 +264,21 @@ export default function DocumentsPage() {
   const selected = documents.data?.find((d) => d.id === documentId)
   const projectId = chosenProjectId ?? selected?.projectId ?? projectIds[0] ?? ''
   const listed = documents.data?.filter((d) => d.projectId === projectId) ?? []
-  const pendingDocs = pending.data?.filter((item) => item.type === 'DOC' && item.projectId === projectId) ?? []
+  // 승인 대기 항목에는 프로젝트가 없어 프로젝트로 나누지 못한다.
+  const pendingDocs = pending.data?.filter((item) => item.task.type === 'DOC') ?? []
 
   // 문서를 고르지 않았으면 첫 문서를 바로 보여 준다.
   if (!documentId && listed.length > 0) return <Navigate to={`/documents/${listed[0].id}`} replace />
 
   if (projects.isError) return <ErrorState error={projects.error} onRetry={() => projects.refetch()} />
+  if (documents.isError && isMissingOnServer(documents.error)) {
+    return (
+      <>
+        <PageHeader title="문서" />
+        <ErrorState error={documents.error} />
+      </>
+    )
+  }
   if (documents.isError) return <ErrorState error={documents.error} onRetry={() => documents.refetch()} />
   if (projects.isPending || documents.isPending) return <Spinner />
 
@@ -317,8 +328,8 @@ export default function DocumentsPage() {
               <span className="flex flex-wrap gap-x-3">
                 <span>적용을 기다리는 문서 작업이 {pendingDocs.length}건 있습니다.</span>
                 {pendingDocs.map((item) => (
-                  <Link key={`${item.requestId}-${item.taskId}`} to={`/approvals/${item.requestId}`} className="underline">
-                    {item.taskTitle}
+                  <Link key={`${item.requestId}-${item.task.id}`} to={`/approvals/${item.requestId}`} className="underline">
+                    {item.task.title}
                   </Link>
                 ))}
               </span>

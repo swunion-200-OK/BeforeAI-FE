@@ -2,8 +2,8 @@ import { gcm } from '@noble/ciphers/aes.js'
 import { x25519 } from '@noble/curves/ed25519.js'
 import { expand, extract } from '@noble/hashes/hkdf.js'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { concatBytes } from '@noble/hashes/utils.js'
-import type { ApprovalEnvelope, SignedApproval } from '../api/types'
+import { bytesToHex, concatBytes } from '@noble/hashes/utils.js'
+import type { ApprovalEnvelope, SignedApproval, WebshellKeyInfo, WebshellPublicKey } from '../api/types'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 
 const encoder = new TextEncoder()
@@ -14,8 +14,10 @@ const X25519_KEY_LENGTH = 32
 
 /**
  * TODO(spec): 명세 2.4는 알고리즘과 봉투 모양만 정하고 아래 값은 정하지 않았다. 웹쉘과 같은 값을 써야 열 수 있다.
+ * 백엔드는 봉투를 열지 않고 웹쉘에 전달만 하므로 백엔드 소스로도 확인되지 않는다.
  * - info와 AAD: 임시로 아래 값을 쓴다.
- * - 공개키와 encapsulatedKey: X25519 키 32바이트 그대로를 표준 base64로 적는다 (SPKI·PEM 아님).
+ * - 공개키: 서버가 표준 base64로 내려 준다. 32바이트 그대로인지는 서버가 확인하지 않아 고정할 때 여기서 확인한다.
+ * - encapsulatedKey: X25519 키 32바이트 그대로를 표준 base64로 적는다 (SPKI·PEM 아님).
  * - ciphertext: AES-GCM 암호문 뒤에 태그 16바이트를 붙여 표준 base64로 적는다 (RFC 9180 Seal 출력).
  * - 평문: JSON.stringify({ payload, signature })의 UTF-8. 서명은 JCS(payload)에 하므로 키 순서는 검증과 무관하다.
  */
@@ -98,7 +100,22 @@ function parseSignedApproval(plaintext: Uint8Array): SignedApproval {
   return parsed as SignedApproval
 }
 
+function assertKeyInfo(info: WebshellKeyInfo, algorithm: string, label: string) {
+  if (info.algorithm !== algorithm) throw new Error(`${label} 알고리즘이 ${algorithm}가 아닙니다 (받은 값: ${info.algorithm})`)
+  const bytes = decodeKey(info.publicKey, label)
+  if (info.fingerprint !== `sha256:${bytesToHex(sha256(bytes))}`) throw new Error(`${label} 지문이 키와 맞지 않습니다`)
+}
+
 export const cryptoService = {
+  /**
+   * 기기에 고정하기 전에 확인한다. 고정한 키는 바꾸지 않으므로 잘못된 값을 고정하면 승인을 할 수 없게 된다.
+   * 지문은 키와 같은 응답에 실려 오므로 바꿔치기를 막는 값은 아니다. 깨진 값을 걸러 낼 뿐이다.
+   */
+  assertWebshellKey(key: WebshellPublicKey) {
+    assertKeyInfo(key.encryption, 'X25519', '웹쉘 암호화 공개키')
+    assertKeyInfo(key.signing, 'Ed25519', '웹쉘 서명 공개키')
+  },
+
   /** 승인자 기기: 고정해 둔 웹쉘 공개키로 암호화한다. 키가 잘못됐으면 봉투를 만들지 않고 예외를 던진다. */
   encryptForWebshell(signed: SignedApproval, webshellEncryptionKey: string): ApprovalEnvelope {
     const recipientPublic = decodeKey(webshellEncryptionKey, '웹쉘 공개키')

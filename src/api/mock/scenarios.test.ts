@@ -33,6 +33,9 @@ import { buildSeed } from './seed'
 import { db, mockConfig } from './store'
 import { WEBSHELL_PUBLIC_KEY, contentFitsType, isAwaitingExecution, openEnvelope, requestExecution, scheduleExecution, verifyExecution } from './webshell'
 
+/** 서버처럼 목도 키 ID와 서명이 있는지만 본다 */
+const PROOF = { keyId: 'k-admin-a', signature: 'c2ln' }
+
 class MemoryStorage {
   private map = new Map<string, string>()
   getItem = (key: string) => this.map.get(key) ?? null
@@ -72,18 +75,18 @@ async function approveAs(userId: string, requestId: string, taskIds: string[]) {
 
 const reviewedPlan = async (requestId: string) => {
   const detail = await requestsApi.get(requestId)
-  return { projectId: detail.projectId, tasks: detail.plan!.tasks }
+  return { projectId: detail.projectId, tasks: detail.currentPlan!.tasks }
 }
 
 async function registerKeyFor(userId: string) {
   asUser(userId)
   const { publicKey } = signingService.generateDeviceKey(userId)
   const key = await meApi.submitSigningKey(publicKey)
-  deviceStore.update(userId, { keyId: key.keyId, pinnedWebshellKey: await meApi.webshellPublicKey() })
+  deviceStore.update(userId, { keyId: key.id, pinnedWebshellKey: await meApi.webshellPublicKey() })
   asUser('u-admin')
-  await adminApi.registerKey(key.keyId)
+  await adminApi.registerKey(key.id, signingService.signRegisterProof('u-admin', key))
   asUser(userId)
-  return (await meApi.signingKeys()).items.find((item) => item.keyId === key.keyId)!
+  return (await meApi.signingKeys()).items.find((item) => item.id === key.id)!
 }
 
 beforeEach(() => {
@@ -117,13 +120,13 @@ describe('crypto', () => {
   })
 
   it('Plan 내용이 바뀌면 해시가 바뀌고, 작업 상태만 바뀌면 그대로다', async () => {
-    const { plan } = await requestsApi.get('r-main')
-    const hash = hashService.computePlanHash(plan!)
+    const { currentPlan: plan } = await requestsApi.get('r-main')
+    const hash = hashService.computePlanHash(plan!, 'prj-auth')
     expect(hash).toMatch(/^sha256:[0-9a-f]{64}$/)
     const statusOnly = { ...plan!, tasks: plan!.tasks.map((t) => ({ ...t, status: 'RUNNING' as const })) }
-    expect(hashService.computePlanHash(statusOnly)).toBe(hash)
+    expect(hashService.computePlanHash(statusOnly, 'prj-auth')).toBe(hash)
     const edited = { ...plan!, tasks: plan!.tasks.map((t) => ({ ...t, target: 'production' })) }
-    expect(hashService.computePlanHash(edited)).not.toBe(hash)
+    expect(hashService.computePlanHash(edited, 'prj-auth')).not.toBe(hash)
   })
 
   it('기기에서 만든 키로 서명하고 검증한다', () => {
@@ -154,7 +157,7 @@ describe('시연 시나리오', () => {
     })
     const reviewing = await waitForStatus(id, notAnalyzing)
     expect(reviewing.status).toBe('REVIEWING')
-    expect(reviewing.plan!.tasks.map((t) => [t.type, t.risk])).toEqual([
+    expect(reviewing.currentPlan!.tasks.map((t) => [t.type, t.risk])).toEqual([
       ['CODE_FEATURE', 'MEDIUM'],
       ['DEPLOY', 'HIGH'],
     ])
@@ -170,8 +173,6 @@ describe('시연 시나리오', () => {
     expect(external.approvableTaskIds).toEqual([])
     expect(external.blockedTaskIds).toEqual(['t-2'])
     expect(external.blockedReason).toBe('INTERNAL_NETWORK_ONLY')
-    const pendingExternal = await approvalsApi.pending()
-    expect(pendingExternal.items.find((i) => i.requestId === id)?.blockedReason).toBe('INTERNAL_NETWORK_ONLY')
 
     // 3. 김담당(내부망): 해시·화면 내용 확인 → 서명 → 실행 요청
     asUser('u-07')
@@ -193,12 +194,15 @@ describe('시연 시나리오', () => {
     // 4. 홍길동: 실시간 로그로 끝까지 확인
     asUser('u-01')
     const lines: string[] = []
-    await requestsApi.streamLogs(id, (line) => lines.push(line.text), new AbortController().signal)
-    expect(lines.at(0)).toContain('승인 서명 검증 통과')
-    expect(lines.at(-1)).toContain('세션을 닫습니다')
+    await requestsApi.streamLogs(id, (line) => lines.push(line.message), new AbortController().signal)
+    // 서버 스트림처럼 지난 줄은 보내지 않는다. 처음부터 끝까지는 목록으로 확인한다.
+    const logs = (await requestsApi.logs(id, { limit: 100 })).items.map((line) => line.message)
+    expect(logs.at(0)).toContain('승인 서명 검증 통과')
+    expect(logs.at(-1)).toContain('세션을 닫습니다')
+    expect(logs.slice(-lines.length)).toEqual(lines)
     const finished = await requestsApi.get(id)
     expect(finished.status).toBe('COMPLETED')
-    expect(finished.plan!.tasks.every((t) => t.status === 'SUCCEEDED')).toBe(true)
+    expect(finished.currentPlan!.tasks.every((t) => t.status === 'SUCCEEDED')).toBe(true)
   })
 
   it('시드의 r-main도 김담당 서명으로 실행까지 간다', async () => {
@@ -210,14 +214,24 @@ describe('시연 시나리오', () => {
     expect(result.status).toBe('RUNNING')
   })
 
-  it('외부망은 코드 수정(낮음·중간)만 승인할 수 있다', async () => {
+  it('외부망은 배포·고위험 작업이 막히고, 서명을 만들기 전에 멈추며, 서버도 내부망 전용으로 거절한다', async () => {
     asUser('u-07', 'EXTERNAL')
     const kim = await me()
     const context = await approvalsApi.context('r-external')
     expect(context.approvableTaskIds).toEqual(['t-1'])
     expect(context.blockedTaskIds).toEqual(['t-2'])
-    await signAndSubmitApproval({ me: kim, context, taskIds: ['t-1'] })
-    await expectError(signAndSubmitApproval({ me: kim, context, taskIds: ['t-2'] }), 'INTERNAL_NETWORK_ONLY')
+    const steps: string[] = []
+    const onStep = (step: string) => void steps.push(step)
+    await expectError(signAndSubmitApproval({ me: kim, context, taskIds: ['t-1'], onStep }), 'INTERNAL_NETWORK_ONLY')
+    await expectError(signAndSubmitApproval({ me: kim, context, taskIds: ['t-2'], onStep }), 'INTERNAL_NETWORK_ONLY')
+    // 해시 확인에서 멈춰 서명도 제출도 하지 않았다.
+    expect(steps).toEqual(['hash', 'hash'])
+    expect(storedRequest('r-external').approvalRecords).toEqual([])
+    // 화면을 거치지 않고 보내도 서버 라우트가 막는다.
+    await expectError(
+      approvalsApi.reject('r-external', { planId: context.plan.id, taskIds: ['t-1'], reason: '사유' }),
+      'INTERNAL_NETWORK_ONLY',
+    )
     // AI가 높음으로 올린 코드 수정도 외부망에서는 막힌다.
     const high = await approvalsApi.context('r-high-code')
     expect(high.blockedTaskIds).toEqual(['t-1'])
@@ -225,7 +239,7 @@ describe('시연 시나리오', () => {
 
   it('5: 승인 대기 중 Plan을 고치면 재승인필요, 바뀐 작업 표시, 옛 서명 무효', async () => {
     const before = await requestsApi.get('r-main')
-    const hashBefore = before.plan!.planHash
+    const hashBefore = before.currentPlan!.planHash
     await requestsApi.patchPlan('r-main', {
       basePlanId: before.currentPlanId!,
       changes: [{ op: 'UPDATE', taskId: 't-1', instruction: '메시지를 한국어와 영어 둘 다 보여줘' }],
@@ -233,7 +247,7 @@ describe('시연 시나리오', () => {
     const after = await waitForStatus('r-main', notAnalyzing)
     expect(after.status).toBe('REAPPROVAL_REQUIRED')
     expect(after.changedTaskIds).toEqual(['t-1'])
-    expect(after.approvalStatus.flatMap((s) => s.requirements.flatMap((r) => r.approvedBy))).toEqual([])
+    expect(after.approvals).toEqual([])
     const hong = await me()
     const outcome = await submitWithSelfApproval(hong, 'r-main', await reviewedPlan('r-main'))
     expect(outcome.submit.planHash).not.toBe(hashBefore)
@@ -245,7 +259,7 @@ describe('시연 시나리오', () => {
     const kim = await me()
     const stale = await approvalsApi.context('r-main')
     asUser('u-01')
-    const { plan } = await requestsApi.get('r-main')
+    const { currentPlan: plan } = await requestsApi.get('r-main')
     await requestsApi.patchPlan('r-main', {
       basePlanId: plan!.id,
       changes: [{ op: 'UPDATE', taskId: 't-1', instruction: '문구 수정' }],
@@ -259,8 +273,8 @@ describe('시연 시나리오', () => {
   it('6: 금지 작업은 차단되고, 금지만 남으면 제출이 막힌다', async () => {
     const { id } = await requestsApi.create({ projectId: 'prj-auth', prompt: '운영 DB에 컬럼을 추가해줘' })
     const detail = await waitForStatus(id, notAnalyzing)
-    expect(detail.plan!.tasks[0]).toMatchObject({ risk: 'FORBIDDEN', status: 'BLOCKED' })
-    expect(detail.plan!.tasks[0].forbiddenReason).toBeTruthy()
+    expect(detail.currentPlan!.tasks[0]).toMatchObject({ risk: 'FORBIDDEN', status: 'BLOCKED' })
+    expect(detail.currentPlan!.tasks[0].forbiddenReason).toBeTruthy()
     await expectError(requestsApi.submit(id), 'FORBIDDEN_TASK')
 
     // 금지 작업이 섞여 있으면 나머지는 제출되고 실행까지 간다.
@@ -272,7 +286,7 @@ describe('시연 시나리오', () => {
 
   it('6-2: 웹쉘 정책의 금지 규칙에 걸리면 검증실패가 되고 실패 항목이 남는다', async () => {
     asUser('u-admin')
-    await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'staging', reason: '동결 기간' })
+    await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'staging', reason: '동결 기간', adminProof: PROOF })
     asUser('u-07')
     const kim = await me()
     const context = await approvalsApi.context('r-main')
@@ -280,7 +294,7 @@ describe('시연 시나리오', () => {
     expect(result.status).toBe('VERIFICATION_FAILED')
     const detail = await requestsApi.get('r-main')
     expect(detail.failedChecks).toContain('FORBIDDEN_TASK')
-    expect(detail.plan!.tasks.find((t) => t.id === 't-2')?.status).toBe('FAILED')
+    expect(detail.currentPlan!.tasks.find((t) => t.id === 't-2')?.status).toBe('FAILED')
   })
 
   it('7: 박CTO는 전사 대시보드와 외부망 승인 기록을 본다', async () => {
@@ -324,9 +338,57 @@ describe('규칙', () => {
     const login = await authApi.login('E1107', 'demo1234!')
     expect(login.otpRequired).toBe(true)
     expect(login.accessToken).toBeUndefined()
-    await expectError(authApi.verifyOtp(login.tempToken!, '000000'), 'VALIDATION_ERROR')
-    const token = await authApi.verifyOtp(login.tempToken!, '123456')
+    await expectError(authApi.verifyOtp(login.temporaryToken!, '000000'), 'UNAUTHENTICATED')
+    const token = await authApi.verifyOtp(login.temporaryToken!, '123456')
     expect(token.accessToken).toBeTruthy()
+  })
+
+  it('외부망 로그인은 OTP를 등록한 계정만 할 수 있고, 틀린 비밀번호와 구분되는 문구를 준다', async () => {
+    setAccessToken(null)
+    devControls.setNetwork('EXTERNAL')
+    await expect(authApi.login('E1101', 'demo1234!')).rejects.toMatchObject({ code: 'UNAUTHENTICATED', serverMessage: expect.stringContaining('OTP 등록') })
+    await expect(authApi.login('E1101', '틀림')).rejects.toMatchObject({ code: 'UNAUTHENTICATED', serverMessage: expect.stringContaining('비밀번호') })
+  })
+
+  it('OTP는 발급 뒤 확인해야 등록되고, 등록한 뒤에는 다시 발급하지 않는다', async () => {
+    asUser('u-01')
+    await expectError(meApi.confirmOtp('123456'), 'INVALID_STATE')
+    const issued = await meApi.issueOtpSecret()
+    expect(issued).toMatchObject({ verified: false, secret: expect.any(String), otpauthUri: expect.stringMatching(/^otpauth:/) })
+    await expectError(meApi.confirmOtp('000000'), 'VALIDATION_ERROR')
+    expect(await meApi.confirmOtp('123456')).toEqual({ verified: true })
+    await expectError(meApi.issueOtpSecret(), 'INVALID_STATE')
+  })
+
+  it('비밀번호를 바꿔야 하는 토큰은 내 정보와 비밀번호 변경만 되고, 바꾼 뒤에도 새 토큰을 받아야 풀린다', async () => {
+    asUser('u-31')
+    await expectError(projectsApi.list(), 'INVALID_STATE')
+    expect((await me()).passwordChangeRequired).toBe(true)
+    await meApi.changePassword('demo1234!', 'newpass1234!')
+    expect((await me()).passwordChangeRequired).toBe(false)
+    await expectError(projectsApi.list(), 'INVALID_STATE')
+    setAccessToken((await authApi.refresh()).accessToken)
+    await expect(projectsApi.list()).resolves.toMatchObject({ items: expect.any(Array) })
+  })
+
+  it('내 정보와 계정 목록에는 서버에 없는 필드가 없다', async () => {
+    asUser('u-31')
+    const profile = await me()
+    expect(profile).toMatchObject({ employeeNumber: 'E1131', passwordChangeRequired: true, hasRegisteredSigningKey: false })
+    for (const missing of ['employeeNo', 'mustChangePassword', 'signingKeyStatus', 'otpEnrolled', 'slackUserId', 'password', 'otpSecret']) {
+      expect(profile).not.toHaveProperty(missing)
+    }
+    asUser('u-admin')
+    const [user] = (await adminApi.users()).items
+    expect(Object.keys(user).sort()).toEqual(['active', 'departmentId', 'employeeNumber', 'id', 'name', 'role'])
+  })
+
+  it('계정 변경에서 null은 값을 바꾸지 않아 부서를 비울 수 없다', async () => {
+    asUser('u-admin')
+    const updated = await adminApi.updateUser('u-21', { departmentId: null, role: 'DEPT_MANAGER' })
+    expect(updated).toMatchObject({ departmentId: 'd-infra', role: 'DEPT_MANAGER' })
+    await expect(adminApi.resetPassword('u-21')).resolves.toMatchObject({ userId: 'u-21', initialPassword: expect.any(String) })
+    await expectError(adminApi.createUser({ employeeNumber: 'E2101', name: '겹침', role: 'EMPLOYEE', departmentId: null }), 'INVALID_STATE')
   })
 
   it('담당자를 2명 미만으로 줄이면 막고, 빠진 담당자가 필요한 요청은 재승인필요가 된다', async () => {
@@ -340,15 +402,15 @@ describe('규칙', () => {
 
   it('중규모·대규모 프리셋은 필요한 승인 인원을 늘린다', async () => {
     asUser('u-admin')
-    await adminApi.applyPreset('MEDIUM')
+    await adminApi.applyPreset('MEDIUM', PROOF)
     const { id } = await requestsApi.create({ projectId: 'prj-auth', prompt: '스테이징에 배포해줘' })
     const detail = await waitForStatus(id, notAnalyzing)
-    expect(detail.plan!.tasks[0].requiredApprovers.map((r) => r.rule)).toEqual(['PROJECT_OWNER', 'DEPT_MANAGER'])
+    expect(detail.currentPlan!.tasks[0].requiredApprovers.map((r) => r.rule)).toEqual(['PROJECT_OWNER', 'DEPT_MANAGER'])
 
-    await adminApi.applyPreset('LARGE')
+    await adminApi.applyPreset('LARGE', PROOF)
     const large = await requestsApi.create({ projectId: 'prj-auth', prompt: '로그인 테스트를 보강해줘' })
     const low = await waitForStatus(large.id, notAnalyzing)
-    expect(low.plan!.tasks[0].requiredApprovers.map((r) => r.rule)).toEqual(['SAME_DEPT_OTHER'])
+    expect(low.currentPlan!.tasks[0].requiredApprovers.map((r) => r.rule)).toEqual(['SAME_DEPT_OTHER'])
     // 대규모에서 낮음·중간은 요청자 외 같은 부서 1인이라 본인 승인이 없다.
     const outcome = await submitWithSelfApproval(await me(), large.id, await reviewedPlan(large.id))
     expect(outcome.selfApprovedTaskIds).toEqual([])
@@ -371,7 +433,7 @@ describe('규칙', () => {
     await requestsApi.patchPlan('r-clarify', { answer: '로그인 테스트를 보강해줘' })
     const after = await waitForStatus('r-clarify', notAnalyzing)
     expect(after.clarification).toBeNull()
-    expect(after.plan!.tasks.length).toBeGreaterThan(0)
+    expect(after.currentPlan!.tasks.length).toBeGreaterThan(0)
   })
 
   it('에디터 저장은 코드 작업 1개짜리 요청이 되고, 기준 커밋이 다르면 충돌이다', async () => {
@@ -383,7 +445,7 @@ describe('규칙', () => {
     expect(saved.source).toBe('EDITOR')
     const detail = await waitForStatus(saved.requestId, notAnalyzing)
     expect(detail.status).toBe('REVIEWING')
-    expect(detail.plan!.tasks).toHaveLength(1)
+    expect(detail.currentPlan!.tasks).toHaveLength(1)
     await expectError(
       editorApi.save('prj-auth', { baseCommit: 'old', description: 'x', files: [{ path: 'a', patch: 'b' }] }),
       'EDIT_CONFLICT',
@@ -394,9 +456,10 @@ describe('규칙', () => {
     const before = await requestsApi.get('r-partial')
     const retried = await requestsApi.retryFailed('r-partial')
     expect(retried.status).toBe('PENDING_APPROVAL')
-    expect(retried.planHash).not.toBe(before.plan!.planHash)
+    expect(retried.planHash).not.toBe(before.currentPlan!.planHash)
     const detail = await requestsApi.get('r-partial')
-    expect(detail.plan!.tasks.map((t) => t.status)).toEqual(['SUCCEEDED', 'PENDING'])
+    // 서버처럼 실패·건너뛴 작업만 새 Plan으로 옮긴다.
+    expect(detail.currentPlan!.tasks.map((t) => [t.id, t.status])).toEqual([['t-2', 'PENDING']])
     asUser('u-07')
     const result = await signAndSubmitApproval({
       me: await me(),
@@ -405,7 +468,7 @@ describe('규칙', () => {
     })
     expect(result.executionRequested).toBe(true)
     const finished = await waitForStatus('r-partial', (s) => s === 'COMPLETED')
-    expect(finished.plan!.tasks.map((t) => t.status)).toEqual(['SUCCEEDED', 'SUCCEEDED'])
+    expect(finished.currentPlan!.tasks.map((t) => t.status)).toEqual(['SUCCEEDED'])
   })
 
   it('문서 적용은 새 버전을 저장하고, 롤백은 승인을 거쳐 이전 버전으로 되돌린다', async () => {
@@ -418,47 +481,88 @@ describe('규칙', () => {
     await requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 })
     const rollback = await requestsApi.get('r-completed')
     expect(rollback.status).toBe('PENDING_APPROVAL')
-    expect(rollback.plan!.kind).toBe('ROLLBACK')
+    expect(rollback.currentPlan!.kind).toBe('ROLLBACK')
     await signAndSubmitApproval({
       me: await me(),
       context: await approvalsApi.context('r-completed'),
       taskIds: ['t-1'],
     })
     const done = await waitForStatus('r-completed', (s) => s === 'ROLLED_BACK')
-    expect(done.plan!.tasks[0].status).toBe('ROLLED_BACK')
+    expect(done.currentPlan!.tasks[0].status).toBe('ROLLED_BACK')
     await expectError(requestsApi.rollback('r-partial', { documentId: 'doc-readme', version: 1 }), 'VALIDATION_ERROR')
   })
 
   it('승인 키 등록 흐름: 제출 → 대기 → 관리자 등록 → 승인 가능', async () => {
     asUser('u-21')
-    expect((await me()).signingKeyStatus).toBe('NONE')
+    expect((await me()).hasRegisteredSigningKey).toBe(false)
     const { publicKey } = signingService.generateDeviceKey('u-21')
     const webshellKey = await meApi.webshellPublicKey()
     const key = await meApi.submitSigningKey(publicKey)
-    deviceStore.update('u-21', { keyId: key.keyId, pinnedWebshellKey: webshellKey })
-    expect((await me()).signingKeyStatus).toBe('PENDING')
+    expect(Object.keys(key).sort()).toEqual(['algorithm', 'createdAt', 'id', 'publicKey', 'status'])
+    expect(key).toMatchObject({ algorithm: 'Ed25519', status: 'PENDING' })
+    deviceStore.update('u-21', { keyId: key.id, pinnedWebshellKey: webshellKey })
+    expect((await me()).hasRegisteredSigningKey).toBe(false)
     const context = await approvalsApi.context('r-main')
     await expectError(
       signAndSubmitApproval({ me: await me(), context, taskIds: context.approvableTaskIds.length ? context.approvableTaskIds : ['t-2'] }),
       'NOT_APPROVER',
     )
     asUser('u-admin')
-    await adminApi.registerKey(key.keyId)
+    const registered = await adminApi.registerKey(key.id, signingService.signRegisterProof('u-admin', key))
+    expect(registered).toMatchObject({ keyId: key.id, status: 'REGISTERED', policyVersion: expect.any(Number) })
     asUser('u-21')
-    expect((await me()).signingKeyStatus).toBe('REGISTERED')
+    expect((await me()).hasRegisteredSigningKey).toBe(true)
+  })
+
+  it('승인 키는 폐기되지 않은 것을 사용자당 하나만 받고, 폐기하면 새로 받는다', async () => {
+    asUser('u-09')
+    const second = signingService.generateDeviceKey('u-09').publicKey
+    await expectError(meApi.submitSigningKey(second), 'VALIDATION_ERROR')
+    asUser('u-admin')
+    await adminApi.revokeKey('k-09-a')
+    await expectError(adminApi.revokeKey('k-09-a'), 'INVALID_STATE')
+    asUser('u-09')
+    await expect(meApi.submitSigningKey(second)).resolves.toMatchObject({ status: 'PENDING' })
+    await expectError(meApi.submitSigningKey('짧은값'), 'VALIDATION_ERROR')
+  })
+
+  it('승인 키 등록은 관리자 본인의 등록된 키로 등록 대상에 서명해야 한다', async () => {
+    const target = { id: 'k-09-a', publicKey: db().signingKeys.find((k) => k.id === 'k-09-a')!.publicKey }
+    asUser('u-admin')
+    await expectError(adminApi.registerKey(target.id, { keyId: 'k-admin-a' }), 'VALIDATION_ERROR')
+    // 다른 키에 대한 서명
+    const other = { id: 'k-01-a', publicKey: target.publicKey }
+    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', other)), 'FORBIDDEN_ROLE')
+    // 다른 사람의 키로 서명
+    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-07', target)), 'KEY_NOT_REGISTERED')
+    await adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target))
+    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target)), 'INVALID_STATE')
+  })
+
+  it('첫 관리자는 본인의 대기 키를 그 키 자신으로 서명해 등록하고, 그 키로 다른 키는 등록하지 못한다', async () => {
+    asUser('u-admin')
+    await adminApi.revokeKey('k-admin-a')
+    const { publicKey } = signingService.generateDeviceKey('u-admin')
+    const own = await meApi.submitSigningKey(publicKey)
+    deviceStore.update('u-admin', { keyId: own.id })
+    const target = { id: 'k-09-a', publicKey: db().signingKeys.find((k) => k.id === 'k-09-a')!.publicKey }
+    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target)), 'KEY_NOT_REGISTERED')
+    await adminApi.registerKey(own.id, signingService.signRegisterProof('u-admin', own))
+    expect((await me()).hasRegisteredSigningKey).toBe(true)
+    await adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target))
   })
 
   it('담당자라도 승인 키가 등록되기 전에는 KEY_NOT_REGISTERED이고, 등록 뒤에는 서명할 수 있다', async () => {
     asUser('u-21')
     const { publicKey } = signingService.generateDeviceKey('u-21')
     const key = await meApi.submitSigningKey(publicKey)
-    deviceStore.update('u-21', { keyId: key.keyId, pinnedWebshellKey: await meApi.webshellPublicKey() })
+    deviceStore.update('u-21', { keyId: key.id, pinnedWebshellKey: await meApi.webshellPublicKey() })
     const { id } = await requestsApi.create({ projectId: 'prj-deploy', prompt: '스테이징에 배포해줘' })
     await waitForStatus(id, notAnalyzing)
     await requestsApi.submit(id)
     await expectError(approveAs('u-21', id, ['t-1']), 'KEY_NOT_REGISTERED')
     asUser('u-admin')
-    await adminApi.registerKey(key.keyId)
+    await adminApi.registerKey(key.id, signingService.signRegisterProof('u-admin', key))
     expect(await approveAs('u-21', id, ['t-1'])).toMatchObject({ executionRequested: true, status: 'RUNNING' })
   })
 
@@ -480,7 +584,7 @@ describe('규칙', () => {
 
 describe('쉬운 설명', () => {
   it('로그인 메시지 작업은 어디가 무엇에서 무엇으로 바뀌는지 알려 준다', async () => {
-    const { plan } = await requestsApi.get('r-main')
+    const { currentPlan: plan } = await requestsApi.get('r-main')
     const explanation = plan!.tasks[0].explanation!
     expect(explanation.summary).toContain('로그인 실패')
     expect(explanation.changes[0]).toMatchObject({
@@ -492,28 +596,21 @@ describe('쉬운 설명', () => {
   })
 
   it('배포·DB·조회·문서도 말로 풀어 쓴다', async () => {
-    const deploy = (await requestsApi.get('r-main')).plan!.tasks[1].explanation!
+    const deploy = (await requestsApi.get('r-main')).currentPlan!.tasks[1].explanation!
     expect(deploy.summary).toContain('스테이징 서버')
     expect(deploy.impact.join()).toContain('운영 서비스에는 영향이 없습니다')
-    const db = (await requestsApi.get('r-running')).plan!.tasks[1].explanation!
+    const db = (await requestsApi.get('r-running')).currentPlan!.tasks[1].explanation!
     expect(db.summary).toContain('last_login_at')
-    const doc = (await requestsApi.get('r-completed')).plan!.tasks[0].explanation!
+    const doc = (await requestsApi.get('r-completed')).currentPlan!.tasks[0].explanation!
     expect(doc.undo).toContain('되돌릴 수 있습니다')
     expect(doc.changes[0].after).toBe('장애 대응')
   })
 
   it('설명은 해시 대상이 아니어서 바뀌어도 해시가 그대로다', async () => {
-    const { plan } = await requestsApi.get('r-main')
-    const hash = hashService.computePlanHash(plan!)
+    const { currentPlan: plan } = await requestsApi.get('r-main')
+    const hash = hashService.computePlanHash(plan!, 'prj-auth')
     const changed = { ...plan!, tasks: plan!.tasks.map((t) => ({ ...t, explanation: undefined })) }
-    expect(hashService.computePlanHash(changed)).toBe(hash)
-  })
-
-  it('목록에 작업 요약이 함께 온다', async () => {
-    const { items } = await requestsApi.list({ mine: true })
-    const main = items.find((r) => r.id === 'r-main')!
-    expect(main.taskSummary).toMatchObject({ total: 2, required: 2, approved: 1 })
-    expect(main.taskSummary!.risks.HIGH).toBe(1)
+    expect(hashService.computePlanHash(changed, 'prj-auth')).toBe(hash)
   })
 
   it('담당자를 비활성화해 활성 담당자가 2명 아래로 내려가면 막는다', async () => {
@@ -540,7 +637,7 @@ describe('승인 화면의 무결성 확인 (명세 4.4)', () => {
     asUser('u-07')
     const context = await approvalsApi.context('r-main')
     expect(context).not.toHaveProperty('executorSignature')
-    expect(Object.keys(context.plan).sort()).toEqual(['id', 'tasks'])
+    expect(Object.keys(context.plan).sort()).toEqual(['baseCommit', 'id', 'kind', 'planHash', 'repository', 'requestId', 'tasks'])
     expect(context.hashTarget).toMatchObject({ requestId: 'r-main', planId: context.plan.id, projectId: 'prj-auth' })
     expect(context.hashTarget.tasks.map((t) => Object.keys(t).sort())).toEqual([
       ['content', 'id', 'order', 'risk', 'target', 'type'],
@@ -552,8 +649,8 @@ describe('승인 화면의 무결성 확인 (명세 4.4)', () => {
 
   it('화면에 보여 준 프로젝트가 서명 대상의 프로젝트와 다르면 서명하지 않는다', async () => {
     const request = storedRequest('r-external')
-    request.plan!.projectId = 'prj-deploy'
-    request.plan!.planHash = hashService.computePlanHash(request.plan!)
+    request.forgedHashTarget = toHashTarget(request.plan!, 'prj-deploy')
+    request.plan!.planHash = hashService.computeTargetHash(request.forgedHashTarget)
     asUser('u-07')
     const kim = await me()
     const context = await approvalsApi.context('r-external')
@@ -598,6 +695,33 @@ describe('승인 화면의 무결성 확인 (명세 4.4)', () => {
     expect((await requestsApi.get('r-display-mismatch')).status).toBe('PENDING_APPROVAL')
   })
 
+  it('금지 작업은 화면에 있어도 서명 대상이 아니라 무결성 확인을 통과하고, 서명에 담으면 거부한다', async () => {
+    asUser('u-01')
+    const hong = await me()
+    const context = await approvalsApi.context('r-forbidden')
+    expect(context.plan.tasks.some((task) => task.risk === 'FORBIDDEN')).toBe(true)
+    expect(context.hashTarget.tasks.some((task) => task.risk === 'FORBIDDEN')).toBe(false)
+    const check = verifyIntegrity(context, hong.id)
+    expect(check).toMatchObject({ hashOk: true, displayOk: true })
+    const forbidden = context.plan.tasks.find((task) => task.risk === 'FORBIDDEN')!
+    await expect(signAndSubmitApproval({ me: hong, context, taskIds: [forbidden.id] })).rejects.toBeInstanceOf(IntegrityError)
+  })
+
+  it('서버처럼 Plan의 content가 null이고 hashTarget은 빈 객체여도 같다고 보고, 내용이 있는 hashTarget과는 다르다고 본다', async () => {
+    asUser('u-07')
+    const honest = await approvalsApi.context('r-main')
+    const nullContent = structuredClone(honest)
+    const [first] = nullContent.plan.tasks
+    ;(first as { content: unknown }).content = null
+    nullContent.hashTarget.tasks[0].content = {}
+    nullContent.planHash = hashService.computeTargetHash(nullContent.hashTarget)
+    expect(verifyIntegrity(nullContent, 'u-07')).toMatchObject({ hashOk: true, displayOk: true, ok: true })
+
+    const hidden = structuredClone(honest)
+    ;(hidden.plan.tasks[0] as { content: unknown }).content = null
+    expect(verifyIntegrity(hidden, 'u-07')).toMatchObject({ hashOk: true, displayOk: false, ok: false })
+  })
+
   it('화면의 Plan에서 해시 대상 항목이 하나라도 다르면 일치하지 않는다', async () => {
     asUser('u-07')
     const honest = await approvalsApi.context('r-main')
@@ -608,7 +732,6 @@ describe('승인 화면의 무결성 확인 (명세 4.4)', () => {
       (c) => void (c.plan.tasks[1].type = 'DOC'),
       (c) => void (c.plan.tasks[1].order = 9),
       (c) => void (c.plan.tasks[1].id = 't-9'),
-      (c) => void c.plan.tasks.reverse(),
       (c) => void c.plan.tasks.pop(),
       (c) => void (c.plan.id = 'p-other'),
       (c) => void (c.requestId = 'r-other'),
@@ -660,7 +783,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     expect(request.status).toBe('RUNNING')
     expect(db().webshell.usedNonces).toHaveLength(2)
     const approvals = request.approvalRecords.map(({ keyId, envelope }) => ({ keyId, envelope }))
-    const replay = verifyExecution({ plan: toHashTarget(request.plan!), approvals }, request)
+    const replay = verifyExecution({ plan: toHashTarget(request.plan!, request.projectId), approvals }, request)
     expect(replay.failed).toContain('NONCE_ALREADY_USED')
     expect(db().webshell.usedNonces).toHaveLength(2)
   })
@@ -672,7 +795,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
       { keyId, envelope },
       { keyId, envelope },
     ]
-    const result = verifyExecution({ plan: toHashTarget(request.plan!), approvals: twice }, request)
+    const result = verifyExecution({ plan: toHashTarget(request.plan!, request.projectId), approvals: twice }, request)
     expect(result.failed).toContain('NONCE_ALREADY_USED')
     expect(result.keyId).toBe(keyId)
     expect(db().webshell.usedNonces).toEqual([])
@@ -689,20 +812,22 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
   it('암호문이 변조됐거나 고정한 키가 아닌 키로 암호화됐으면 DECRYPT_FAILED로 거부한다', async () => {
     const other = bytesToBase64(x25519.getPublicKey(x25519.utils.randomSecretKey()))
-    deviceStore.update('u-07', { pinnedWebshellKey: { ...WEBSHELL_PUBLIC_KEY, encryptionKey: other } })
+    deviceStore.update('u-07', { pinnedWebshellKey: { ...WEBSHELL_PUBLIC_KEY, encryption: { ...WEBSHELL_PUBLIC_KEY.encryption, publicKey: other } } })
     const result = await approveAs('u-07', 'r-main', ['t-2'])
     expect(result.status).toBe('VERIFICATION_FAILED')
     expect(await failedChecksOf('r-main')).toContain('DECRYPT_FAILED')
 
     const request = storedRequest('r-external')
     const broken = { alg: 'HPKE-X25519-AES256GCM' as const, encapsulatedKey: 'x', ciphertext: 'bm90IGpzb24=' }
-    const checked = verifyExecution({ plan: toHashTarget(request.plan!), approvals: [{ keyId: 'k-07-a', envelope: broken }] }, request)
+    const checked = verifyExecution({ plan: toHashTarget(request.plan!, request.projectId), approvals: [{ keyId: 'k-07-a', envelope: broken }] }, request)
     expect(checked.failed).toContain('DECRYPT_FAILED')
   })
 
   it('고정한 웹쉘 공개키 모양이 잘못됐으면 봉투를 보내지 않고 이유를 알려 준다', async () => {
     const before = storedRequest('r-main').approvalRecords.length
-    deviceStore.update('u-07', { pinnedWebshellKey: { ...WEBSHELL_PUBLIC_KEY, encryptionKey: bytesToBase64(new Uint8Array(44)) } })
+    deviceStore.update('u-07', {
+      pinnedWebshellKey: { ...WEBSHELL_PUBLIC_KEY, encryption: { ...WEBSHELL_PUBLIC_KEY.encryption, publicKey: bytesToBase64(new Uint8Array(44)) } },
+    })
     await expect(approveAs('u-07', 'r-main', ['t-2'])).rejects.toThrow('승인을 암호화하지 못해 제출하지 않았습니다. 웹쉘 공개키는 32바이트')
     expect(storedRequest('r-main').approvalRecords).toHaveLength(before)
     expect(storedRequest('r-main').status).toBe('PENDING_APPROVAL')
@@ -710,8 +835,8 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
   it('서명이 공개키로 검증되지 않거나 키 주인이 승인자와 다르면 SIGNATURE_INVALID다', () => {
     const request = storedRequest('r-main')
-    const plan = toHashTarget(request.plan!)
-    const encryption = WEBSHELL_PUBLIC_KEY.encryptionKey
+    const plan = toHashTarget(request.plan!, request.projectId)
+    const encryption = WEBSHELL_PUBLIC_KEY.encryption.publicKey
     const [record] = request.approvalRecords
     const signed = openEnvelope(record.envelope)
     const widened = { ...signed, payload: { ...signed.payload, taskIds: ['t-1', 't-2'] } }
@@ -745,7 +870,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
   it('프리셋은 웹쉘 정책 사본에도 배포되어, 그 전에 모인 서명만으로는 실행하지 않는다', async () => {
     asUser('u-admin')
-    await adminApi.applyPreset('MEDIUM')
+    await adminApi.applyPreset('MEDIUM', PROOF)
     expect(db().webshell.policy.preset).toBe('MEDIUM')
     const result = await approveAs('u-07', 'r-main', ['t-2'])
     expect(result.status).toBe('VERIFICATION_FAILED')
@@ -754,15 +879,15 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
   it('승인 기준표 수정도 웹쉘 정책 사본에 반영된다', async () => {
     asUser('u-admin')
-    const rows = db().matrix.map((row) => (row.taskType === 'CODE_FEATURE' ? { ...row, approverRule: 'PROJECT_OWNER' as const } : row))
-    await adminApi.updateMatrix(rows)
-    expect(db().webshell.policy.matrix.find((r) => r.taskType === 'CODE_FEATURE')?.approverRule).toBe('PROJECT_OWNER')
+    const rules = db().matrix.map((row) => (row.taskType === 'CODE_FEATURE' ? { ...row, requiredApprovers: [{ rule: 'PROJECT_OWNER' as const, count: 1 }] } : row))
+    await adminApi.updateMatrix(rules, PROOF)
+    expect(db().webshell.policy.matrix.find((r) => r.taskType === 'CODE_FEATURE')?.requiredApprovers[0].rule).toBe('PROJECT_OWNER')
   })
 
   it('금지 규칙 해제 요청은 웹쉘 정책을 바꾸지 않아 실행 직전에 계속 막힌다', async () => {
     asUser('u-admin')
-    const rule = await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'staging', reason: '동결' })
-    await forbiddenApi.release(rule.id)
+    const rule = await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'staging', reason: '동결', adminProof: PROOF })
+    await forbiddenApi.release(rule.id, { reason: '동결 해제', adminProof: PROOF })
     const result = await approveAs('u-07', 'r-main', ['t-2'])
     expect(result.status).toBe('VERIFICATION_FAILED')
     expect(await failedChecksOf('r-main')).toEqual(['FORBIDDEN_TASK'])
@@ -783,8 +908,10 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
           task.status = 'APPROVED'
         }
       })
+      // 금지 작업은 해시 대상에서 빠지므로(서버 PlanHashService) 실행할 작업이 하나도 남지 않는다.
       expect(request.status).toBe('VERIFICATION_FAILED')
-      expect(request.failedChecks).toContain('FORBIDDEN_TASK')
+      expect(request.failedChecks).toEqual(['MISSING_REQUIRED_APPROVER'])
+      expect(db().logs[request.id]).toBeUndefined()
     })
 
     it('작업 상태를 실행중으로 바꿔도 서명 검사를 건너뛰지 않는다', () => {
@@ -818,20 +945,24 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     })
 
     it('담당자 판단은 서명으로 확인한 Plan의 프로젝트로 한다', async () => {
+      // 서명 대상의 프로젝트만 다른 곳으로 바꾼다. 서비스는 r-external의 프로젝트로 승인을 받아 준다.
       const request = storedRequest('r-external')
-      request.plan!.projectId = 'prj-deploy'
-      request.plan!.planHash = hashService.computePlanHash(request.plan!)
-      const result = await approveAs('u-07', 'r-external', ['t-1', 't-2'])
-      expect(result.status).toBe('VERIFICATION_FAILED')
-      expect(await failedChecksOf('r-external')).toEqual(['MISSING_REQUIRED_APPROVER'])
+      const forged = toHashTarget(request.plan!, 'prj-deploy')
+      request.forgedHashTarget = forged
+      request.plan!.planHash = hashService.computeTargetHash(forged)
+      mockConfig.webshellReachable = false
+      await approveAs('u-07', 'r-external', ['t-1', 't-2'])
+      mockConfig.webshellReachable = true
+      const approvals = request.approvalRecords.map(({ keyId, envelope }) => ({ keyId, envelope }))
+      expect(verifyExecution({ plan: forged, approvals }, request).failed).toEqual(['MISSING_REQUIRED_APPROVER'])
     })
 
     it('위험도를 기준표의 기본값 아래로 낮춘 Plan은 통과하지 못한다', async () => {
       asUser('u-admin')
-      await adminApi.applyPreset('MEDIUM')
+      await adminApi.applyPreset('MEDIUM', PROOF)
       const request = storedRequest('r-external')
       request.plan!.tasks[1].risk = 'LOW'
-      request.plan!.planHash = hashService.computePlanHash(request.plan!)
+      request.plan!.planHash = hashService.computePlanHash(request.plan!, request.projectId)
       const result = await approveAs('u-07', 'r-external', ['t-1', 't-2'])
       expect(result.status).toBe('VERIFICATION_FAILED')
       expect(await failedChecksOf('r-external')).toEqual(['MISSING_REQUIRED_APPROVER'])
@@ -843,11 +974,11 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
     it('대상은 스테이징인데 명령이 금지 대상이면 막는다', async () => {
       asUser('u-admin')
-      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'production', reason: '동결' })
+      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'production', reason: '동결', adminProof: PROOF })
       const request = storedRequest('r-main')
       request.plan!.tasks[1].content = { command: './deploy.sh production --force' }
       expect(request.plan!.tasks[1].target).toBe('staging')
-      const checked = verifyExecution({ plan: toHashTarget(request.plan!), approvals: [] }, request)
+      const checked = verifyExecution({ plan: toHashTarget(request.plan!, request.projectId), approvals: [] }, request)
       expect(checked.failed).toContain('FORBIDDEN_TASK')
       expect(checked.forbiddenTaskIds).toEqual(['t-2'])
     })
@@ -863,7 +994,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
     it('명령에 금지 대상이 있으면 서비스도 Plan 단계에서 금지로 표시해, 서명한 뒤 위변조 경보가 나지 않는다', async () => {
       asUser('u-admin')
-      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'canary', reason: '동결' })
+      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'canary', reason: '동결', adminProof: PROOF })
       expect(findForbiddenReason('DEPLOY', 'staging', ['d-backend'], { command: './deploy.sh canary' })).not.toBeNull()
       expect(findForbiddenReason('DEPLOY', 'staging', ['d-backend'], { command: './deploy.sh staging' })).toBeNull()
       const project = db().projects.find((p) => p.id === 'prj-auth')!
@@ -897,7 +1028,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
       expect(deploy.content.command).toBeTruthy()
       deploy.type = 'CODE_MINOR'
       deploy.risk = 'LOW'
-      request.plan!.planHash = hashService.computePlanHash(request.plan!)
+      request.plan!.planHash = hashService.computePlanHash(request.plan!, request.projectId)
       expect((await approveAs('u-07', 'r-external', ['t-1', 't-2'])).status).toBe('VERIFICATION_FAILED')
       expect(await failedChecksOf('r-external')).toEqual(['FORBIDDEN_TASK'])
     })
@@ -937,7 +1068,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
   describe('규칙마다 다른 사람의 서명', () => {
     const requestOnDeploy = async () => {
       asUser('u-admin')
-      await adminApi.applyPreset('MEDIUM')
+      await adminApi.applyPreset('MEDIUM', PROOF)
       asUser('u-21')
       const { id } = await requestsApi.create({ projectId: 'prj-deploy', prompt: '스테이징에 배포해줘' })
       await waitForStatus(id, notAnalyzing)
@@ -974,7 +1105,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     })
 
     it('기준표: 사본이 담당자를 요구하면 서비스 기준표가 누구나여도 막는다', async () => {
-      db().webshell.policy.matrix = db().webshell.policy.matrix.map((row) => ({ ...row, approverRule: 'PROJECT_OWNER' as const }))
+      db().webshell.policy.matrix = db().webshell.policy.matrix.map((row) => ({ ...row, requiredApprovers: [{ rule: 'PROJECT_OWNER' as const, count: 1 }] }))
       expect((await approveAs('u-07', 'r-main', ['t-2'])).status).toBe('VERIFICATION_FAILED')
       expect(await failedChecksOf('r-main')).toEqual(['MISSING_REQUIRED_APPROVER'])
     })
@@ -987,13 +1118,13 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
     it('금지 규칙: 서비스에만 있으면 막지 않고, 사본에 있으면 막는다', async () => {
       asUser('u-admin')
-      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'staging', reason: '동결' })
+      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'staging', reason: '동결', adminProof: PROOF })
       const copied = db().webshell.policy.forbiddenRules
       db().webshell.policy.forbiddenRules = []
-      expect(verifyExecution({ plan: toHashTarget(storedRequest('r-main').plan!), approvals: [] }, storedRequest('r-main')).failed).not.toContain('FORBIDDEN_TASK')
+      expect(verifyExecution({ plan: toHashTarget(storedRequest('r-main').plan!, 'prj-auth'), approvals: [] }, storedRequest('r-main')).failed).not.toContain('FORBIDDEN_TASK')
       db().webshell.policy.forbiddenRules = copied
       db().forbiddenRules = []
-      expect(verifyExecution({ plan: toHashTarget(storedRequest('r-main').plan!), approvals: [] }, storedRequest('r-main')).failed).toContain('FORBIDDEN_TASK')
+      expect(verifyExecution({ plan: toHashTarget(storedRequest('r-main').plan!, 'prj-auth'), approvals: [] }, storedRequest('r-main')).failed).toContain('FORBIDDEN_TASK')
     })
 
     it('공개키: 서비스에 등록되어 있어도 사본에 없으면 KEY_NOT_REGISTERED다', async () => {
@@ -1005,7 +1136,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
 
   it('금지 규칙에 걸리는 문서 롤백은 승인대기로 가지 않는다', async () => {
     asUser('u-admin')
-    await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DOC', target: 'docs/README.md', reason: '동결' })
+    await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DOC', target: 'docs/README.md', reason: '동결', adminProof: PROOF })
     asUser('u-01')
     const before = storedRequest('r-completed').status
     await expectError(requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 }), 'FORBIDDEN_TASK')
@@ -1041,7 +1172,7 @@ describe('웹쉘 연결 불가', () => {
 
     mockConfig.webshellReachable = true
     const finished = await waitForStatus(id, (s) => s === 'COMPLETED')
-    expect(finished.plan!.tasks.map((t) => t.status)).toEqual(['SUCCEEDED'])
+    expect(finished.currentPlan!.tasks.map((t) => t.status)).toEqual(['SUCCEEDED'])
   })
 
   it('담당자 승인도 연결할 수 없으면 executionRequested false다', async () => {
@@ -1076,13 +1207,13 @@ describe('웹쉘 연결 불가', () => {
     await expect(adminApi.killAll('전체 중단')).rejects.toMatchObject({ status: 502, code: 'WEBSHELL_UNAVAILABLE' })
     expect((await requestsApi.get('r-running')).status).toBe('RUNNING')
     mockConfig.webshellReachable = true
-    expect((await adminApi.killAll('전체 중단')).killedRequestIds).toEqual(['r-running'])
+    expect((await adminApi.killAll('전체 중단')).executionIds).toEqual(['r-running'])
   })
 })
 
 describe('승인 기록과 웹쉘 키 (명세 2.5, 5장)', () => {
   it('승인 기록은 평문 메타데이터와 암호문만 보관하고, 승인자와 망은 서버가 채운다', async () => {
-    asUser('u-07', 'EXTERNAL')
+    asUser('u-07')
     const kim = await me()
     const context = await approvalsApi.context('r-external')
     await signAndSubmitApproval({ me: kim, context, taskIds: ['t-1'] })
@@ -1106,7 +1237,7 @@ describe('승인 기록과 웹쉘 키 (명세 2.5, 5장)', () => {
       taskIds: ['t-1'],
       approverId: 'u-07',
       keyId: 'k-07-a',
-      network: 'EXTERNAL',
+      network: 'INTERNAL',
     })
     expect(Object.keys(record.envelope).sort()).toEqual(['alg', 'ciphertext', 'encapsulatedKey'])
     expect(record.envelope.alg).toBe('HPKE-X25519-AES256GCM')
@@ -1118,17 +1249,21 @@ describe('승인 기록과 웹쉘 키 (명세 2.5, 5장)', () => {
   it('웹쉘 공개키는 내부망에서만 받고 X25519·Ed25519 키와 지문을 준다', async () => {
     const key = await meApi.webshellPublicKey()
     expect(key).toEqual(WEBSHELL_PUBLIC_KEY)
-    expect(key.encryptionKey).not.toBe(key.signingKey)
-    expect(key.fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(key.encryption.algorithm).toBe('X25519')
+    expect(key.signing.algorithm).toBe('Ed25519')
+    expect(key.encryption.publicKey).not.toBe(key.signing.publicKey)
+    expect(key.encryption.fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(key.signing.fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/)
+    expect(() => cryptoService.assertWebshellKey(key)).not.toThrow()
     asUser('u-01', 'EXTERNAL')
     await expectError(meApi.webshellPublicKey(), 'INTERNAL_NETWORK_ONLY')
   })
 
   it('requiredApprovers는 규칙 목록이다', async () => {
-    const { plan } = await requestsApi.get('r-main')
+    const { currentPlan: plan } = await requestsApi.get('r-main')
     expect(plan!.tasks[0].requiredApprovers).toEqual([{ rule: 'ANYONE', count: 1 }])
     expect(plan!.tasks[1].requiredApprovers).toEqual([{ rule: 'PROJECT_OWNER', count: 1, candidates: ['u-07', 'u-09'] }])
-    const forbidden = (await requestsApi.get('r-forbidden')).plan!.tasks[0]
+    const forbidden = (await requestsApi.get('r-forbidden')).currentPlan!.tasks[0]
     expect(forbidden.requiredApprovers).toEqual([])
   })
 
@@ -1140,7 +1275,7 @@ describe('승인 기록과 웹쉘 키 (명세 2.5, 5장)', () => {
 })
 
 describe('웹쉘 서명 (명세 5장)', () => {
-  const key = WEBSHELL_PUBLIC_KEY.signingKey
+  const key = WEBSHELL_PUBLIC_KEY.signing.publicKey
   const verify = signingService.verifyWebshellSignature
 
   it('실행 상태·결과·콜백·로그에 웹쉘 서명이 붙고, 내용이 바뀌면 확인되지 않는다', async () => {

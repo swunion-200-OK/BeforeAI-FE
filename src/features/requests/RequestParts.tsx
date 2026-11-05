@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router'
 import type { RequestDetail, Task } from '../../api/types'
 import { Banner, Button, ConfirmModal, ReasonModal } from '../../components/ui'
 import { formatDateTime } from '../../lib/format'
-import { useProjects } from '../../lib/queries'
+import { useProjects, useRequest } from '../../lib/queries'
 import { useCancelRequest, usePatchPlan, useRetryAnalysis } from './useRequestActions'
 
 const MAX_ANALYSIS_ATTEMPTS = 3
@@ -11,10 +11,10 @@ const MAX_ANALYSIS_ATTEMPTS = 3
 /** 조용한 메타 한 줄: 프로젝트, 요청자, 시각 */
 export function RequestMeta({ request }: { request: RequestDetail }) {
   const projects = useProjects()
-  // 프로젝트 이름은 명세의 Request에 없어 프로젝트 목록에서 먼저 찾는다.
-  const projectName = projects.data?.find((project) => project.id === request.projectId)?.name ?? request.projectName
+  // 프로젝트 이름은 서버의 요청 응답에 없어 프로젝트 목록에서 찾는다.
+  const projectName = projects.data?.find((project) => project.id === request.projectId)?.name ?? request.projectId
   const parts = [projectName, request.requester.name, formatDateTime(request.createdAt)]
-  if (request.plan?.kind === 'ROLLBACK') parts.push('문서 롤백')
+  if (request.currentPlan?.kind === 'ROLLBACK') parts.push('문서 롤백')
   return <span className="text-ink-3">{parts.join(', ')}</span>
 }
 
@@ -112,6 +112,32 @@ export function CancelRequestButton({
   )
 }
 
+/**
+ * 분석이 끝나지 않을 때. 진행 중인 것처럼 보이는 표시를 치우고 있는 그대로 말한다.
+ * 서버는 분석 중인 요청의 취소도 재시도도 받지 않아(RequestService.CANCELABLE, RequestPlanService.retryAnalysis) 그런 버튼을 두지 않는다.
+ */
+export function AnalysisOverdueBanner({ requestId }: { requestId: string }) {
+  const navigate = useNavigate()
+  const query = useRequest(requestId)
+  return (
+    <Banner
+      tone="warning"
+      title="분석이 평소보다 오래 걸리고 있습니다"
+      action={
+        <div className="flex items-center gap-2">
+          <Button onClick={() => navigate('/requests')}>요청 목록</Button>
+          <Button loading={query.isFetching} onClick={() => void query.refetch()}>
+            지금 다시 확인
+          </Button>
+        </div>
+      }
+    >
+      <p>아직 결과가 없고 언제 끝날지 알 수 없습니다. 이 화면을 떠나도 요청은 남아 있으니 나중에 다시 확인해 주세요.</p>
+      <p className="mt-1">분석 중인 요청은 취소할 수 없습니다. 계속 끝나지 않으면 관리자에게 알려 주세요.</p>
+    </Banner>
+  )
+}
+
 /** 분석 실패: 3회까지 재시도, 남은 횟수 표시 */
 export function AnalysisFailedPanel({ request, isRequester }: { request: RequestDetail; isRequester: boolean }) {
   const retry = useRetryAnalysis(request.id)
@@ -134,7 +160,7 @@ export function AnalysisFailedPanel({ request, isRequester }: { request: Request
         ))
       }
     >
-      <p>{request.analysisError ?? 'AI 분석 엔진에서 결과를 받지 못했습니다.'}</p>
+      <p>AI 분석 엔진에서 결과를 받지 못했습니다.</p>
       <p className="mt-1">
         {remaining > 0
           ? `남은 재시도 ${remaining}회`

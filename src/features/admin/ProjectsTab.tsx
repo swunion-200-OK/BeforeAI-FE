@@ -30,7 +30,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
         departmentId: selectedDepartment,
         repository: repository.trim(),
         ownerIds,
-        specBody,
+        initialSpec: { body: specBody },
       }),
     onSuccess: async (project) => {
       toast.success(`${project.name} 프로젝트를 만들었습니다`)

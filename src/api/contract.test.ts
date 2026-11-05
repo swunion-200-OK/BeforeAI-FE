@@ -16,7 +16,8 @@ import {
   requestsApi,
 } from './endpoints'
 import { followLogs } from './logStream'
-import type { ApprovalEnvelope, ApprovalMatrixRow, PatchPlanBody } from './types'
+import { MISSING_ON_SERVER } from './missingOnServer'
+import type { AdminProof, ApprovalEnvelope, ApprovalMatrixRule, PatchPlanBody } from './types'
 
 /**
  * API 명세 3.1~3.9의 표를 그대로 옮겼다. 메서드, 경로, 쿼리, 본문을 클라이언트가 실제로 보내는 값과 비교한다.
@@ -43,9 +44,8 @@ const IDS: Record<string, string> = {
 const ALL_PAGES = { limit: '100' }
 
 const ENVELOPE: ApprovalEnvelope = { alg: 'HPKE-X25519-AES256GCM', encapsulatedKey: 'ek', ciphertext: 'ct' }
-const MATRIX: ApprovalMatrixRow[] = [
-  { taskType: 'DOC', label: '문서', examples: '', defaultRisk: 'LOW', approverRule: 'ANYONE' },
-]
+const MATRIX: ApprovalMatrixRule[] = [{ taskType: 'DOC', risk: 'LOW', requiredApprovers: [{ rule: 'ANYONE', count: 1 }] }]
+const PROOF: AdminProof = { keyId: 'key-2', signature: 'c2ln' }
 const PLAN_PATCH: PatchPlanBody = {
   basePlanId: 'plan-1',
   changes: [
@@ -76,19 +76,22 @@ interface Row {
   stream?: boolean
 }
 
-const WEBSHELL_KEY = { encryptionKey: 'enc', signingKey: 'sig', fingerprint: 'fp' }
+const WEBSHELL_KEY = {
+  encryption: { algorithm: 'X25519', publicKey: 'enc', fingerprint: 'sha256:1' },
+  signing: { algorithm: 'Ed25519', publicKey: 'sig', fingerprint: 'sha256:2' },
+}
 const TREE = { requestId: 'request-1', version: 1, updatedAt: '2026-11-04T03:15:20Z', root: { id: 'request:1', type: 'REQUEST', label: '요청', status: 'RUNNING', children: [] } }
 
 const ROWS: Row[] = [
   // 3.1 인증·내 정보·승인 키
-  { spec: 'POST /auth/login', call: () => authApi.login('E1', 'pw'), body: { employeeNo: 'E1', password: 'pw' } },
-  { spec: 'POST /auth/otp/verify', call: () => authApi.verifyOtp('temp', '123456'), body: { tempToken: 'temp', code: '123456' } },
+  { spec: 'POST /auth/login', call: () => authApi.login('E1', 'pw'), body: { employeeNumber: 'E1', password: 'pw' } },
+  { spec: 'POST /auth/otp/verify', call: () => authApi.verifyOtp('temp', '123456'), body: { temporaryToken: 'temp', otpCode: '123456' } },
   { spec: 'POST /auth/refresh', call: () => authApi.refresh() },
   { spec: 'POST /auth/logout', call: () => authApi.logout() },
   { spec: 'GET /me', call: () => meApi.get() },
   { spec: 'PUT /me/password', call: () => meApi.changePassword('old', 'new'), body: { currentPassword: 'old', newPassword: 'new' } },
-  { spec: 'POST /me/otp', call: () => meApi.enrollOtp('123456'), body: { code: '123456' } },
-  { spec: 'POST /me/signing-keys', call: () => meApi.submitSigningKey('pub'), body: { publicKey: 'pub' } },
+  { spec: 'POST /me/otp', call: () => meApi.confirmOtp('123456'), body: { otpCode: '123456' }, reply: { verified: true } },
+  { spec: 'POST /me/signing-keys', call: () => meApi.submitSigningKey('pub'), body: { algorithm: 'Ed25519', publicKey: 'pub' } },
   { spec: 'GET /me/signing-keys', call: () => meApi.signingKeys(), query: ALL_PAGES },
   { spec: 'GET /webshell/public-key', call: () => meApi.webshellPublicKey(), reply: WEBSHELL_KEY },
   { spec: 'GET /me/notification-settings', call: () => meApi.notificationSettings() },
@@ -101,8 +104,8 @@ const ROWS: Row[] = [
   // 3.2 관리자: 계정·조직·정책·키
   {
     spec: 'POST /admin/users',
-    call: () => adminApi.createUser({ employeeNo: 'E2', name: '이름', role: 'EMPLOYEE', departmentId: 'dept-1' }),
-    body: { employeeNo: 'E2', name: '이름', role: 'EMPLOYEE', departmentId: 'dept-1' },
+    call: () => adminApi.createUser({ employeeNumber: 'E2', name: '이름', role: 'EMPLOYEE', departmentId: 'dept-1' }),
+    body: { employeeNumber: 'E2', name: '이름', role: 'EMPLOYEE', departmentId: 'dept-1' },
   },
   {
     spec: 'GET /admin/users',
@@ -114,11 +117,15 @@ const ROWS: Row[] = [
   { spec: 'GET /departments', call: () => orgApi.departments(), query: ALL_PAGES },
   { spec: 'POST /admin/departments', call: () => adminApi.createDepartment('백엔드'), body: { name: '백엔드' } },
   { spec: 'GET /admin/policy', call: () => adminApi.policy() },
-  { spec: 'PUT /admin/policy/preset', call: () => adminApi.applyPreset('LARGE'), body: { preset: 'LARGE' } },
+  { spec: 'PUT /admin/policy/preset', call: () => adminApi.applyPreset('LARGE', PROOF), body: { preset: 'LARGE', adminProof: PROOF } },
   { spec: 'GET /approval-matrix', call: () => orgApi.approvalMatrix() },
-  { spec: 'PUT /admin/approval-matrix', call: () => adminApi.updateMatrix(MATRIX), body: { rows: MATRIX } },
+  { spec: 'PUT /admin/approval-matrix', call: () => adminApi.updateMatrix(MATRIX, PROOF), body: { rules: MATRIX, adminProof: PROOF } },
   { spec: 'GET /admin/signing-keys', call: () => adminApi.signingKeys(), query: ALL_PAGES },
-  { spec: 'POST /admin/signing-keys/{keyId}/register', call: () => adminApi.registerKey('key-1') },
+  {
+    spec: 'POST /admin/signing-keys/{keyId}/register',
+    call: () => adminApi.registerKey('key-1', { keyId: 'key-2', signature: 'c2ln' }),
+    body: { adminProof: { keyId: 'key-2', signature: 'c2ln' } },
+  },
   { spec: 'DELETE /admin/signing-keys/{keyId}', call: () => adminApi.revokeKey('key-1') },
   {
     spec: 'PUT /admin/integrations/slack',
@@ -131,8 +138,8 @@ const ROWS: Row[] = [
   { spec: 'GET /projects', call: () => projectsApi.list(), query: ALL_PAGES },
   {
     spec: 'POST /admin/projects',
-    call: () => adminApi.createProject({ name: 'p', departmentId: 'dept-1', repository: 'r', ownerIds: ['a', 'b'], specBody: 's' }),
-    body: { name: 'p', departmentId: 'dept-1', repository: 'r', ownerIds: ['a', 'b'], specBody: 's' },
+    call: () => adminApi.createProject({ name: 'p', departmentId: 'dept-1', repository: 'r', ownerIds: ['a', 'b'], initialSpec: { body: 's' } }),
+    body: { name: 'p', departmentId: 'dept-1', repository: 'r', ownerIds: ['a', 'b'], initialSpec: { body: 's' } },
   },
   { spec: 'GET /projects/{projectId}', call: () => projectsApi.get('project-1') },
   { spec: 'GET /projects/{projectId}/spec', call: () => projectsApi.spec('project-1') },
@@ -161,14 +168,22 @@ const ROWS: Row[] = [
   { spec: 'GET /departments/{deptId}/forbidden-rules', call: () => forbiddenApi.rules('dept-1'), query: ALL_PAGES },
   { spec: 'POST /departments/{deptId}/forbidden-proposals', call: () => forbiddenApi.propose('dept-1', FORBIDDEN), body: FORBIDDEN },
   { spec: 'GET /admin/forbidden-proposals', call: () => forbiddenApi.proposals('OPEN'), query: { status: 'OPEN', ...ALL_PAGES } },
-  { spec: 'POST /admin/forbidden-proposals/{proposalId}/confirm', call: () => forbiddenApi.confirm('proposal-1') },
+  {
+    spec: 'POST /admin/forbidden-proposals/{proposalId}/confirm',
+    call: () => forbiddenApi.confirm('proposal-1', PROOF),
+    body: { adminProof: PROOF },
+  },
   { spec: 'POST /admin/forbidden-proposals/{proposalId}/reject', call: () => forbiddenApi.reject('proposal-1', '사유'), body: { reason: '사유' } },
   {
     spec: 'POST /admin/forbidden-rules',
-    call: () => forbiddenApi.addRule({ ...FORBIDDEN, departmentId: 'dept-1' }),
-    body: { ...FORBIDDEN, departmentId: 'dept-1' },
+    call: () => forbiddenApi.addRule({ ...FORBIDDEN, departmentId: 'dept-1', adminProof: PROOF }),
+    body: { ...FORBIDDEN, departmentId: 'dept-1', adminProof: PROOF },
   },
-  { spec: 'POST /admin/forbidden-rules/{ruleId}/release', call: () => forbiddenApi.release('rule-1') },
+  {
+    spec: 'POST /admin/forbidden-rules/{ruleId}/release',
+    call: () => forbiddenApi.release('rule-1', { reason: '사유', adminProof: PROOF }),
+    body: { reason: '사유', adminProof: PROOF },
+  },
 
   // 3.5 작업 요청·Plan·실행 (4.1, 4.2, 4.3, 4.6, 4.9)
   { spec: 'POST /requests', call: () => requestsApi.create({ projectId: 'project-1', prompt: '해줘' }), body: { projectId: 'project-1', prompt: '해줘' } },
@@ -213,8 +228,8 @@ const ROWS: Row[] = [
   },
   {
     spec: 'POST /requests/{requestId}/rejections',
-    call: () => approvalsApi.reject('request-1', { taskIds: ['task-1'], reason: '사유' }),
-    body: { taskIds: ['task-1'], reason: '사유' },
+    call: () => approvalsApi.reject('request-1', { planId: 'plan-1', taskIds: ['task-1'], reason: '사유' }),
+    body: { planId: 'plan-1', taskIds: ['task-1'], reason: '사유' },
   },
 
   // 3.7 문서·문서 롤백
@@ -342,25 +357,39 @@ describe('API 명세 3장 표', () => {
     for (const [name, value] of Object.entries(headers)) expect(request.headers.get(name)).toBe(value)
   })
 
+  it('서버에 없는 API 목록은 16건이고 모두 표에 있다', () => {
+    const specs = ROWS.map((row) => row.spec)
+    expect(MISSING_ON_SERVER).toHaveLength(16)
+    for (const { operation } of MISSING_ON_SERVER) expect(specs).toContain(operation)
+  })
+
   it('표의 행은 겹치지 않는다', () => {
     const specs = [...ROWS.map((row) => row.spec), ...NOT_CALLED_BY_CLIENT]
     expect(new Set(specs).size).toBe(specs.length)
   })
 
-  it('화면이 쓰는 로그 스트림도 같은 경로로 간다', async () => {
-    useReply(() => ({ body: '', contentType: 'text/event-stream' }))
-    await followLogs({
-      requestId: 'request-1',
-      live: false,
-      signal: new AbortController().signal,
-      position: { current: undefined },
-      onLine: () => {},
-      onRestart: () => {},
-      onConnection: () => {},
+  it('화면이 쓰는 로그 스트림도 같은 경로로 가고, 서버가 받지 않는 Last-Event-ID는 보내지 않는다', async () => {
+    useReply((url) => (url.pathname.endsWith('/stream') ? { body: '', contentType: 'text/event-stream' } : { body: { items: [], nextCursor: null } }))
+    const controller = new AbortController()
+    let opened: () => void = () => {}
+    const connected = new Promise<void>((resolve) => {
+      opened = resolve
     })
-    expect(sent.map((request) => request.url.pathname)).toContain(
-      new URL(`${API_BASE_URL}/requests/request-1/logs/stream`, 'http://client.test').pathname,
-    )
+    const done = followLogs({
+      requestId: 'request-1',
+      live: true,
+      signal: controller.signal,
+      onLine: () => {},
+      onConnection: (connection) => {
+        if (connection) opened()
+      },
+    })
+    await connected
+    controller.abort()
+    await done
+    const stream = sent.find((request) => request.url.pathname.endsWith('/logs/stream'))
+    expect(stream?.url.pathname).toBe(new URL(`${API_BASE_URL}/requests/request-1/logs/stream`, 'http://client.test').pathname)
+    expect(stream?.headers.get('last-event-id')).toBeNull()
   })
 })
 

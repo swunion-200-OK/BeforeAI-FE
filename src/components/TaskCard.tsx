@@ -20,10 +20,11 @@ export function approversText(required: ApproverRequirement[]): string {
  * 문서 비교는 서버가 준 diff를 믿지 않고, 해시로 검증한 content.body로 화면에서 직접 만든다.
  */
 export function TaskContentView({ task, requestId }: { task: Task; requestId?: string }) {
-  const { content } = task
+  // 서버의 해시 대상은 내용 없는 작업을 빈 객체로 다룬다 (PlanHashService.contentTarget). 화면도 깨지지 않게 같게 본다.
+  const content = task.content ?? {}
   const showDocument = task.type === 'DOC' && Boolean(requestId) && content.body !== undefined
   const documentQuery = useQuery({
-    queryKey: ['task-document', requestId, task.id, task.content.body],
+    queryKey: ['task-document', requestId, task.id, content.body],
     queryFn: () => requestsApi.taskDocument(requestId as string, task.id),
     enabled: showDocument,
   })
@@ -185,7 +186,7 @@ export function TaskCard({
                   <div>
                     <h4 className="text-sm font-semibold text-ink-2">실제 변경 내용</h4>
                     <p className="text-xs text-ink-3">
-                      위 설명은 AI가 쓴 참고 자료입니다. 승인 서명의 기준은 이 실제 변경 내용입니다.
+                      {task.explanation ? '위 설명은 AI가 쓴 참고 자료입니다. ' : ''}승인 서명의 기준은 이 실제 변경 내용입니다.
                     </p>
                   </div>
                   <TaskContentView task={task} requestId={requestId} />

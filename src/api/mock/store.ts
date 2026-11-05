@@ -1,5 +1,6 @@
 import type {
-  ApprovalMatrixRow,
+  AdminSigningKey,
+  ApprovalMatrixRule,
   ApprovalRecord,
   AuditAction,
   AuditExportFilters,
@@ -10,6 +11,7 @@ import type {
   ErrorCode,
   ExportFormat,
   ExportStatus,
+  FailedCheck,
   ForbiddenProposal,
   ForbiddenRule,
   LogLine,
@@ -23,9 +25,9 @@ import type {
   Project,
   ProjectSpec,
   RequestDetail,
+  RequestEvent,
   RequestStatus,
   RequestSummary,
-  SigningKey,
   SpecChangeRequest,
   TaskContent,
   TaskType,
@@ -38,10 +40,15 @@ import type {
 
 export interface StoredUser extends User {
   password: string
+  passwordChangeRequired: boolean
   otpEnrolled: boolean
+  /** 발급만 하고 아직 확인하지 않은 값도 들어 있다 */
+  otpSecret: string | null
 }
 
 export interface StoredApproval {
+  /** 승인 기록 ID. 한 번에 여러 작업을 서명하면 작업마다 같은 값이다 (서버 ApprovalResponse.id) */
+  id: string
   planId: string
   taskId: string
   rule: string
@@ -60,20 +67,15 @@ export type PendingAnalysis =
 
 export type TamperAttack = 'SWAP_BEFORE_SIGN' | 'SWAP_DISPLAY' | 'SWAP_AFTER_SIGN' | 'FORGE_APPROVAL'
 
-export interface StoredRequest
-  extends RequestSummary,
-    Pick<
-      RequestDetail,
-      | 'clarification'
-      | 'analysisError'
-      | 'changedTaskIds'
-      | 'removedTaskTitles'
-      | 'failedChecks'
-      | 'rejection'
-      | 'kill'
-      | 'events'
-    > {
+export interface StoredRequest extends RequestSummary, Pick<RequestDetail, 'clarification'> {
   plan: Plan | null
+  // TODO(spec): 아래 다섯 개는 서버에 없는 목 전용 기록이다. 시연 화면에서만 쓴다.
+  changedTaskIds: string[]
+  removedTaskTitles: string[]
+  failedChecks: FailedCheck[]
+  rejection: NonNullable<RequestDetail['rejection']> | null
+  kill: NonNullable<RequestDetail['kill']> | null
+  events: RequestEvent[]
   /** 화면 표시용 "누가 어떤 작업을 승인했는지" (기능 명세서 5.9 ⑥) */
   approvals: StoredApproval[]
   /** 승인 기록 (명세 2.5). 웹쉘에는 이 안의 keyId와 envelope만 보낸다 */
@@ -121,6 +123,11 @@ export interface SlackMessage {
   at: string
 }
 
+/** 응답에는 나가지 않는다. 서버의 프로젝트에는 기준 커밋이 없고, 파일 목록이 알려 준다. */
+export interface StoredProject extends Project {
+  baseCommit: string
+}
+
 export interface MockDb {
   schema: number
   network: Network
@@ -128,12 +135,12 @@ export interface MockDb {
   seq: number
   users: StoredUser[]
   departments: Department[]
-  projects: Project[]
+  projects: StoredProject[]
   specs: Record<string, ProjectSpec[]>
   changeRequests: SpecChangeRequest[]
-  policy: Policy
-  matrix: ApprovalMatrixRow[]
-  signingKeys: SigningKey[]
+  policy: Pick<Policy, 'preset' | 'version' | 'slackIntegration'>
+  matrix: ApprovalMatrixRule[]
+  signingKeys: AdminSigningKey[]
   forbiddenRules: ForbiddenRule[]
   proposals: ForbiddenProposal[]
   requests: StoredRequest[]
@@ -158,7 +165,7 @@ export interface MockDb {
       keys: Array<{ keyId: string; userId: string; publicKey: string }>
       forbiddenRules: Array<{ departmentId: string; taskType: TaskType; target: string }>
       preset: PolicyPreset
-      matrix: ApprovalMatrixRow[]
+      matrix: ApprovalMatrixRule[]
     }
   }
 }
@@ -166,7 +173,7 @@ export interface MockDb {
 // ── 싱글턴 상태 ────────────────────────────────────────────
 
 const STORAGE_KEY = 'beforeai.mock.db.v1'
-export const SCHEMA_VERSION = 10
+export const SCHEMA_VERSION = 13
 
 export const mockConfig = {
   latencyMs: 180,
@@ -260,7 +267,7 @@ export function requireRequest(id: string): StoredRequest {
   return found
 }
 
-export function requireProject(id: string): Project {
+export function requireProject(id: string): StoredProject {
   const found = db().projects.find((p) => p.id === id)
   if (!found) throw new HttpError(404, 'NOT_FOUND', '프로젝트를 찾을 수 없습니다')
   return found

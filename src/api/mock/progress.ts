@@ -5,7 +5,6 @@
  */
 import { signingService } from '../../crypto/signingService'
 import type {
-  ApproverRule,
   Plan,
   ProgressApprovalNode,
   ProgressNode,
@@ -24,19 +23,16 @@ import { WEBSHELL_PUBLIC_KEY } from './webshell'
 /** 테스트에서 줄여 쓴다. */
 export const progressConfig = {
   heartbeatMs: 30_000,
-  /** 이 개수를 넘게 끊겼다가 돌아오면 이어 받지 못하고 tree.replaced를 받는다 */
-  historyLimit: 50,
 }
 
 type VersionedEvent = Exclude<ProgressStreamEvent, { event: 'heartbeat' }>
-/** 버전을 매기기 전의 변경 */
-type TreeChange = VersionedEvent extends infer E ? (E extends VersionedEvent ? Omit<E, 'id'> : never) : never
+/** 버전을 매기기 전의 변경. 서버와 같이 상태 변경만 패치로 보내고 나머지는 전체를 다시 받게 한다 */
+type TreeChange = { nodeId: string; status: string } | 'replaced'
 
 interface Tracker {
   version: number
   updatedAt: string
   root: ProgressRequestNode
-  history: VersionedEvent[]
   listeners: Set<(event: VersionedEvent) => void>
 }
 
@@ -46,7 +42,7 @@ function isSignedByWebshell(event: WebshellEvent, requestId: string): boolean {
   const { webshellSignature, ...signed } = event
   return (
     event.requestId === requestId &&
-    signingService.verifyWebshellSignature(signed, webshellSignature, WEBSHELL_PUBLIC_KEY.signingKey)
+    signingService.verifyWebshellSignature(signed, webshellSignature, WEBSHELL_PUBLIC_KEY.signing.publicKey)
   )
 }
 
@@ -72,57 +68,40 @@ function stepNodes(request: StoredRequest, task: Task): ProgressStepNode[] {
 }
 
 /**
- * 승인 규칙 한 칸이 노드 하나다. 후보가 승인하면 같은 노드가 APPROVED로 바뀐다.
- * TODO(spec): 명세의 approval:{승인 기록 id}는 한 기록이 여러 작업을 담으면 트리 안에서 겹쳐, 작업과 규칙으로 정한다.
+ * 서버 RequestProgressService.approvalNodes와 같다. 제출된 승인마다 approval:{승인 기록 id} 노드 하나,
+ * 승인 대기 작업이면 필요 승인권자마다 approval:pending:{작업 id}:{순번} 노드 하나다.
  */
 function approvalNodes(request: StoredRequest, plan: Plan, task: Task): ProgressApprovalNode[] {
-  const database = db()
-  const nodes: ProgressApprovalNode[] = []
-  // 제출 전이나 승인을 받지 않고 끝난 요청에는 기다리는 승인이 없다.
-  const awaitingApproval = request.status === 'PENDING_APPROVAL' || request.status === 'REAPPROVAL_REQUIRED'
-  let rejectionShown = false
-  for (const requirement of task.requiredApprovers) {
-    const rule: ApproverRule = requirement.rule
-    const signed = request.approvals.filter((a) => a.planId === plan.id && a.taskId === task.id && a.rule === rule)
-    const slots = Math.max(requirement.count, signed.length)
-    for (let slot = 0; slot < slots; slot++) {
-      const id = `approval:${task.id}:${rule}:${slot}`
-      const approval = signed[slot]
-      if (approval) {
-        nodes.push({ id, type: 'APPROVAL', rule, label: approval.name, status: 'APPROVED', network: approval.network, at: approval.at })
-      } else if (task.status === 'REJECTED' && request.rejection && !rejectionShown) {
-        rejectionShown = true
-        const rejected = database.auditLogs.find((log) => log.action === 'REJECTED' && log.target.requestId === request.id)
-        nodes.push({
-          id,
-          type: 'APPROVAL',
-          rule,
-          label: request.rejection.by,
-          status: 'REJECTED',
-          at: request.rejection.at,
-          ...(rejected ? { network: rejected.network } : {}),
-        })
-      } else if (task.status === 'PENDING' && awaitingApproval) {
-        // TODO(spec): candidates의 모양과 rule은 명세에 없다. 화면에 이름을 쓰려고 결재 현황과 같은 모양으로 둔다. 누구나 승인하면 비어 있다.
-        const candidates = (requirement.candidates ?? []).map((userId) => ({
-          id: userId,
-          name: database.users.find((user) => user.id === userId)?.name ?? userId,
-        }))
-        nodes.push({ id, type: 'APPROVAL', rule, status: 'PENDING', candidates })
-      }
-    }
+  const nodes: ProgressApprovalNode[] = request.approvals
+    .filter((approval) => approval.planId === plan.id && approval.taskId === task.id)
+    .map((approval) => ({
+      id: `approval:${approval.id}`,
+      type: 'APPROVAL',
+      label: approval.name,
+      status: 'APPROVED',
+      network: approval.network,
+      at: approval.at,
+    }))
+  if (task.status === 'PENDING') {
+    task.requiredApprovers.forEach((requirement, index) => {
+      nodes.push({
+        id: `approval:pending:${task.id}:${index}`,
+        type: 'APPROVAL',
+        status: 'PENDING',
+        ...(requirement.candidates ? { candidates: requirement.candidates } : {}),
+      })
+    })
   }
   return nodes
 }
 
 function taskNodes(request: StoredRequest, plan: Plan): ProgressTaskNode[] {
-  // 선후 관계는 Plan 순서다 (5.2). 금지 작업은 실행되지 않으므로 사슬에서 뺀다.
+  // 서버처럼 바로 앞 작업을 dependsOn으로 둔다.
   let previous: string | null = null
   return plan.tasks.map((task) => {
     const id = `task:${task.id}`
-    const blocked = task.status === 'BLOCKED'
-    const dependsOn = !blocked && previous ? [previous] : []
-    if (!blocked) previous = id
+    const dependsOn = previous ? [previous] : []
+    previous = id
     return {
       id,
       type: 'TASK',
@@ -136,10 +115,6 @@ function taskNodes(request: StoredRequest, plan: Plan): ProgressTaskNode[] {
   })
 }
 
-function planLabel(plan: Plan, version: number): string {
-  return plan.kind === 'ROLLBACK' ? `문서 롤백 Plan v${version}` : `Plan v${version}`
-}
-
 function planNodes(request: StoredRequest): ProgressPlanNode[] {
   const history = request.planHistory ?? []
   const nodes: ProgressPlanNode[] = []
@@ -148,9 +123,9 @@ function planNodes(request: StoredRequest): ProgressPlanNode[] {
     nodes.push({
       id: `plan:${request.plan.id}`,
       type: 'PLAN',
-      label: planLabel(request.plan, version),
+      label: `Plan v${version}`,
       status: 'CURRENT',
-      planHash: request.plan.planHash,
+      ...(request.plan.planHash ? { planHash: request.plan.planHash } : {}),
       children: taskNodes(request, request.plan),
     })
   }
@@ -158,11 +133,10 @@ function planNodes(request: StoredRequest): ProgressPlanNode[] {
     nodes.push({
       id: `plan:${entry.plan.id}`,
       type: 'PLAN',
-      label: planLabel(entry.plan, entry.version),
+      label: `Plan v${entry.version}`,
       status: 'SUPERSEDED',
       collapsed: true,
-      planHash: entry.plan.planHash,
-      // TODO(spec): 명세의 대체된 Plan은 children이 비어 있어 펼쳐도 볼 것이 없다. "변경 이력을 볼 수 있음"(5.12)을 위해 작업 요약을 따로 담는다.
+      // TODO(spec): 목 전용. 서버의 대체된 Plan은 라벨뿐이라 펼쳐도 볼 것이 없다. 변경 이력을 보여 주는 시연을 위해 작업 요약을 따로 담는다.
       supersededAt: entry.supersededAt,
       supersededTasks: entry.plan.tasks.map((task) => ({
         label: `${task.order}. ${task.title}`,
@@ -197,46 +171,27 @@ function flatten(root: ProgressNode) {
   return nodes
 }
 
-/** 자식과 식별자를 뺀 속성 차이. 없어진 속성은 null로 보낸다. */
-function fieldChanges(before: ProgressNode, after: ProgressNode): Record<string, unknown> | null {
-  const skip = new Set(['id', 'type', 'children'])
-  const a = before as unknown as Record<string, unknown>
-  const b = after as unknown as Record<string, unknown>
-  const changes: Record<string, unknown> = {}
-  for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
-    if (!skip.has(key) && JSON.stringify(a[key]) !== JSON.stringify(b[key])) changes[key] = b[key] ?? null
+/** 상태와 자식을 뺀 속성이 같은지 본다. */
+function sameExceptStatus(before: ProgressNode, after: ProgressNode): boolean {
+  const pick = (node: ProgressNode) => {
+    const { status: _status, children: _children, ...rest } = node as ProgressNode & { children?: unknown }
+    return JSON.stringify(Object.entries(rest).sort(([a], [b]) => a.localeCompare(b)))
   }
-  return Object.keys(changes).length > 0 ? changes : null
+  return pick(before) === pick(after)
 }
 
+/** 서버는 노드 상태가 바뀌면 node.updated를, 구조가 바뀌면 tree.replaced를 보낸다. node.added는 없다 (RequestStreamService). */
 function diffTrees(before: ProgressRequestNode, after: ProgressRequestNode): TreeChange[] {
   const previous = flatten(before)
   const next = flatten(after)
-  const replaced = (): TreeChange[] => [{ event: 'tree.replaced', data: { at: nowIso() } }]
-  for (const id of previous.keys()) if (!next.has(id)) return replaced()
-
-  const hadPlan = before.children.length > 0
+  if (previous.size !== next.size) return ['replaced']
   const changes: TreeChange[] = []
-  let restructured = false
-  const walk = (node: ProgressNode, parentId: string | null) => {
-    const old = previous.get(node.id)
-    if (!old) {
-      if (node.type === 'PLAN' && hadPlan) restructured = true
-      else changes.push({ event: 'node.added', data: { parentId: parentId as string, node } })
-      return
-    }
-    if (old.parentId !== parentId) restructured = true
-    const fields = fieldChanges(old.node, node)
-    if (fields) {
-      // 승인이 무효가 되어 시각이 없어지면 패치로 되돌리지 않고 전체를 다시 받게 한다.
-      if (old.node.type === 'APPROVAL' && fields.at === null) restructured = true
-      const at = typeof fields.at === 'string' ? fields.at : nowIso()
-      changes.push({ event: 'node.updated', data: { ...fields, nodeId: node.id, at } })
-    }
-    if ('children' in node) for (const child of node.children) walk(child, node.id)
+  for (const [id, { node, parentId }] of next) {
+    const old = previous.get(id)
+    if (!old || old.parentId !== parentId || !sameExceptStatus(old.node, node)) return ['replaced']
+    if (old.node.status !== node.status) changes.push({ nodeId: id, status: node.status })
   }
-  walk(after, null)
-  return restructured ? replaced() : changes
+  return changes
 }
 
 // ── 버전과 구독 ────────────────────────────────────────────
@@ -259,7 +214,7 @@ function sync(request: StoredRequest): Tracker {
   const root = buildProgressRoot(request)
   const tracker = trackers.get(request.id)
   if (!tracker) {
-    const created: Tracker = { version: 1, updatedAt: request.updatedAt, root, history: [], listeners: new Set() }
+    const created: Tracker = { version: 1, updatedAt: request.updatedAt, root, listeners: new Set() }
     trackers.set(request.id, created)
     return created
   }
@@ -269,11 +224,13 @@ function sync(request: StoredRequest): Tracker {
   tracker.updatedAt = nowIso()
   for (const change of changes) {
     tracker.version += 1
-    const event = { ...change, id: tracker.version } as VersionedEvent
-    tracker.history.push(event)
+    const id = tracker.version
+    const event: VersionedEvent =
+      change === 'replaced'
+        ? { id, event: 'tree.replaced', data: { version: id } }
+        : { id, event: 'node.updated', data: { ...change, at: nowIso() } }
     tracker.listeners.forEach((listener) => listener(event))
   }
-  tracker.history.splice(0, Math.max(0, tracker.history.length - progressConfig.historyLimit))
   return tracker
 }
 
@@ -292,15 +249,10 @@ export function progressTree(request: StoredRequest): ProgressTree {
   return { requestId: request.id, version, updatedAt, root }
 }
 
-/** Last-Event-ID 뒤의 이벤트. 이어 받을 수 없으면 tree.replaced 하나로 전체를 다시 받게 한다 (명세 4.9). */
+/** 서버처럼 지난 이벤트를 다시 보내지 않는다. Last-Event-ID가 지금 버전과 다르면 tree.replaced로 전체를 다시 받게 한다. */
 function missedEvents(tracker: Tracker, lastEventId: string | null): VersionedEvent[] {
-  if (lastEventId === null) return []
-  const last = Number(lastEventId)
-  if (last === tracker.version) return []
-  const missed = tracker.history.filter((event) => event.id > last)
-  const canResume = Number.isInteger(last) && last < tracker.version && missed.length === tracker.version - last
-  // TODO(spec): tree.replaced와 heartbeat의 본문은 명세에 없어 시각만 담는다.
-  return canResume ? missed : [{ id: tracker.version, event: 'tree.replaced', data: { at: nowIso() } }]
+  if (lastEventId === null || Number(lastEventId) === tracker.version) return []
+  return [{ id: tracker.version, event: 'tree.replaced', data: { version: tracker.version } }]
 }
 
 function frame({ id, event, data }: ProgressStreamEvent): string {
@@ -348,7 +300,7 @@ export function progressStream(
       tracker.listeners.add(listener)
       heartbeat = setInterval(() => {
         if (startedGeneration !== generation) close()
-        else send({ id: null, event: 'heartbeat', data: { at: nowIso() } })
+        else send({ id: null, event: 'heartbeat', data: {} })
       }, progressConfig.heartbeatMs)
       signal?.addEventListener('abort', close)
     },

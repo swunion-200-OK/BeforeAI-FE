@@ -1,4 +1,5 @@
 import type { FileEntry, ForbiddenRule, Project, ProjectSpec, SpecChangeRequest } from '../../types'
+import { assertAdminProof, nextPolicyVersion } from '../policy'
 import { createRequest, reapproveAfterOwnerChange } from '../engine'
 import { paginate, route, type Route } from '../router'
 import {
@@ -10,6 +11,7 @@ import {
   nowIso,
   requireProject,
   requireUser,
+  type StoredProject,
   type StoredUser,
 } from '../store'
 
@@ -21,14 +23,15 @@ function latestSpec(projectId: string): ProjectSpec {
   return versions[versions.length - 1]
 }
 
-function saveSpec(projectId: string, body: string, user: StoredUser): ProjectSpec {
+function saveSpec(projectId: string, body: string, user: StoredUser, restoredFromVersion: number | null = null): ProjectSpec {
   const versions = (db().specs[projectId] ??= [])
   const spec: ProjectSpec = {
     projectId,
     version: versions.length + 1,
     body,
-    updatedAt: nowIso(),
-    updatedBy: { id: user.id, name: user.name },
+    createdAt: nowIso(),
+    createdBy: user.id,
+    restoredFromVersion,
   }
   versions.push(spec)
   audit(user, 'SPEC_UPDATED', { projectId, label: `기획서 v${spec.version}` })
@@ -47,11 +50,16 @@ function requireChangeRequest(id: string): SpecChangeRequest {
   return found
 }
 
-function userRefs(ids: string[]) {
+function ownerRefs(ids: string[]) {
   return ids.map((id) => {
-    const user = requireUser(id)
-    return { id: user.id, name: user.name, departmentId: user.departmentId }
+    const { id: userId, name } = requireUser(id)
+    return { id: userId, name }
   })
+}
+
+/** 기준 커밋은 목 내부 값이다. 서버처럼 파일 목록으로만 알려 준다. */
+function projectView({ baseCommit: _baseCommit, ...project }: StoredProject): Project {
+  return project
 }
 
 function requireProposal(id: string) {
@@ -68,8 +76,7 @@ function activateRule(input: Pick<ForbiddenRule, 'departmentId' | 'taskType' | '
     taskType: input.taskType,
     target: input.target,
     reason: input.reason,
-    status: 'ACTIVE',
-    createdAt: nowIso(),
+    status: 'CONFIRMED',
   }
   database.forbiddenRules.unshift(rule)
   // 규칙 추가는 웹쉘 정책에도 바로 반영된다 (5.7).
@@ -83,8 +90,8 @@ function activateRule(input: Pick<ForbiddenRule, 'departmentId' | 'taskType' | '
 
 export const projectRoutes: Route[] = [
   // ── 프로젝트·기획서 ─────────────────────────────────────
-  route('GET', '/projects', () => ({ items: db().projects, nextCursor: null })),
-  route('GET', '/projects/:projectId', ({ params }) => requireProject(params.projectId)),
+  route('GET', '/projects', () => ({ items: db().projects.map(projectView), nextCursor: null })),
+  route('GET', '/projects/:projectId', ({ params }) => projectView(requireProject(params.projectId))),
   route(
     'POST',
     '/admin/projects',
@@ -95,20 +102,20 @@ export const projectRoutes: Route[] = [
         throw new HttpError(400, 'VALIDATION_ERROR', '프로젝트 이름과 저장소를 입력해 주세요')
       }
       const database = db()
-      const project: Project = {
+      const project: StoredProject = {
         id: nextId('prj'),
         name: body.name.trim(),
         departmentId: body.departmentId,
         repository: body.repository.trim(),
         baseCommit: '0000000',
-        owners: userRefs(ownerIds),
+        owners: ownerRefs(ownerIds),
       }
       database.projects.push(project)
       database.files[project.id] = { 'README.md': `# ${project.name}\n` }
-      saveSpec(project.id, body.specBody ?? '', me)
-      return project
+      saveSpec(project.id, body.initialSpec?.body ?? '', me)
+      return projectView(project)
     },
-    { internal: true, roles: ['ADMIN'], status: 201 },
+    { internal: true, roles: ['ADMIN'] },
   ),
   route('GET', '/projects/:projectId/spec', ({ params }) => latestSpec(params.projectId)),
   route(
@@ -130,7 +137,7 @@ export const projectRoutes: Route[] = [
       assertSpecEditor(me, requireProject(params.projectId))
       const target = db().specs[params.projectId]?.find((v) => v.version === Number(params.version))
       if (!target) throw new HttpError(404, 'NOT_FOUND', '해당 버전이 없습니다')
-      return saveSpec(params.projectId, target.body, me)
+      return saveSpec(params.projectId, target.body, me, target.version)
     },
     { internal: true },
   ),
@@ -147,7 +154,7 @@ export const projectRoutes: Route[] = [
         throw new HttpError(409, 'OWNER_MINIMUM', '담당자는 2명 이상이어야 합니다')
       }
       const removed = project.owners.map((o) => o.id).filter((id) => !ownerIds.includes(id))
-      project.owners = userRefs(ownerIds)
+      project.owners = ownerRefs(ownerIds)
       audit(me, 'SPEC_UPDATED', { projectId: project.id, label: '담당자 변경' }, { ownerIds })
       reapproveAfterOwnerChange(project.id, removed, me.name)
       notify(
@@ -157,7 +164,7 @@ export const projectRoutes: Route[] = [
         `${project.name} 담당자가 바뀌었습니다`,
         `/projects/${project.id}`,
       )
-      return project
+      return projectView(project)
     },
     { internal: true },
   ),
@@ -174,11 +181,10 @@ export const projectRoutes: Route[] = [
         projectId: project.id,
         content: body.content,
         reason: body.reason,
-        requester: { id: me.id, name: me.name, departmentId: me.departmentId },
+        requesterId: me.id,
         status: 'OPEN',
-        rejectReason: null,
+        rejectionReason: null,
         createdAt: nowIso(),
-        decidedAt: null,
       }
       db().changeRequests.unshift(request)
       audit(me, 'SPEC_UPDATED', { projectId: project.id, label: '기획서 수정 요청' })
@@ -191,7 +197,7 @@ export const projectRoutes: Route[] = [
       )
       return request
     },
-    { internal: true, status: 201 },
+    { internal: true },
   ),
   route(
     'GET',
@@ -212,10 +218,9 @@ export const projectRoutes: Route[] = [
       assertSpecEditor(me, requireProject(params.projectId))
       const request = requireChangeRequest(params.crId)
       if (request.status !== 'OPEN') throw new HttpError(409, 'INVALID_STATE', '이미 처리한 요청입니다')
-      saveSpec(params.projectId, `${latestSpec(params.projectId).body}\n\n${request.content}`, me)
+      const spec = saveSpec(params.projectId, `${latestSpec(params.projectId).body}\n\n${request.content}`, me)
       request.status = 'ACCEPTED'
-      request.decidedAt = nowIso()
-      return request
+      return { changeRequest: request, spec }
     },
     { internal: true },
   ),
@@ -228,8 +233,7 @@ export const projectRoutes: Route[] = [
       const request = requireChangeRequest(params.crId)
       if (request.status !== 'OPEN') throw new HttpError(409, 'INVALID_STATE', '이미 처리한 요청입니다')
       request.status = 'REJECTED'
-      request.rejectReason = body.reason
-      request.decidedAt = nowIso()
+      request.rejectionReason = body.reason
       audit(me, 'SPEC_UPDATED', { projectId: params.projectId, label: '기획서 수정 요청 반려' }, { reason: body.reason })
       return request
     },
@@ -260,9 +264,6 @@ export const projectRoutes: Route[] = [
         target: body.target.trim(),
         reason: body.reason.trim(),
         status: 'OPEN' as const,
-        proposer: { id: me.id, name: me.name, departmentId: me.departmentId },
-        rejectReason: null,
-        createdAt: nowIso(),
       }
       db().proposals.unshift(proposal)
       audit(me, 'FORBIDDEN_RULE_PROPOSED', { label: `${proposal.taskType} ${proposal.target}` })
@@ -285,13 +286,14 @@ export const projectRoutes: Route[] = [
   route(
     'POST',
     '/admin/forbidden-proposals/:proposalId/confirm',
-    ({ me, params }) => {
+    ({ me, params, body }) => {
+      assertAdminProof(body?.adminProof)
       const proposal = requireProposal(params.proposalId)
       if (proposal.status !== 'OPEN') throw new HttpError(409, 'INVALID_STATE', '이미 처리한 제안입니다')
       proposal.status = 'CONFIRMED'
-      activateRule(proposal)
+      const rule = activateRule(proposal)
       audit(me, 'FORBIDDEN_RULE_CONFIRMED', { label: `${proposal.taskType} ${proposal.target}` })
-      return proposal
+      return { proposalId: proposal.id, status: proposal.status, rule, policyVersion: nextPolicyVersion() }
     },
     { internal: true, roles: ['ADMIN'] },
   ),
@@ -303,9 +305,8 @@ export const projectRoutes: Route[] = [
       const proposal = requireProposal(params.proposalId)
       if (proposal.status !== 'OPEN') throw new HttpError(409, 'INVALID_STATE', '이미 처리한 제안입니다')
       proposal.status = 'REJECTED'
-      proposal.rejectReason = body.reason
       audit(me, 'FORBIDDEN_RULE_REJECTED', { label: `${proposal.taskType} ${proposal.target}` }, { reason: body.reason })
-      return proposal
+      return { proposalId: proposal.id, status: proposal.status }
     },
     { internal: true, roles: ['ADMIN'] },
   ),
@@ -313,10 +314,12 @@ export const projectRoutes: Route[] = [
     'POST',
     '/admin/forbidden-rules',
     ({ me, body }) => {
+      assertAdminProof(body.adminProof)
       if (!body.target?.trim() || !body.reason?.trim()) {
         throw new HttpError(400, 'VALIDATION_ERROR', '대상과 사유를 입력해 주세요')
       }
       const rule = activateRule(body)
+      nextPolicyVersion()
       audit(me, 'FORBIDDEN_RULE_CONFIRMED', { label: `${rule.taskType} ${rule.target}` }, { direct: true })
       return rule
     },
@@ -325,12 +328,17 @@ export const projectRoutes: Route[] = [
   route(
     'POST',
     '/admin/forbidden-rules/:ruleId/release',
-    ({ me, params }) => {
+    ({ me, params, body }) => {
+      if (!body?.reason?.trim()) throw new HttpError(400, 'VALIDATION_ERROR', '해제 사유를 입력해 주세요')
+      // 서명은 없어도 된다. 있으면 서버가 새 정책 버전을 바로 만들어 웹쉘에 보낸다.
+      if (body.adminProof) assertAdminProof(body.adminProof)
       const rule = db().forbiddenRules.find((r) => r.id === params.ruleId)
       if (!rule) throw new HttpError(404, 'NOT_FOUND', '규칙을 찾을 수 없습니다')
+      if (rule.status !== 'CONFIRMED') throw new HttpError(409, 'INVALID_STATE', '이미 해제를 요청한 규칙입니다')
       rule.status = 'RELEASE_PENDING'
-      audit(me, 'FORBIDDEN_RULE_RELEASE_REQUESTED', { label: `${rule.taskType} ${rule.target}` })
-      return rule
+      if (body.adminProof) nextPolicyVersion()
+      audit(me, 'FORBIDDEN_RULE_RELEASE_REQUESTED', { label: `${rule.taskType} ${rule.target}` }, { reason: body.reason })
+      return { ruleId: rule.id, status: rule.status }
     },
     { internal: true, roles: ['ADMIN'] },
   ),
@@ -371,13 +379,12 @@ export const projectRoutes: Route[] = [
         const rest = dir ? file.slice(dir.length + 1) : file
         const [head, ...tail] = rest.split('/')
         const path = dir ? `${dir}/${head}` : head
-        entries.set(path, { name: head, path, type: tail.length ? 'dir' : 'file' })
+        entries.set(path, { name: head, path, type: tail.length ? 'DIR' : 'FILE' })
       }
       return {
         path: dir,
-        ref: query.get('ref') ?? project.baseCommit,
         baseCommit: project.baseCommit,
-        entries: [...entries.values()].sort(
+        items: [...entries.values()].sort(
           (a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name),
         ),
       }
@@ -392,7 +399,7 @@ export const projectRoutes: Route[] = [
       const path = query.get('path') ?? ''
       const content = db().files[project.id]?.[path]
       if (content === undefined) throw new HttpError(404, 'NOT_FOUND', '파일을 찾을 수 없습니다')
-      return { path, ref: query.get('ref') ?? project.baseCommit, content }
+      return { path, ref: query.get('ref') ?? project.baseCommit, baseCommit: project.baseCommit, content }
     },
     { internal: true },
   ),
@@ -413,6 +420,6 @@ export const projectRoutes: Route[] = [
       })
       return { requestId: request.id, source: 'EDITOR', status: request.status }
     },
-    { internal: true, status: 202 },
+    { internal: true },
   ),
 ]

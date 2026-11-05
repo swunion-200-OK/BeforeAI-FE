@@ -1,6 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
-import type { RequestTaskSummary } from '../api/types'
 
 /** 화면에 공통으로 쓰는 작은 부품들. */
 
@@ -86,32 +85,6 @@ export function SegmentedTabs<T extends string>({
         )
       })}
     </div>
-  )
-}
-
-// ── 위험도·진행 요약 ───────────────────────────────────────
-
-/** 승인·실행 진행을 칸으로 보여 준다. 칸마다 작업 하나다. */
-export function TaskProgress({ summary }: { summary: RequestTaskSummary }) {
-  const pips = Array.from({ length: summary.required }, (_, index) => {
-    if (index < summary.succeeded) return 'bg-low'
-    if (index < summary.succeeded + summary.failed) return 'bg-high'
-    if (index < summary.approved) return 'bg-seal'
-    return 'bg-rule-strong'
-  })
-  const text =
-    summary.succeeded + summary.failed > 0
-      ? `실행 ${summary.succeeded + summary.failed}/${summary.required}`
-      : `승인 ${summary.approved}/${summary.required}`
-  return (
-    <span className="inline-flex items-center gap-2" title={text}>
-      <span aria-hidden className="inline-flex gap-0.5">
-        {pips.map((color, index) => (
-          <span key={index} className={`h-1.5 w-4 rounded-full ${color}`} />
-        ))}
-      </span>
-      <span className="text-xs whitespace-nowrap text-ink-3 tabular-nums">{text}</span>
-    </span>
   )
 }
 

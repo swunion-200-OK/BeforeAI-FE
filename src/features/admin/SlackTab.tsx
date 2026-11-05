@@ -1,9 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { adminApi } from '../../api/endpoints'
+import { ApiError } from '../../api/errors'
+import { MISSING_ON_SERVER_MESSAGE } from '../../api/missingOnServer'
 import type { SlackIntegration } from '../../api/types'
 import { toast } from '../../components/toast'
-import { Button, ErrorState, Field, Sheet, Spinner, TextInput } from '../../components/ui'
+import { Button, EmptyState, ErrorState, Field, Sheet, Spinner, TextInput } from '../../components/ui'
 import { useRefreshAll } from '../../lib/queries'
 import { policyQuery } from './adminQueries'
 
@@ -25,7 +27,19 @@ export function SlackTab() {
   })
 
   if (policy.isPending) return <Spinner />
-  if (policy.isError) return <ErrorState error={policy.error} onRetry={() => policy.refetch()} />
+  // 프리셋을 적용하기 전이면 정책 조회가 404다. 그때도 연동 값은 서버에 없으니 아래 안내와 같다.
+  if (policy.isError && !(policy.error instanceof ApiError && policy.error.code === 'NOT_FOUND')) {
+    return <ErrorState error={policy.error} onRetry={() => policy.refetch()} />
+  }
+
+  // 서버의 정책 응답에는 Slack 값이 없다. 없는 값을 "연결 안 됨"이라고 말하지 않는다 (api/missingOnServer.ts).
+  if (policy.data?.slackIntegration === undefined) {
+    return (
+      <Sheet className="max-w-2xl">
+        <EmptyState title={MISSING_ON_SERVER_MESSAGE}>Slack 연동 API가 서버에 추가되면 여기에서 설정합니다.</EmptyState>
+      </Sheet>
+    )
+  }
 
   return (
     <Sheet className="max-w-2xl">

@@ -38,7 +38,8 @@ export function ChangeSummary({ task, showPairs = true }: { task: Task; showPair
   return (
     <div className="mt-2">
       <p className="text-base text-ink">
-        <span className="mr-2 text-xs font-medium text-ink-3">AI 설명</span>
+        {/* 서버 응답에는 AI 설명이 없다. 그때 문장은 화면이 내용에서 뽑은 것이라 AI 설명이라고 하지 않는다. */}
+        {task.explanation && <span className="mr-2 text-xs font-medium text-ink-3">AI 설명</span>}
         {explanation.summary}
       </p>
       {pairs.slice(0, 2).map((change, index) => (
@@ -132,7 +133,7 @@ export function ChangeDetails({ task }: { task: Task }) {
 
 /** 실제 변경의 크기. 서명 대상인 내용에서 직접 계산하므로 AI 설명과 별개로 믿을 수 있다. */
 export function ChangeStats({ task }: { task: Task }) {
-  const { diff, command, query, body } = task.content
+  const { diff, command, query, body } = task.content ?? {}
   if (diff !== undefined) {
     const stats = diffStats(diff)
     return (

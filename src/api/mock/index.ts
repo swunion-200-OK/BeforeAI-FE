@@ -1,4 +1,4 @@
-import { accountRoutes, issueToken, userFromToken } from './routes/account'
+import { accountRoutes, isPasswordChangeToken, issueToken, userFromToken } from './routes/account'
 import { projectRoutes } from './routes/projects'
 import { requestRoutes } from './routes/requests'
 import { resumeTimers } from './engine'
@@ -39,6 +39,9 @@ export function initMock() {
   ready = true
 }
 
+/** 비밀번호를 바꿔야 하는 토큰으로 부를 수 있는 API. 로그아웃은 목에서 익명 라우트라 여기 없어도 된다. */
+const ALLOWED_BEFORE_PASSWORD_CHANGE = ['GET /me', 'PUT /me/password']
+
 function json(status: number, body: unknown, network: Network): Response {
   const headers = { 'Content-Type': 'application/json', 'X-Network': network }
   if (body === undefined) return new Response(null, { status: 204, headers: { 'X-Network': network } })
@@ -67,6 +70,9 @@ export async function mockFetch(input: string, init: RequestInit = {}): Promise<
     const me = userFromToken(headers.get('Authorization'))
     if (!route.anonymous) {
       if (!me) throw new HttpError(401, 'UNAUTHENTICATED', '로그인이 필요합니다')
+      if (isPasswordChangeToken(headers.get('Authorization')) && !ALLOWED_BEFORE_PASSWORD_CHANGE.includes(`${method} ${path}`)) {
+        throw new HttpError(409, 'INVALID_STATE', '비밀번호를 먼저 변경해야 합니다')
+      }
       const session = database.session
       if (network === 'EXTERNAL' && session && Date.now() - session.lastActiveAt > EXTERNAL_IDLE_LIMIT_MS) {
         database.session = null

@@ -29,7 +29,7 @@ export function KillAllDialog({ open, onClose }: { open: boolean; onClose: () =>
   const killAll = useMutation({
     mutationFn: () => adminApi.killAll(reason.trim()),
     onSuccess: async (result) => {
-      toast.success(`실행 중이던 요청 ${result.killedRequestIds.length}건을 중단했습니다`)
+      toast.success(`실행 ${result.executionIds.length}건을 중단했습니다`)
       await refresh()
       close()
     },

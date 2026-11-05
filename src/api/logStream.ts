@@ -1,17 +1,13 @@
 import { requestsApi } from './endpoints'
-import { isStreamDenied, POLL_AFTER_FAILURES, reconnectDelay, streamMessages } from './sse'
+import { isStreamDenied, POLL_AFTER_FAILURES, reconnectDelay } from './sse'
 import type { LogLine } from './types'
 
 export interface FollowLogsOptions {
   requestId: string
-  /** 실행 중이면 끊겨도 다시 연결한다. 끝난 요청은 한 번 받고 멈춘다 */
+  /** 실행 중이면 스트림을 잇는다. 끝난 요청은 목록만 읽고 멈춘다 */
   live: boolean
   signal: AbortSignal
-  /** 마지막으로 받은 이벤트 ID. 다음 연결(실행 시작·종료로 live가 바뀐 경우 포함)에서 Last-Event-ID로 보낸다 */
-  position: { current: string | undefined }
   onLine: (line: LogLine) => void
-  /** ID 없이 다시 열렸다. 서버가 처음부터 다시 보내므로 지금까지 받은 줄을 비운다 */
-  onRestart: () => void
   onConnection: (connected: boolean) => void
 }
 
@@ -28,15 +24,32 @@ function waitFor(ms: number, signal: AbortSignal): Promise<void> {
   })
 }
 
-/** seq 순서를 지켜 한 줄을 넣는다. 스트림과 목록 API가 같은 줄을 어떤 순서로 줘도 화면은 같다. 이미 있으면 그대로 돌려준다. */
+/** sequence는 실행 세션 안에서만 유일하다(ExecutionLog 유니크 제약). 재시도로 세션이 바뀌면 같은 번호가 또 나오므로 시각과 서명까지 본다. */
+export function logLineKey(line: LogLine): string {
+  return `${line.sequence}|${line.at}|${line.webshellSignature}`
+}
+
+const timeOf = (line: LogLine) => {
+  const time = Date.parse(line.at)
+  return Number.isNaN(time) ? 0 : time
+}
+
+/** 뒤의 줄인지. 서버 목록은 세션 순, sequence 순인데 세션 ID가 응답에 없어 시각으로 세션을 가른다. */
+const comesAfter = (other: LogLine, line: LogLine) => {
+  const gap = timeOf(other) - timeOf(line)
+  return gap !== 0 ? gap > 0 : other.sequence > line.sequence
+}
+
+/** 순서를 지켜 한 줄을 넣는다. 스트림과 목록 API가 같은 줄을 어떤 순서로 줘도 화면은 같다. 이미 있으면 그대로 돌려준다. */
 export function mergeLogLine(current: LogLine[], line: LogLine): LogLine[] {
-  const at = current.findIndex((other) => other.seq >= line.seq)
+  const key = logLineKey(line)
+  if (current.some((other) => logLineKey(other) === key)) return current
+  const at = current.findIndex((other) => comesAfter(other, line))
   if (at === -1) return [...current, line]
-  if (current[at].seq === line.seq) return current
   return [...current.slice(0, at), line, ...current.slice(at)]
 }
 
-/** 지난 줄은 목록 API만 보장한다(명세 3.5). 스트림이 다시 보내 주는지와 상관없이 여기서 읽는다. */
+/** 지난 줄은 목록 API로만 읽을 수 있다. 서버 스트림은 연결한 뒤의 줄만 보내고 Last-Event-ID도 받지 않는다. */
 async function readAllLogs(requestId: string, onLine: (line: LogLine) => void, signal: AbortSignal) {
   let cursor: string | undefined
   do {
@@ -48,13 +61,17 @@ async function readAllLogs(requestId: string, onLine: (line: LogLine) => void, s
 }
 
 /**
- * 실행 로그를 받는다. 끝난 요청은 스트림을 한 번 받은 뒤 목록을 끝까지 읽고 멈춘다.
- * 실행 중이면 지난 줄을 목록에서 읽으면서 스트림을 잇는다. 끊기면 점점 긴 간격으로 다시 연결하고, 줄을 받으면 간격을 처음으로 되돌린다.
+ * 실행 로그를 받는다. 서버 스트림은 스스로 닫히지 않으므로 끝난 요청은 스트림을 열지 않고 목록만 읽는다.
+ * 실행 중이면 스트림을 열 때마다 목록을 다시 읽어 끊긴 사이의 줄을 채운다. 끊기면 점점 긴 간격으로 다시 연결하고, 줄을 받으면 간격을 처음으로 되돌린다.
  * 401·403·404는 다시 연결해도 소용없어 호출한 쪽에 던진다. 연결이 계속 안 되면 목록 API로도 받는다.
  */
-export async function followLogs({ requestId, live, signal, position, onLine, onRestart, onConnection }: FollowLogsOptions) {
+export async function followLogs({ requestId, live, signal, onLine, onConnection }: FollowLogsOptions) {
   const deliver = (line: LogLine) => {
-    if (typeof line?.seq === 'number') onLine(line)
+    if (typeof line?.sequence === 'number') onLine(line)
+  }
+  if (!live) {
+    await readAllLogs(requestId, deliver, signal)
+    return
   }
   let pastLoaded = false
   const loadPast = async () => {
@@ -65,22 +82,17 @@ export async function followLogs({ requestId, live, signal, position, onLine, on
   while (!signal.aborted) {
     let reason: unknown = null
     try {
-      await streamMessages(
-        `/requests/${requestId}/logs/stream`,
-        (message) => {
+      await requestsApi.streamLogs(
+        requestId,
+        (line) => {
           failures = 0
-          // 깨진 메시지를 받아도 ID는 넘긴다. 다시 연결할 때 같은 메시지에서 또 멈추지 않게 한다.
-          if (message.id !== null) position.current = message.id
-          if (message.event !== 'heartbeat') deliver(JSON.parse(message.data) as LogLine)
+          onLine(line)
         },
         signal,
-        position.current,
         () => {
           onConnection(true)
-          if (position.current !== undefined) return
-          onRestart()
-          // 비운 뒤에 읽어야 읽은 줄이 지워지지 않는다. 실패하면 끊겼을 때 다시 읽는다.
-          if (live) void loadPast().catch(() => {})
+          // 연결이 열린 뒤에 읽어야 그 사이에 나온 줄을 놓치지 않는다. 실패하면 끊겼을 때 다시 읽는다.
+          void loadPast().catch(() => {})
         },
       )
     } catch (caught) {
@@ -88,10 +100,6 @@ export async function followLogs({ requestId, live, signal, position, onLine, on
     }
     if (signal.aborted) return
     if (isStreamDenied(reason)) throw reason
-    if (!live) {
-      await loadPast()
-      return
-    }
     onConnection(false)
     failures += 1
     if (!pastLoaded || failures >= POLL_AFTER_FAILURES) {

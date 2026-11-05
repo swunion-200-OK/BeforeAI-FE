@@ -6,11 +6,12 @@ import {
   Maximize2,
   X,
 } from 'lucide-react'
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Link, useMatch } from 'react-router'
 import { approvalsApi } from '../../api/endpoints'
 import type {
   ApprovalNodeStatus,
+  Plan,
   ProgressApprovalNode,
   ProgressNode,
   ProgressPlanNode,
@@ -30,7 +31,7 @@ import { formatDateTime, formatElapsed } from '../../lib/format'
 import { REQUEST_STATUS_LABEL, RULE_LABEL, TASK_STATUS_LABEL, TASK_TYPE_LABEL } from '../../lib/labels'
 import { findProgressNode } from '../../lib/progressTree'
 import { useRequest } from '../../lib/queries'
-import { candidateNames, GATE_ID, gateView, pathIds, progressNow, type GateView, type PathMode, type ProgressNow } from './progressStatus'
+import { GATE_ID, gateView, pathIds, pendingRule, progressNow, type GateView, type PathMode, type ProgressNow } from './progressStatus'
 import { useGateReplay } from './useGateReplay'
 import { useProgressTree } from './useProgressTree'
 import { WebshellGate } from './WebshellGate'
@@ -76,17 +77,13 @@ const TONE_STYLE: Record<Tone, { edge: string; ink: string; glyph: string; shape
   skipped: { edge: 'bg-flow-skip', ink: 'text-flow-skip-ink', glyph: 'text-flow-skip', shape: 'stop' },
 }
 
-const APPROVAL_WORD: Record<ApprovalNodeStatus, string> = { PENDING: '승인 대기', APPROVED: '승인', REJECTED: '거부' }
+const APPROVAL_WORD: Record<ApprovalNodeStatus, string> = { PENDING: '승인 대기', APPROVED: '승인' }
 const STEP_WORD: Record<StepStatus, string> = { RUNNING: '실행 중', SUCCEEDED: '성공', FAILED: '실패', SKIPPED: '건너뜀' }
 
 const SELECTED = 'border-seal ring-2 ring-seal'
+/** 승인 대기 노드가 기다리는 규칙을 찾을 지금 Plan */
+const TreePlanContext = createContext<Plan | null | undefined>(null)
 const shortPlanHash = (hash: string) => `${hash.replace(/^sha256:/, '').slice(0, 4)}…`
-
-function candidatesText(node: ProgressApprovalNode): string {
-  const names = candidateNames(node)
-  if (names.length > 0) return names.join(' 또는 ')
-  return node.rule ? (RULE_LABEL[node.rule] ?? '') : ''
-}
 
 interface NodeActions {
   selectedId: string | null
@@ -248,6 +245,7 @@ const ApprovalNode = memo(function ApprovalNode({
   const tone = toneOf(node.status)
   const { ink } = TONE_STYLE[tone]
   const pending = node.status === 'PENDING'
+  const rule = pendingRule(node, useContext(TreePlanContext))
   return (
     <button
       type="button"
@@ -263,7 +261,7 @@ const ApprovalNode = memo(function ApprovalNode({
       {pending ? (
         <>
           <span className={`font-semibold ${ink}`}>{APPROVAL_WORD[node.status]}</span>
-          <span className="text-ink-2">{candidatesText(node)}</span>
+          {rule && <span className="text-ink-2">{RULE_LABEL[rule]}</span>}
         </>
       ) : (
         <>
@@ -672,7 +670,7 @@ function TaskGrid({
 
 function TaskDetail({ requestId, node }: { requestId: string; node: ProgressTaskNode }) {
   const request = useRequest(requestId)
-  const task = request.data?.plan?.tasks.find((candidate) => `task:${candidate.id}` === node.id)
+  const task = request.data?.currentPlan?.tasks.find((candidate) => `task:${candidate.id}` === node.id)
   if (request.isPending) return <Spinner label="작업 내용을 불러오는 중" />
   if (!task) return <p className="text-sm text-ink-3">작업 내용을 찾을 수 없습니다.</p>
   return (
@@ -704,7 +702,8 @@ function ApproveLink({ requestId, taskId }: { requestId: string; taskId: string 
 }
 
 function ApprovalDetail({ requestId, root, node }: { requestId: string; root: ProgressRequestNode; node: ProgressApprovalNode }) {
-  const verb = node.status === 'REJECTED' ? '거부' : '승인'
+  const request = useRequest(requestId)
+  const rule = pendingRule(node, request.data?.currentPlan)
   if (node.status === 'PENDING') {
     const task = root.children
       .flatMap((plan) => ('children' in plan ? plan.children : []))
@@ -714,8 +713,7 @@ function ApprovalDetail({ requestId, root, node }: { requestId: string; root: Pr
         <KeyValues
           items={[
             { label: '상태', value: '승인 대기' },
-            ...(node.rule ? [{ label: '필요한 승인', value: RULE_LABEL[node.rule] }] : []),
-            ...(candidateNames(node).length > 0 ? [{ label: '승인 후보', value: candidatesText(node) }] : []),
+            ...(rule ? [{ label: '필요한 승인', value: RULE_LABEL[rule] }] : []),
           ]}
         />
         {task && <ApproveLink requestId={requestId} taskId={task.id.replace(/^task:/, '')} />}
@@ -725,8 +723,8 @@ function ApprovalDetail({ requestId, root, node }: { requestId: string; root: Pr
   return (
     <KeyValues
       items={[
-        ...(node.label ? [{ label: `${verb}한 사람`, value: node.label }] : []),
-        ...(node.at ? [{ label: `${verb} 시각`, value: formatDateTime(node.at) }] : []),
+        ...(node.label ? [{ label: '승인한 사람', value: node.label }] : []),
+        ...(node.at ? [{ label: '승인 시각', value: formatDateTime(node.at) }] : []),
         ...(node.network ? [{ label: '접속 환경', value: <NetworkBadge network={node.network} /> }] : []),
       ]}
     />
@@ -865,6 +863,7 @@ export function ProgressTree({ requestId }: { requestId: string }) {
     </>
   )
   return (
+    <TreePlanContext.Provider value={request.data?.currentPlan}>
     <div ref={container} className="flow-tree flex flex-col gap-3">
       <div className="flex items-start justify-between gap-4">
         {!large && <NowLine now={now} />}
@@ -901,6 +900,7 @@ export function ProgressTree({ requestId }: { requestId: string }) {
         </dialog>
       )}
     </div>
+    </TreePlanContext.Provider>
   )
 }
 

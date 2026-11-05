@@ -13,7 +13,8 @@ export interface DeviceEntry {
   pinnedWebshellKey?: WebshellPublicKey
 }
 
-const STORAGE_KEY = 'beforeai.device.v1'
+// v1은 고정한 웹쉘 공개키의 모양이 달랐다. 옛 값을 읽으면 화면이 멈추므로 새 칸에 쓴다.
+const STORAGE_KEY = 'beforeai.device.v2'
 
 function read(): Record<string, DeviceEntry> {
   try {

@@ -14,7 +14,6 @@ type RoleFilter = Role | 'ALL'
 
 function UserStatus({ user }: { user: User }) {
   if (!user.active) return <span className="text-ink-3">비활성</span>
-  if (user.mustChangePassword) return <span className="font-medium whitespace-nowrap text-medium">비밀번호 변경 전</span>
   return <span className="text-ink-2">사용 중</span>
 }
 
@@ -37,7 +36,7 @@ function UsersTable({ users, onManage }: { users: User[]; onManage: (user: User)
             <tr key={user.id} className={user.active ? '' : 'text-ink-3'}>
               <td className="whitespace-nowrap">
                 <span className="font-medium">{user.name}</span>
-                <span className="ml-2 font-mono text-xs text-ink-3">{user.employeeNo}</span>
+                <span className="ml-2 font-mono text-xs text-ink-3">{user.employeeNumber}</span>
               </td>
               <td className="whitespace-nowrap">{ROLE_LABEL[user.role]}</td>
               <td className="whitespace-nowrap">{departmentName(user.departmentId)}</td>

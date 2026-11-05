@@ -88,7 +88,6 @@ beforeEach(() => {
   mockConfig.webshellRetryMs = 1
   mockConfig.webshellReachable = true
   progressConfig.heartbeatMs = 30_000
-  progressConfig.historyLimit = 50
   setTransport(mockFetch)
   initMock()
   deviceStore.clear()
@@ -129,10 +128,9 @@ describe('트리 모양 (명세 2.6)', () => {
     const [pending] = approvalsOf(second)
     expect(pending.status).toBe('PENDING')
     expect(pending.label).toBeUndefined()
-    expect(pending.candidates).toEqual([
-      { id: 'u-07', name: '김담당' },
-      { id: 'u-09', name: '이담당' },
-    ])
+    // 서버처럼 후보는 ID로만 오고, 규칙은 노드에 없다.
+    expect(pending.id).toBe('task:t-2/approval:pending:t-2:0')
+    expect(pending.candidates).toEqual(['u-07', 'u-09'])
     expect(stepsOf(first)).toEqual([])
   })
 
@@ -145,7 +143,7 @@ describe('트리 모양 (명세 2.6)', () => {
     expect(stepsOf(running)).toEqual([
       { id: 'step:s-6', type: 'STEP', label: 'npm run migrate:up', status: 'RUNNING', logRange: { from: 6, to: null } },
     ])
-    expect(db().logs['r-running'].find((line) => line.seq === 6)?.text).toBe('$ npm run migrate:up')
+    expect(db().logs['r-running'].find((line) => line.sequence === 6)?.message).toBe('$ npm run migrate:up')
     expect(waiting.status).toBe('APPROVED')
     expect(stepsOf(waiting)).toEqual([])
     expect(running.dependsOn).toEqual(['task:t-1'])
@@ -163,15 +161,14 @@ describe('트리 모양 (명세 2.6)', () => {
     expect(stepsOf(taskOf(partial, 1))).toEqual([expect.objectContaining({ label: './deploy.sh staging', status: 'FAILED' })])
   })
 
-  it('거부된 작업은 거부한 사람을 보여 주고, 금지 작업은 승인 없이 선후 관계에서 빠진다', async () => {
+  it('거부는 작업 상태로만 나타나고, 금지 작업은 승인 노드가 없다. 선후 관계는 서버처럼 바로 앞 작업이다', async () => {
     const rejected = await requestsApi.progress('r-rejected')
-    expect(approvalsOf(taskOf(rejected, 0))).toEqual([
-      expect.objectContaining({ status: 'REJECTED', label: '김담당', network: 'INTERNAL' }),
-    ])
+    expect(taskOf(rejected, 0).status).toBe('REJECTED')
+    expect(approvalsOf(taskOf(rejected, 0))).toEqual([])
 
     const forbidden = await requestsApi.progress('r-forbidden')
     expect(taskOf(forbidden, 0)).toMatchObject({ status: 'BLOCKED', risk: 'FORBIDDEN', dependsOn: [], children: [] })
-    expect(taskOf(forbidden, 1).dependsOn).toEqual([])
+    expect(taskOf(forbidden, 1).dependsOn).toEqual([taskOf(forbidden, 0).id])
   })
 
   it('대체된 Plan은 접힌 가지로 남고 자식이 없다', async () => {
@@ -190,13 +187,13 @@ describe('트리 모양 (명세 2.6)', () => {
     expect(planOf(tree).children).toHaveLength(2)
   })
 
-  it('제출 전에는 기다리는 승인 노드가 없다', async () => {
+  it('서버처럼 제출 전에도 승인 대기 작업이면 필요 승인권자마다 대기 노드가 있다', async () => {
     const tree = await requestsApi.progress('r-reviewing')
     expect(tree.root.status).toBe('REVIEWING')
-    expect(approvalsOf(taskOf(tree, 0))).toEqual([])
+    expect(approvalsOf(taskOf(tree, 0)).map((node) => node.status)).toEqual(['PENDING'])
   })
 
-  it('재시도하면 성공한 작업의 단계는 남고, 다시 돈 작업은 새 실행의 단계만 보인다', async () => {
+  it('재시도하면 실패한 작업만 새 Plan에 옮겨지고, 다시 돈 작업은 새 실행의 단계만 보인다', async () => {
     const before = await requestsApi.progress('r-partial')
     const failedStep = stepsOf(taskOf(before, 1))[0]
     await requestsApi.retryFailed('r-partial')
@@ -205,14 +202,14 @@ describe('트리 모양 (명세 2.6)', () => {
       ['Plan v2', 'CURRENT'],
       ['Plan v1', 'SUPERSEDED'],
     ])
-    expect(stepsOf(taskOf(retried, 0))).toEqual(stepsOf(taskOf(before, 0)))
-    expect(stepsOf(taskOf(retried, 1))).toEqual([])
+    expect(planOf(retried).children.map((task) => task.id)).toEqual(['task:t-2'])
+    expect(stepsOf(taskOf(retried, 0))).toEqual([])
 
     await approve('u-07', 'r-partial', ['t-2'])
     asUser('u-01')
     await waitForStatus('r-partial', 'COMPLETED')
     const finished = await requestsApi.progress('r-partial')
-    const steps = stepsOf(taskOf(finished, 1))
+    const steps = stepsOf(taskOf(finished, 0))
     expect(steps).toHaveLength(1)
     expect(steps[0].status).toBe('SUCCEEDED')
     expect(steps[0].id).not.toBe(failedStep.id)
@@ -222,7 +219,7 @@ describe('트리 모양 (명세 2.6)', () => {
     await requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 })
     const tree = await requestsApi.progress('r-completed')
     expect(tree.root.children.map((plan) => [plan.label, plan.status])).toEqual([
-      ['문서 롤백 Plan v2', 'CURRENT'],
+      ['Plan v2', 'CURRENT'],
       ['Plan v1', 'SUPERSEDED'],
     ])
   })
@@ -295,9 +292,9 @@ describe('실행 단계는 웹쉘 서명이 확인된 이벤트로만 만든다 
     ])
     const deploy = stepsOf(taskOf(tree, 1))
     expect(deploy.map((step) => [step.label, step.status])).toEqual([['./deploy.sh staging', 'SUCCEEDED']])
-    const lines = db().logs['r-main'].filter((line) => line.seq >= deploy[0].logRange!.from && line.seq <= (deploy[0].logRange!.to as number))
-    expect(lines[0].text).toBe('$ ./deploy.sh staging')
-    expect(lines.at(-1)?.text).toBe('[t-2] 성공')
+    const lines = db().logs['r-main'].filter((line) => line.sequence >= deploy[0].logRange!.from && line.sequence <= (deploy[0].logRange!.to as number))
+    expect(lines[0].message).toBe('$ ./deploy.sh staging')
+    expect(lines.at(-1)?.message).toBe('[t-2] 성공')
   })
 
   it('킬 스위치로 멈추면 진행 중이던 단계는 건너뜀이 된다', async () => {
@@ -319,49 +316,48 @@ describe('버전과 스트림 (명세 4.9)', () => {
 
     stored('r-main').plan!.tasks[0].status = 'SUCCEEDED'
     stored('r-main').plan!.tasks[1].title = '운영 배포'
-    expect((await requestsApi.progress('r-main')).version).toBe(second.version + 2)
+    // 상태 말고 다른 것도 바뀌면 패치 대신 tree.replaced 하나로 다시 받게 한다.
+    expect((await requestsApi.progress('r-main')).version).toBe(second.version + 1)
   })
 
-  it('승인이 들어오면 대기 노드가 node.updated로 바뀌고, 실행 중 단계는 node.added로 붙는다', async () => {
+  it('승인이 들어오거나 노드가 늘면 tree.replaced를 보낸다. node.added는 서버에 없다', async () => {
     const { version } = await requestsApi.progress('r-main')
     const stream = listen('r-main', version)
     await nextTick()
     await approve('u-07', 'r-main', ['t-2'])
     asUser('u-01')
     await waitForStatus('r-main', 'COMPLETED')
-    await vi.waitFor(() => expect(stream.events.some((e) => e.event === 'node.added')).toBe(true))
+    const { version: last } = await requestsApi.progress('r-main')
+    await vi.waitFor(() => expect(stream.events.at(-1)?.id).toBe(last))
     stream.controller.abort()
     await stream.ended
 
     const ids = stream.events.map((event) => event.id as number)
     expect(ids).toEqual(ids.map((_, index) => version + index + 1))
 
-    const signed = stream.events.find((e) => e.event === 'node.updated' && e.data.nodeId === 'approval:t-2:PROJECT_OWNER:0')
-    expect(signed?.data).toMatchObject({ status: 'APPROVED', label: '김담당', network: 'INTERNAL', candidates: null })
-    expect(stream.events).toContainEqual(
-      expect.objectContaining({ event: 'node.updated', data: expect.objectContaining({ nodeId: 'task:t-2', status: 'RUNNING' }) }),
-    )
-    expect(stream.events).toContainEqual(
-      expect.objectContaining({ event: 'node.updated', data: expect.objectContaining({ nodeId: 'request:r-main', status: 'COMPLETED' }) }),
-    )
-    const added = stream.events.flatMap((e) => (e.event === 'node.added' ? [e.data] : []))
-    expect(added.map((data) => data.parentId)).toContain('task:t-2')
-    expect(added.every((data) => data.node.type === 'STEP')).toBe(true)
+    expect(stream.events.some((e) => e.event === 'tree.replaced')).toBe(true)
+    expect(stream.events.map((e) => e.event)).not.toContain('node.added')
+    for (const event of stream.events) {
+      if (event.event === 'node.updated') expect(Object.keys(event.data).sort()).toEqual(['at', 'nodeId', 'status'])
+      if (event.event === 'tree.replaced') expect(event.data).toEqual({ version: event.id })
+    }
   })
 
-  it('이벤트를 차례로 적용한 트리는 전체를 다시 받은 트리와 같다', async () => {
+  it('상태만 바뀌면 이벤트를 차례로 적용한 트리가 전체를 다시 받은 트리와 같다', async () => {
     const start = await requestsApi.progress('r-main')
     const stream = listen('r-main', start.version)
     await nextTick()
-    await approve('u-07', 'r-main', ['t-2'])
-    asUser('u-01')
-    await waitForStatus('r-main', 'COMPLETED')
+    stored('r-main').plan!.tasks[0].status = 'RUNNING'
+    persist()
+    stored('r-main').plan!.tasks[0].status = 'SUCCEEDED'
+    persist()
+    await vi.waitFor(() => expect(stream.events).toHaveLength(2))
     stream.controller.abort()
     await stream.ended
 
     let patched = start
     for (const event of stream.events) {
-      if (event.event === 'node.updated' || event.event === 'node.added') patched = applyProgressEvent(patched, event) as ProgressTree
+      if (event.event === 'node.updated') patched = applyProgressEvent(patched, event) as ProgressTree
     }
     const fresh = await requestsApi.progress('r-main')
     expect(patched.version).toBe(fresh.version)
@@ -407,26 +403,16 @@ describe('버전과 스트림 (명세 4.9)', () => {
     expect((await requestsApi.progress('r-main')).version).toBe(version)
   })
 
-  it('Last-Event-ID가 최신이면 보낼 것이 없고, 끊긴 사이의 이벤트는 이어서 받는다', async () => {
+  it('Last-Event-ID가 최신이면 보낼 것이 없다', async () => {
     const { version } = await requestsApi.progress('r-main')
-    stored('r-main').plan!.tasks[0].status = 'RUNNING'
-    const { version: next } = await requestsApi.progress('r-main')
-
-    const latest = listen('r-main', next)
+    const latest = listen('r-main', version)
     await nextTick()
     latest.controller.abort()
     await latest.ended
     expect(latest.events).toEqual([])
-
-    const resumed = listen('r-main', version)
-    await vi.waitFor(() => expect(resumed.events.length).toBeGreaterThan(0))
-    resumed.controller.abort()
-    await resumed.ended
-    expect(resumed.events[0]).toMatchObject({ id: version + 1, event: 'node.updated' })
   })
 
-  it('너무 오래 끊겼거나 알 수 없는 Last-Event-ID면 tree.replaced를 받는다', async () => {
-    progressConfig.historyLimit = 1
+  it('서버처럼 지난 이벤트를 다시 보내지 않고, Last-Event-ID가 지금 버전과 다르면 tree.replaced를 받는다', async () => {
     const { version } = await requestsApi.progress('r-main')
     stored('r-main').plan!.tasks[0].status = 'RUNNING'
     await requestsApi.progress('r-main')
@@ -490,7 +476,7 @@ describe('관문은 지금 Plan만 본다 (리뷰 회귀)', () => {
     expect((await gateOf('r-partial')).phase).toBe('passed')
     await requestsApi.retryFailed('r-partial')
     asUser('u-07')
-    await approvalsApi.reject('r-partial', { taskIds: [task.id], reason: '다시 봅니다' })
+    await approvalsApi.reject('r-partial', { planId: stored('r-partial').plan!.id, taskIds: [task.id], reason: '다시 봅니다' })
     const view = await gateOf('r-partial')
     expect(view.phase).toBe('unreached')
     expect(view.checks.every((check) => check.state === 'none')).toBe(true)
@@ -500,7 +486,7 @@ describe('관문은 지금 Plan만 본다 (리뷰 회귀)', () => {
     await requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 })
     asUser('u-07')
     const taskIds = stored('r-completed').plan!.tasks.map((task) => task.id)
-    await approvalsApi.reject('r-completed', { taskIds, reason: '되돌리지 않습니다' })
+    await approvalsApi.reject('r-completed', { planId: stored('r-completed').plan!.id, taskIds, reason: '되돌리지 않습니다' })
     const view = await gateOf('r-completed')
     expect(view.phase).toBe('unreached')
     expect(view.checks.some((check) => check.state === 'passed')).toBe(false)
@@ -516,21 +502,25 @@ describe('관문은 지금 Plan만 본다 (리뷰 회귀)', () => {
     expect(view.checks.every((check) => check.state === 'passed')).toBe(true)
   })
 
-  it('요청 상세가 추가 필드를 빼도 읽히고 통과라고 하지 않는다', async () => {
-    const stripped = async (input: string, init: RequestInit = {}) => {
+  it('서버 응답에는 목 전용 필드가 없어도 읽히고, 모르는 것을 통과라고 하지 않는다', async () => {
+    const serverOnly = async (input: string, init: RequestInit = {}) => {
       const response = await mockFetch(input, init)
       if (!/\/requests\/[^/]+$/.test(new URL(input, 'http://x').pathname)) return response
-      const { id, projectId, requester, prompt, source, status, analysisAttempts, currentPlanId, createdAt, updatedAt } = await response.json()
-      return new Response(JSON.stringify({ id, projectId, requester, prompt, source, status, analysisAttempts, currentPlanId, createdAt, updatedAt }), { status: 200 })
+      const { id, projectId, requester, prompt, source, status, analysisAttempts, currentPlanId, createdAt, updatedAt, currentPlan, approvals, clarification } = await response.json()
+      return new Response(JSON.stringify({ id, projectId, requester, prompt, source, status, analysisAttempts, currentPlanId, createdAt, updatedAt, currentPlan, approvals, clarification }), { status: 200 })
     }
-    setTransport(stripped)
-    for (const id of ['r-partial', 'r-verify-failed', 'r-completed', 'r-running']) {
+    setTransport(serverOnly)
+    for (const id of ['r-partial', 'r-verify-failed', 'r-completed']) {
       const detail = await requestsApi.get(id)
-      expect(detail.events).toEqual([])
-      const view = gateView(detail)
-      expect(view.checks.slice(0, 4).some((check) => check.state === 'passed')).toBe(false)
+      expect(detail.events).toBeUndefined()
+      expect(gateView(detail).checks.some((check) => check.state === 'passed')).toBe(false)
     }
     expect(gateView(await requestsApi.get('r-completed')).phase).toBe('unknown')
+    expect(gateView(await requestsApi.get('r-verify-failed')).phase).toBe('failed')
+    // 서버의 RUNNING은 웹쉘이 실행 요청을 받아들인 뒤에만 된다. 승인 기록이 없으면 서명 검사는 말하지 않는다.
+    const running = await requestsApi.get('r-running')
+    expect(gateView(running).phase).toBe('passed')
+    expect(gateView({ ...running, approvals: [] }).checks.slice(0, 4).some((check) => check.state === 'passed')).toBe(false)
     setTransport(mockFetch)
   })
 })

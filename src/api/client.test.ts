@@ -218,6 +218,26 @@ describe('401과 재발급', () => {
   })
 })
 
+describe('토큰 다시 받기', () => {
+  it('받은 토큰으로 다음 요청을 보낸다', async () => {
+    const t = await setup((call) => (call.url.endsWith('/auth/refresh') ? token('T2') : json(200, { ok: true })))
+    t.client.setAccessToken('T1')
+    await expect(t.client.renewAccessToken()).resolves.toBe(true)
+    await t.client.http('GET', '/projects')
+    expect(t.authHeader(t.calls.at(-1) as Call)).toBe('Bearer T2')
+    expect(t.expired).not.toHaveBeenCalled()
+  })
+
+  it('쿠키가 죽었거나 서버에 닿지 못하면 false다', async () => {
+    let t = await setup(() => unauthorized())
+    t.client.setAccessToken('T1')
+    await expect(t.client.renewAccessToken()).resolves.toBe(false)
+    t = await setup(() => new TypeError('Failed to fetch'))
+    t.client.setAccessToken('T1')
+    await expect(t.client.renewAccessToken()).resolves.toBe(false)
+  })
+})
+
 describe('로그아웃', () => {
   it('토큰이 만료됐으면 재발급 후 다시 보내 쿠키를 지우게 한다', async () => {
     const t = await setup((call, calls) => {

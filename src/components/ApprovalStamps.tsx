@@ -26,6 +26,8 @@ function candidatesText(requirement: RequirementStatus): string {
 
 /** 작업 한 건의 승인 현황을 사람이 읽는 문장으로 만든다. 예: "프로젝트 담당자 승인 대기: 김담당, 이담당 중 1명" */
 export function approvalSummary(status: TaskApprovalStatus): string {
+  // 필요한 승인이 하나도 없다고 "승인 완료"라고 말하면 거짓이다.
+  if (status.requirements.length === 0) return '승인 현황 없음'
   const waiting = status.requirements.filter((r) => !r.satisfied)
   if (waiting.length === 0) {
     const self = status.requirements.every((r) => r.approvedBy.every((a) => a.self))

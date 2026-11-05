@@ -6,11 +6,16 @@ function planWith(...statuses: TaskStatus[]): Plan {
   return { tasks: statuses.map((status) => ({ status }) as Task) } as Plan
 }
 
-const request = (plan: Plan | null): Pick<RequestDetail, 'status' | 'plan'> => ({ status: 'PENDING_APPROVAL', plan })
+const request = (currentPlan: Plan | null): Pick<RequestDetail, 'status' | 'currentPlan'> => ({ status: 'PENDING_APPROVAL', currentPlan })
 
 describe('승인이 다 모였는지 (API 명세 4.5)', () => {
-  it('승인을 기다리는 작업이 있으면 모였다고 하지 않는다. 승인 현황을 못 받아도 마찬가지다', () => {
+  it('승인을 기다리는 작업이 있으면 모였다고 하지 않는다', () => {
     expect(allApprovalsCollected(request(planWith('APPROVED', 'PENDING')))).toBe(false)
+  })
+
+  it('승인된 작업이 하나도 없으면 모였다고 하지 않는다', () => {
+    expect(allApprovalsCollected(request(planWith('REJECTED')))).toBe(false)
+    expect(allApprovalsCollected(request(planWith('BLOCKED')))).toBe(false)
   })
 
   it('Plan이나 작업을 모르면 모였다고 하지 않는다', () => {
@@ -23,6 +28,6 @@ describe('승인이 다 모였는지 (API 명세 4.5)', () => {
   })
 
   it('승인대기가 아니면 해당하지 않는다', () => {
-    expect(allApprovalsCollected({ status: 'RUNNING', plan: planWith('APPROVED') })).toBe(false)
+    expect(allApprovalsCollected({ status: 'RUNNING', currentPlan: planWith('APPROVED') })).toBe(false)
   })
 })
