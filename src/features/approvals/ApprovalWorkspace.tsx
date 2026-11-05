@@ -8,8 +8,8 @@ import { ApprovalQueue } from './ApprovalQueue'
 import { groupByRequest } from './queueGroups'
 
 /**
- * 승인 작업공간. 왼쪽 목록, 가운데 변경 내용, 오른쪽 결정.
- * 칸마다 따로 스크롤해서 결정 버튼은 항상 보인다.
+ * 승인 작업공간. 넓은 화면은 세 칸을 각각 스크롤하고, 좁은 화면은 상세 내용을 한 번에 스크롤한다.
+ * 좁은 화면에서도 결정 영역은 아래에 남긴다.
  */
 export function ApprovalWorkspace({ requestId }: { requestId?: string }) {
   const pending = usePendingApprovals()
@@ -28,7 +28,7 @@ export function ApprovalWorkspace({ requestId }: { requestId?: string }) {
 
   return (
     <div className="flex h-full min-h-0 flex-col xl:flex-row">
-      <div className={requestId ? 'hidden xl:flex' : 'flex'}>
+      <div className={requestId ? 'hidden xl:flex' : 'flex min-h-0 flex-1 xl:flex-none'}>
         <ApprovalQueue selectedId={requestId} />
       </div>
       {requestId ? (

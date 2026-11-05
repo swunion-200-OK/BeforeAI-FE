@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
+import { useEffect, useRef } from 'react'
 import type { MouseEvent } from 'react'
 import { INTERNAL_ONLY_MESSAGE } from '../api/errors'
 import { NetworkBadge } from '../components/badges'
@@ -134,7 +135,9 @@ function MobileNavigation() {
   const me = useMe()
   const { signOut } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const network = useNetwork()
+  const menuRef = useRef<HTMLDetailsElement>(null)
   const pending = usePendingApprovals()
   const projects = useProjects()
   const pendingCount = new Set(pending.data?.map((item) => item.requestId)).size
@@ -145,11 +148,35 @@ function MobileNavigation() {
     if (menu) menu.open = false
   }
 
+  useEffect(() => {
+    const menu = menuRef.current
+    if (!menu) return
+    const closeOutside = (event: PointerEvent) => {
+      if (menu.open && !menu.contains(event.target as Node)) menu.open = false
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !menu.open) return
+      event.preventDefault()
+      menu.open = false
+      menu.querySelector('summary')?.focus()
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (menuRef.current) menuRef.current.open = false
+  }, [location.pathname])
+
   return (
     <div className="relative z-30 border-b border-rule bg-sheet xl:hidden">
       <div className="flex h-12 items-center justify-between px-4">
         <span className="text-base font-semibold tracking-tight text-ink">AI 작업 승인</span>
-        <details className="group relative">
+        <details ref={menuRef} className="group relative">
           <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-md px-3 text-sm font-medium text-ink hover:bg-sheet-alt [&::-webkit-details-marker]:hidden">
             <Menu size={18} aria-hidden />
             메뉴
@@ -253,7 +280,7 @@ export function AppShell() {
   return (
     <div className="flex h-dvh flex-col xl:flex-row">
       <div className="hidden xl:flex"><Sidebar /></div>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <MobileNavigation />
         {/* 기능이 제한되는 외부망임을 화면 어디서나 알아보게 하는 띠 */}
         {network === 'EXTERNAL' && <div className="band-external h-1 shrink-0" role="presentation" />}

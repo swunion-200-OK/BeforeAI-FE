@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../api/errors'
 import { useMe } from '../app/AuthProvider'
 import { deviceStore } from '../crypto/deviceStore'
-import { signingService } from '../crypto/signingService'
+import { verifyLogLineSignature } from '../crypto/logSignature'
 import { followLogs, logLineKey, mergeLogLine } from '../api/logStream'
 import type { LogLine, LogRange } from '../api/types'
 
@@ -25,12 +25,7 @@ function verifyLogLine(requestId: string, line: LogLine, signingKey: string): bo
   const cached = variants.get(cacheKey)
   if (cached !== undefined) return cached
 
-  const { webshellSignature, ...unsignedLine } = line
-  const verified = signingService.verifyWebshellSignature(
-    { requestId, ...unsignedLine },
-    webshellSignature,
-    signingKey,
-  )
+  const verified = verifyLogLineSignature(requestId, line, signingKey)
   variants.set(cacheKey, verified)
   return verified
 }
@@ -45,7 +40,8 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
     line,
     verified: signingKey ? verifyLogLine(requestId, line, signingKey) : null,
   }))
-  const hasInvalidSignature = checkedLines.some(({ verified }) => verified === false)
+  const failedLines = checkedLines.filter(({ verified }) => verified === false).length
+  const hasInvalidSignature = failedLines > 0
   const [error, setError] = useState<string | null>(null)
   const [connection, setConnection] = useState<'open' | 'dropped' | 'closed'>('closed')
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -86,8 +82,14 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
       <div className="flex items-center justify-between border-b border-terminal-2 px-4 py-2 text-sm text-terminal-dim">
         <span>실행 로그 (읽기 전용)</span>
         <div className="flex items-center gap-3">
-          <span className={!signingKey || hasInvalidSignature ? 'text-[#ffca85]' : 'text-[#7ddc9f]'}>
-            {!signingKey ? '서명 미검증' : hasInvalidSignature ? '서명 확인 실패' : lines.length === 0 ? '서명 확인 대기' : '서명 확인됨'}
+          <span className={!signingKey || hasInvalidSignature ? 'text-[#ffca85]' : lines.length === 0 ? 'text-terminal-dim' : 'text-[#7ddc9f]'}>
+            {!signingKey
+              ? '서명 미검증'
+              : hasInvalidSignature
+                ? `서명 확인 실패 ${failedLines}줄`
+                : lines.length === 0
+                  ? '서명 확인 대기'
+                  : '표시된 줄의 서명 확인됨'}
           </span>
           {live && connection === 'open' && <span className="text-[#7ddc9f]">실시간 수신 중</span>}
           {live && connection === 'dropped' && <span>연결이 끊겨 다시 연결하는 중</span>}
@@ -96,6 +98,11 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
       {!signingKey && lines.length > 0 && (
         <p role="status" className="border-b border-terminal-2 px-4 py-2 text-sm text-[#ffca85]">
           이 기기에 고정된 웹쉘 공개키가 없어 서명을 확인하지 못했습니다. 로그 내용은 검증되지 않았습니다.
+        </p>
+      )}
+      {hasInvalidSignature && (
+        <p role="alert" className="border-b border-terminal-2 px-4 py-2 text-sm text-[#ff8f85]">
+          웹쉘 서명 확인에 실패한 로그 {failedLines}줄은 내용을 숨겼습니다.
         </p>
       )}
       <div
@@ -114,7 +121,7 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
           <div key={logLineKey(line)} className="flex gap-3">
             <span className="shrink-0 text-terminal-dim select-none">{formatLogTime(line.at)}</span>
             {verified === false ? (
-              <span role="alert" className="text-[#ff8f85]">웹쉘 서명 확인에 실패해 내용을 숨겼습니다.</span>
+              <span className="text-[#ff8f85]">웹쉘 서명 실패 (내용 숨김)</span>
             ) : (
               <span className="break-all whitespace-pre-wrap text-terminal-ink">
                 {line.message}

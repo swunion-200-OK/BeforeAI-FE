@@ -697,15 +697,35 @@ export function ApprovalDetail({
               })}
             </TaskRows>
           )}
+
+          <div className="flex flex-col gap-6 xl:hidden">
+            {integrity && context && (
+              <IntegrityCheck
+                result={integrity}
+                receivedHash={context.planHash}
+                awaitingKey={onlyAwaitingKey}
+              />
+            )}
+            {approvalStatuses.length > 0 && (
+              <section>
+                <h2 className="mb-3 text-base font-semibold">결재란</h2>
+                <StampSheet
+                  statuses={approvalStatuses}
+                  tasks={tasks}
+                  stamped={stamped}
+                />
+              </section>
+            )}
+          </div>
         </div>
       </div>
 
       {/* 오른쪽: 확인하고 결정한다 */}
       <aside
         aria-label="승인 결정"
-        className="flex max-h-[65%] w-full shrink-0 flex-col border-t border-rule bg-sheet xl:max-h-none xl:w-[18rem] xl:border-l xl:border-t-0"
+        className="flex w-full shrink-0 flex-col border-t border-rule bg-sheet xl:w-[18rem] xl:border-l xl:border-t-0"
       >
-        <div className="quiet-scroll flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 xl:p-5">
+        <div className="quiet-scroll hidden min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 xl:flex xl:p-5">
           {integrity && context && (
             <IntegrityCheck
               result={integrity}
