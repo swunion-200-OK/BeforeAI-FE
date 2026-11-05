@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
 import { USE_MOCK } from '../../api/client'
 import type { RequestDetail, RequestStatus, TaskApprovalStatus } from '../../api/types'
+import { ClarificationText } from '../../components/ClarificationText'
 import { approvalSummary } from '../../components/ApprovalStamps'
 import { useAnalysisOverdue } from '../../lib/analysisWait'
 import { forbiddenExcludedText } from '../../lib/labels'
@@ -150,7 +151,7 @@ export function RequestStatusBanner({
       if (request.clarification) {
         return (
           <Banner tone="info" title={isRequester ? 'AI가 확인을 요청했습니다' : '요청자가 AI의 질문에 답하는 중입니다'} action={action}>
-            {request.clarification}
+            <ClarificationText text={request.clarification} />
           </Banner>
         )
       }
