@@ -137,6 +137,13 @@ export function RequestStatusBanner({
     case 'ANALYSIS_FAILED':
       return <AnalysisFailedPanel request={request} isRequester={isRequester} />
     case 'REVIEWING':
+      if (request.clarification) {
+        return (
+          <Banner tone="info" title={isRequester ? 'AI가 확인을 요청했습니다' : '요청자가 AI의 질문에 답하는 중입니다'} action={action}>
+            {request.clarification}
+          </Banner>
+        )
+      }
       return (
         <Banner tone="info" title={isRequester ? 'Plan을 확인하고 제출해 주세요' : '요청자가 Plan을 검토하는 중입니다'} action={action}>
           제출 전이라 아직 아무 승인도 없습니다.

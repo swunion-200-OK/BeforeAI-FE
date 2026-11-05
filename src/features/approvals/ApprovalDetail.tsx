@@ -327,7 +327,9 @@ export function ApprovalDetail({
       ? selected
       : approvable.length > 0
         ? approvable
-        : blocked
+        : blocked.length > 0
+          ? blocked
+          : tasks.map((t) => t.id) // 거부한 뒤처럼 고를 게 없어도 문구가 승인으로 바뀌면 안 된다.
   )
     .map((id) => tasks.find((t) => t.id === id))
     .filter((t): t is Task => Boolean(t));

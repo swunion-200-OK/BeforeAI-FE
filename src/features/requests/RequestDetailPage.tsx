@@ -90,7 +90,7 @@ export default function RequestDetailPage() {
   return (
     <div className="flex flex-col gap-6 [&>header]:mb-0">
       <PageHeader
-        title={request.prompt}
+        title={<span className="line-clamp-2 break-words">{request.prompt}</span>}
         meta={
           <>
             <RequestStatusBadge status={request.status} />
