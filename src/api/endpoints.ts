@@ -1,4 +1,4 @@
-import { downloadFile, http } from './client'
+import { downloadFile, downloadPdf, fetchPdf, http } from './client'
 import { whenOnServer } from './missingOnServer'
 import { streamMessages } from './sse'
 import type {
@@ -6,6 +6,7 @@ import type {
   AdminProof,
   AdminSigningKey,
   ApprovalContext,
+  ApprovalDocumentVersion,
   ApplyPresetResponse,
   ApprovalMatrixResponse,
   ApprovalMatrixRule,
@@ -347,6 +348,19 @@ export const approvalsApi = {
     http<SubmitApprovalResponse>('POST', `/requests/${requestId}/approvals`, { body }),
   reject: (requestId: string, body: RejectBody) =>
     http<RejectionResponse>('POST', `/requests/${requestId}/rejections`, { body }),
+}
+
+/**
+ * 승인 기록 문서. whenOnServer로 감싸지 않는다. 이 경로의 404는 "문서가 아직 없음"이라는 진짜 답이기도 해서,
+ * 경로가 없을 때와 구분할 수 없다. 화면은 404를 "아직 문서가 없다"로 읽는다.
+ */
+export const approvalDocumentApi = {
+  /** 화면은 판 번호와 내용이 어긋나지 않게 version을 쓴다. 명세의 최신 판 경로라 함께 둔다 */
+  latest: (requestId: string) => fetchPdf(`/requests/${requestId}/approval-document`),
+  versions: (requestId: string) => allPages<ApprovalDocumentVersion>(`/requests/${requestId}/approval-document/versions`),
+  version: (requestId: string, version: number, signal?: AbortSignal) =>
+    fetchPdf(`/requests/${requestId}/approval-document/versions/${version}`, signal),
+  download: (requestId: string) => downloadPdf(`/requests/${requestId}/approval-document/pdf`, `approval-document-${requestId}.pdf`),
 }
 
 export const documentsApi = {

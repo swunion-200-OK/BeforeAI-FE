@@ -327,6 +327,54 @@ describe('연결 실패와 이상한 응답', () => {
   })
 })
 
+describe('PDF 받기', () => {
+  const reply = (body: string, contentType: string) => new Response(body, { status: 200, headers: { 'Content-Type': contentType } })
+
+  it('text/html로 답해도 내용이 PDF면 형식을 PDF로 고정한다', async () => {
+    const t = await setup(() => reply('%PDF-1.4 본문', 'text/html'))
+    const blob = await t.client.fetchPdf('/a')
+    expect(blob.type).toBe('application/pdf')
+    expect(await blob.text()).toBe('%PDF-1.4 본문')
+  })
+
+  it.each([
+    ['HTML', '<html><body>로그인</body></html>'],
+    ['빈 응답', ''],
+  ])('200이어도 %%PDF- 머리가 없으면(%s) BAD_RESPONSE다', async (_, body) => {
+    const t = await setup(() => reply(body, 'text/html'))
+    await expect(t.client.fetchPdf('/a')).rejects.toMatchObject({ code: 'BAD_RESPONSE' })
+  })
+
+  it('머리가 없으면 내려받기가 파일을 저장하지 않는다', async () => {
+    const click = vi.fn()
+    vi.stubGlobal('document', { createElement: () => ({ click }) })
+    const t = await setup(() => reply('<html></html>', 'text/html'))
+    await expect(t.client.downloadPdf('/a', 'a.pdf')).rejects.toMatchObject({ code: 'BAD_RESPONSE' })
+    expect(click).not.toHaveBeenCalled()
+  })
+
+  it('PDF면 내려받기가 저장한다', async () => {
+    const link = { click: vi.fn(), download: '' }
+    vi.stubGlobal('document', { createElement: () => link })
+    const t = await setup(() => reply('%PDF-1.4', 'application/pdf'))
+    await t.client.downloadPdf('/a', 'a.pdf')
+    expect(link.click).toHaveBeenCalledOnce()
+    expect(link.download).toBe('a.pdf')
+  })
+
+  it('중단 신호를 전송 계층까지 넘긴다', async () => {
+    const t = await setup(() => reply('%PDF-1.4', 'application/pdf'))
+    const { signal } = new AbortController()
+    await t.client.fetchPdf('/a', signal)
+    expect(t.calls[0].init.signal).toBe(signal)
+  })
+
+  it('서버가 코드로 답한 오류는 그대로 준다', async () => {
+    const t = await setup(() => json(409, { error: { code: 'INVALID_STATE', message: 'x' } }))
+    await expect(t.client.downloadPdf('/a', 'a.pdf')).rejects.toMatchObject({ status: 409, code: 'INVALID_STATE' })
+  })
+})
+
 describe('API 주소', () => {
   it.each([
     ['/api/v1', '/api/v1'],

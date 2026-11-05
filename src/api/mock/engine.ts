@@ -48,6 +48,7 @@ import {
   type StoredRequest,
   type StoredUser,
 } from './store'
+import { recordSubmission } from './approvalDocument'
 import { resumeAuditExports } from './auditExport'
 import {
   assertWebshellReachable,
@@ -325,6 +326,7 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
   // 부분완료에서 실패 작업을 모두 지웠다면 승인받을 작업이 없다. 승인대기에 멈추지 않고 그대로 끝낸다.
   if (plan.tasks.every((t) => t.status === 'BLOCKED' || t.status === 'SUCCEEDED')) {
     plan.planHash = hashService.computePlanHash(plan, request.projectId)
+    recordSubmission(request)
     setStatus(request, 'COMPLETED', user.name)
     audit(user, 'SUBMITTED', { requestId: request.id }, { planHash: plan.planHash, nothingLeft: true })
     return submitResponse(request)
@@ -340,6 +342,7 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
   request.forgedHashTarget = undefined
   plan.planHash = hashService.computePlanHash(plan, request.projectId)
   request.submittedAt = nowIso()
+  recordSubmission(request, request.submittedAt)
   setStatus(request, 'PENDING_APPROVAL', user.name)
   audit(user, 'SUBMITTED', { requestId: request.id }, { planHash: plan.planHash })
   notifyApprovers(request)

@@ -1,4 +1,5 @@
 import type {
+  ApprovalDocumentStatus,
   ApproverRule,
   AuditAction,
   ExportFormat,
@@ -140,4 +141,14 @@ export const EXPORT_STATUS_LABEL: Record<ExportStatus, string> = {
   READY: '준비됨',
   FAILED: '실패',
   EXPIRED: '만료됨',
+}
+
+export const APPROVAL_DOCUMENT_STATUS_LABEL: Record<ApprovalDocumentStatus, string> = {
+  IN_PROGRESS: '승인 진행 중',
+  APPROVED: '승인 완료',
+  REVISING: 'Plan 수정 중',
+  SUPERSEDED: '이전 판',
+  REJECTED: '거부됨',
+  CANCELED: '취소됨',
+  KILLED: '중단됨',
 }

@@ -6,6 +6,7 @@ import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { useProjects, useRequest } from '../../lib/queries'
+import { ApprovalDocumentSection } from '../approvals/ApprovalDocumentSection'
 import { ProgressSection } from '../progress/ProgressTree'
 import { MoreDetails, RunLog, TaskApprovalLine } from './RequestDetailSections'
 import { approvalToShow } from './requestPaths'
@@ -101,6 +102,7 @@ export default function RequestDetailPage() {
             <RunLog requestId={request.id} live={live} />
           </div>
         )}
+        <ApprovalDocumentSection key={request.id} request={request} />
         <MoreDetails request={request} />
       </div>
     </div>

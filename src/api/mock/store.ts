@@ -99,6 +99,17 @@ export interface StoredRequest extends RequestSummary, Pick<RequestDetail, 'clar
   webshellEvents: WebshellEvent[]
   /** 진행 상황 트리의 대체된 Plan 가지 (기능 명세서 5.12). 이전 저장본에는 없을 수 있다 */
   planHistory?: Array<{ version: number; plan: Plan; supersededAt: string }>
+  /** 승인 기록 문서의 판. 제출한 적 없거나 대상이 아닌 요청에는 없다 */
+  documentVersions?: StoredDocumentVersion[]
+}
+
+/** PDF는 저장하지 않고 요청할 때 만든다. */
+export interface StoredDocumentVersion {
+  version: number
+  planId: string
+  createdAt: string
+  /** 이 판의 Plan이 교체되면 도장까지 다시 그릴 수 있게 그 직전 내용을 남긴다 */
+  retired?: { plan: Plan; approvals: StoredApproval[] }
 }
 
 /** 파일 내용은 저장하지 않는다. 내려받을 때 filters와 createdAt으로 다시 만든다 */
@@ -173,7 +184,7 @@ export interface MockDb {
 // ── 싱글턴 상태 ────────────────────────────────────────────
 
 const STORAGE_KEY = 'beforeai.mock.db.v1'
-export const SCHEMA_VERSION = 13
+export const SCHEMA_VERSION = 14
 
 export const mockConfig = {
   latencyMs: 180,
@@ -286,10 +297,24 @@ export function setStatus(request: StoredRequest, status: RequestStatus, by: str
 }
 
 const PLAN_HISTORY_LIMIT = 5
+const RETIRED_DOCUMENT_LIMIT = 5
+
+/** 승인 기록 문서에 도장으로 찍는 승인. 서명 기록이 없는 승인은 웹쉘이 인정하지 않으므로 도장으로 치지 않는다. */
+export function signedApprovals(request: StoredRequest, planId: string): StoredApproval[] {
+  return request.approvals.filter((item) => item.planId === planId && request.approvalRecords.some((record) => record.id === item.id))
+}
 
 /** Plan을 새것으로 바꾸기 직전에 부른다. 바뀐 이력은 진행 상황 트리에 접힌 가지로 남는다. */
 export function archivePlan(request: StoredRequest) {
   if (!request.plan) return
+  const { plan, documentVersions } = request
+  const documentVersion = documentVersions?.find((item) => item.planId === plan.id)
+  if (documentVersions && documentVersion) {
+    documentVersion.retired = { plan, approvals: signedApprovals(request, plan.id) }
+    // localStorage에 Plan을 통째로 남기므로 오래된 판부터 지운다. 판 번호는 이어진다. 실제 서버는 모든 판을 둔다.
+    const retiredCount = documentVersions.filter((item) => item.retired).length
+    documentVersions.splice(0, Math.max(0, retiredCount - RETIRED_DOCUMENT_LIMIT))
+  }
   const history = (request.planHistory ??= [])
   history.push({ version: (history.at(-1)?.version ?? 0) + 1, plan: request.plan, supersededAt: nowIso() })
   history.splice(0, Math.max(0, history.length - PLAN_HISTORY_LIMIT))

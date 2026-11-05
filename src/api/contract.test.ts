@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { API_BASE_URL, setTransport } from './client'
 import {
   adminApi,
+  approvalDocumentApi,
   approvalsApi,
   auditApi,
   auditExportApi,
@@ -74,6 +75,7 @@ interface Row {
   /** 기본 응답({ items: [] })으로는 읽을 수 없는 API의 응답 */
   reply?: unknown
   stream?: boolean
+  pdf?: boolean
 }
 
 const WEBSHELL_KEY = {
@@ -232,6 +234,12 @@ const ROWS: Row[] = [
     body: { planId: 'plan-1', taskIds: ['task-1'], reason: '사유' },
   },
 
+  // 승인 기록 문서 (BeforeAi-BE PR #18 ApprovalDocumentController)
+  { spec: 'GET /requests/{requestId}/approval-document', call: () => approvalDocumentApi.latest('request-1'), pdf: true },
+  { spec: 'GET /requests/{requestId}/approval-document/versions', call: () => approvalDocumentApi.versions('request-1'), query: ALL_PAGES },
+  { spec: 'GET /requests/{requestId}/approval-document/versions/{version}', call: () => approvalDocumentApi.version('request-1', 3), pdf: true },
+  { spec: 'GET /requests/{requestId}/approval-document/pdf', call: () => approvalDocumentApi.download('request-1'), pdf: true },
+
   // 3.7 문서·문서 롤백
   { spec: 'GET /requests/{requestId}/tasks/{taskId}/document', call: () => requestsApi.taskDocument('request-1', 'task-1') },
   { spec: 'GET /projects/{projectId}/documents', call: () => documentsApi.list('project-1'), query: ALL_PAGES },
@@ -339,11 +347,13 @@ afterEach(() => {
 })
 
 describe('API 명세 3장 표', () => {
-  it.each(ROWS)('$spec', async ({ spec, call, query = {}, body, headers = {}, reply, stream }) => {
+  it.each(ROWS)('$spec', async ({ spec, call, query = {}, body, headers = {}, reply, stream, pdf }) => {
     useReply(() =>
       stream
         ? { body: '', contentType: 'text/event-stream' }
-        : { body: reply ?? { items: [], nextCursor: null } },
+        : pdf
+          ? { body: '%PDF-1.4', contentType: 'application/pdf' }
+          : { body: reply ?? { items: [], nextCursor: null } },
     )
     await call()
 

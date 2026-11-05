@@ -780,6 +780,22 @@ export interface RollbackBody {
   version: number
 }
 
+// ── 승인 기록 문서 ─────────────────────────────────────────
+
+export type ApprovalDocumentStatus = 'IN_PROGRESS' | 'APPROVED' | 'REVISING' | 'SUPERSEDED' | 'REJECTED' | 'CANCELED' | 'KILLED'
+
+/** 서버는 문서 내용을 JSON으로 주지 않는다. 내용은 판별 미리보기 PDF로 본다. */
+export interface ApprovalDocumentVersion {
+  documentId: string
+  version: number
+  planId: string
+  planHash: string
+  status: ApprovalDocumentStatus
+  /** status가 APPROVED일 때만 true */
+  downloadable: boolean
+  createdAt: string
+}
+
 // ── 에디터 ─────────────────────────────────────────────────
 
 export interface FileEntry {

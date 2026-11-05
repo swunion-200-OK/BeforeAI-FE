@@ -15,6 +15,7 @@ import {
   taskDocument,
   toDetail,
 } from '../engine'
+import { downloadDocument, listDocumentVersions, previewDocumentVersion, previewLatestDocument } from '../approvalDocument'
 import { auditExportRoutes } from '../auditExport'
 import { auditInScope, inDepartment, selectAuditLogs } from '../auditScope'
 import { isCandidate, matchRequirement } from '../policy'
@@ -254,6 +255,12 @@ export const requestRoutes: Route[] = [
     },
     { internal: true },
   ),
+
+  // ── 승인 기록 문서 ──────────────────────────────────────
+  route('GET', '/requests/:requestId/approval-document', (ctx) => previewLatestDocument(viewable(ctx))),
+  route('GET', '/requests/:requestId/approval-document/versions', (ctx) => paginate(listDocumentVersions(viewable(ctx)), ctx.query)),
+  route('GET', '/requests/:requestId/approval-document/versions/:version', (ctx) => previewDocumentVersion(viewable(ctx), ctx.params.version)),
+  route('GET', '/requests/:requestId/approval-document/pdf', (ctx) => downloadDocument(viewable(ctx))),
 
   // ── 문서 롤백 ───────────────────────────────────────────
   route('GET', '/requests/:requestId/tasks/:taskId/document', (ctx) =>

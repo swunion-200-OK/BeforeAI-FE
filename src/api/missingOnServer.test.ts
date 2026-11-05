@@ -44,6 +44,22 @@ describe('서버에 없는 API (실제 서버 모드)', () => {
     expect(client.USE_MOCK).toBe(false)
   })
 
+  it('승인 기록 문서의 404는 "없는 기능"으로 바꾸지 않는다. 문서가 아직 없다는 답과 구분되지 않는다', async () => {
+    const { endpoints, missing, expired } = await realMode(routeNotFound)
+    const { approvalDocumentApi } = endpoints
+    for (const call of [
+      () => approvalDocumentApi.latest('r'),
+      () => approvalDocumentApi.versions('r'),
+      () => approvalDocumentApi.version('r', 1),
+      () => approvalDocumentApi.download('r'),
+    ]) {
+      const error = await call().catch((reason: unknown) => reason)
+      expect(error).toMatchObject({ status: 404, code: 'NOT_FOUND' })
+      expect(missing.isMissingOnServer(error)).toBe(false)
+    }
+    expect(expired).not.toHaveBeenCalled()
+  })
+
   it('목록의 16건은 404면 모두 "아직 없는 기능" 오류가 된다', async () => {
     const { endpoints, missing } = await realMode(routeNotFound)
     const { auditApi, auditExportApi, adminApi, dashboardApi, documentsApi, meApi, projectsApi, requestsApi } = endpoints
