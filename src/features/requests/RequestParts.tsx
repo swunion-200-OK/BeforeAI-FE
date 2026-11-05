@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
+import { USE_MOCK } from '../../api/client'
 import type { RequestDetail, Task } from '../../api/types'
 import { Banner, Button, ConfirmModal, ReasonModal } from '../../components/ui'
 import { formatDateTime } from '../../lib/format'
@@ -149,16 +150,21 @@ export function AnalysisFailedPanel({ request, isRequester }: { request: Request
       tone="danger"
       title="AI 분석에 실패했습니다"
       action={
-        isRequester &&
-        (remaining > 0 ? (
-          <Button variant="primary" internalOnly loading={retry.isPending} onClick={() => retry.mutate()}>
-            다시 분석
-          </Button>
-        ) : (
-          <Button variant="primary" internalOnly onClick={() => navigate('/requests/new')}>
-            새로 요청
-          </Button>
-        ))
+        isRequester && (
+          <div className="flex items-center gap-2">
+            {/* 목은 분석 실패 취소를 받지 않는다. */}
+            {!USE_MOCK && <CancelRequestButton requestId={request.id} onDone={() => navigate('/requests')} />}
+            {remaining > 0 ? (
+              <Button variant="primary" internalOnly loading={retry.isPending} onClick={() => retry.mutate()}>
+                다시 분석
+              </Button>
+            ) : (
+              <Button variant="primary" internalOnly onClick={() => navigate('/requests/new')}>
+                새로 요청
+              </Button>
+            )}
+          </div>
+        )
       }
     >
       <p>AI 분석 엔진에서 결과를 받지 못했습니다.</p>
