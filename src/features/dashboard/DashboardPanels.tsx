@@ -45,7 +45,7 @@ export function TodoPanel({ emptyText }: { emptyText: string }) {
               <li key={group.requestId}>
                 <Link
                   to={`/approvals/${group.requestId}`}
-                  className="grid grid-cols-[4.25rem_minmax(0,1fr)_minmax(0,11rem)_7rem] items-center gap-x-4 px-4 py-3.5 hover:bg-sheet-alt"
+                  className="grid grid-cols-[4.25rem_minmax(0,1fr)_minmax(0,11rem)_7rem] max-sm:grid-cols-[4.25rem_minmax(0,1fr)] max-sm:[&>:nth-child(n+3)]:col-start-2 max-sm:[&>:nth-child(n+3)]:text-left items-center gap-x-4 px-4 py-3.5 hover:bg-sheet-alt"
                 >
                   <span>
                     <RiskBadge risk={top.task.risk} />
@@ -85,12 +85,12 @@ function RequestLine({ request, projectName, external }: { request: RequestSumma
   return (
     <Link
       to={pathFor(request, external)}
-      className="grid grid-cols-[6.5rem_minmax(0,1fr)_minmax(0,11rem)_10rem_6rem] items-center gap-x-4 px-4 py-3.5 hover:bg-sheet-alt"
+      className="grid grid-cols-[6.5rem_minmax(0,1fr)_minmax(0,11rem)_10rem_6rem] max-sm:grid-cols-[6.5rem_minmax(0,1fr)] max-sm:[&>:nth-child(n+3)]:col-start-2 max-sm:[&>:nth-child(n+3)]:text-left items-center gap-x-4 px-4 py-3.5 hover:bg-sheet-alt"
     >
       <span>
         <RequestStatusBadge status={request.status} />
       </span>
-      <span className="line-clamp-2 text-base font-medium text-ink">{request.prompt}</span>
+      <span className="line-clamp-2 text-base font-medium text-ink" title={request.prompt}>{request.prompt}</span>
       <span className="truncate text-sm text-ink-2">
         {request.requester.name}, {projectName}
       </span>
@@ -198,7 +198,7 @@ function StatusCounts({
   return (
     <section>
       <h3 className={SUBTITLE}>상태별 건수</h3>
-      <div className="grid grid-cols-[repeat(4,minmax(0,11rem))] gap-x-10">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-[repeat(4,minmax(0,11rem))] sm:gap-x-10">
         {groups.map((group) => (
           <div key={group.label} className="min-w-0">
             <h4 className="mb-1.5 text-[0.875rem] text-ink-3">{group.label}</h4>
@@ -287,7 +287,7 @@ export function DashboardDetails({
           </div>
         )}
         {statusCounts && groups.length > 0 && (
-          <div className="min-w-[38rem] flex-1">
+          <div className="min-w-[min(38rem,100%)] flex-1">
             <StatusCounts groups={groups} counts={statusCounts} statusTo={statusTo} />
           </div>
         )}

@@ -600,7 +600,7 @@ function Diagram({
                   x={connector.labelAt.x}
                   y={connector.labelAt.y}
                   textAnchor="middle"
-                  className="fill-ink-2 text-[0.72rem] font-semibold"
+                  className="fill-ink-2 text-[0.8125rem] font-semibold"
                 >
                   선행 작업
                 </text>

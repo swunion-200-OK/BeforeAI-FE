@@ -16,6 +16,7 @@ import {
   UserRound,
   type LucideIcon,
 } from 'lucide-react'
+import { BrandMark } from '../components/BrandMark'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { useEffect, useRef } from 'react'
 import type { MouseEvent } from 'react'
@@ -58,7 +59,8 @@ function Sidebar() {
   return (
     <aside className="flex w-[15rem] shrink-0 flex-col border-r border-rule bg-nav text-nav-ink">
       <div className="flex h-14 shrink-0 items-center px-5">
-        <Link to="/" aria-label="BeforeAI 홈으로" className="rounded-sm text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink hover:text-seal">
+        <Link to="/" aria-label="BeforeAI 홈으로" className="flex items-baseline gap-2 rounded-sm text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink hover:text-seal">
+          <BrandMark height={22} className="text-[#152040]" />
           BeforeAI
         </Link>
       </div>
@@ -77,7 +79,7 @@ function Sidebar() {
                     aria-label={`${item.label}: ${INTERNAL_ONLY_MESSAGE}`}
                     title={INTERNAL_ONLY_MESSAGE}
                     tabIndex={0}
-                    className={`${base} cursor-not-allowed text-ink-3/70`}
+                    className={`${base} cursor-not-allowed text-ink-3`}
                   >
                     <Icon size={17} strokeWidth={1.75} aria-hidden className="shrink-0" />
                     <span className="truncate">{item.label}</span>
@@ -177,7 +179,8 @@ function MobileNavigation() {
   return (
     <div className="relative z-30 border-b border-rule bg-sheet xl:hidden">
       <div className="flex h-12 items-center justify-between px-4">
-        <Link to="/" aria-label="BeforeAI 홈으로" className="rounded-sm text-base font-semibold tracking-tight text-ink hover:text-seal">
+        <Link to="/" aria-label="BeforeAI 홈으로" className="flex items-baseline gap-2 rounded-sm text-base font-semibold tracking-tight text-ink hover:text-seal">
+          <BrandMark height={20} className="text-[#152040]" />
           BeforeAI
         </Link>
         <details ref={menuRef} className="group relative">
@@ -193,7 +196,7 @@ function MobileNavigation() {
                   const Icon = ICONS[item.key]
                   if (network === 'EXTERNAL' && !item.external) {
                     return (
-                      <span key={item.key} aria-disabled="true" title={INTERNAL_ONLY_MESSAGE} className="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-3/70">
+                      <span key={item.key} aria-disabled="true" title={INTERNAL_ONLY_MESSAGE} className="flex h-11 items-center gap-2.5 rounded-md px-2.5 text-sm text-ink-3">
                         <Icon size={17} aria-hidden />
                         {item.label}
                       </span>

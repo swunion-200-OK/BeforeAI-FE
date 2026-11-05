@@ -50,9 +50,10 @@ function RequestRow({
       <td className="w-px whitespace-nowrap">
         <RequestStatusBadge status={request.status} />
       </td>
-      <td>
+      <td className="min-w-[15rem]">
         <Link
           to={to}
+          title={request.prompt}
           className="line-clamp-1 max-w-[46rem] font-medium hover:underline"
           onClick={(event) => event.stopPropagation()}
         >

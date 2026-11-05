@@ -222,7 +222,7 @@ function ReviewStep({ requestId }: { requestId: string }) {
     // 작업이 적어도 제출 막대가 화면 바닥에 붙도록 본문 높이를 채운다.
     // 84px = 망 띠 4px + 상단 바 56px + 본문 위 여백 24px. 아래 여백(pb-16)은 음수 여백으로 상쇄한다.
     <div className={`flex flex-col ${reviewing ? '-mb-16 min-h-[calc(100dvh-84px)]' : ''}`}>
-      <PageHeader title={<span className="line-clamp-2 break-words">{request.prompt}</span>} meta={<RequestMeta request={request} />} />
+      <PageHeader title={<span className="line-clamp-2 break-words" title={request.prompt}>{request.prompt}</span>} meta={<RequestMeta request={request} />} />
       <div className="flex-1">
         {request.status === 'ANALYZING' && <AnalyzingPlaceholder request={request} />}
         {request.status === 'ANALYSIS_FAILED' && <AnalysisFailedPanel request={request} isRequester />}
