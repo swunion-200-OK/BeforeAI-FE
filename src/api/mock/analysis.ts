@@ -6,7 +6,7 @@ import { makeUnifiedDiff } from '../../lib/diff'
 import { explainTask } from '../../lib/explain'
 import type { Plan, Project, Risk, Task, TaskContent, TaskType, UserRef } from '../types'
 import { buildRequiredApprovers, findForbiddenReason } from './policy'
-import { db, nextId } from './store'
+import { db, nextId, type StoredProject } from './store'
 
 const RISK_ORDER: Risk[] = ['LOW', 'MEDIUM', 'HIGH', 'FORBIDDEN']
 
@@ -22,7 +22,7 @@ interface Draft {
 }
 
 export function defaultRisk(type: TaskType): Risk {
-  return db().matrix.find((m) => m.taskType === type)?.defaultRisk ?? 'MEDIUM'
+  return db().matrix.find((m) => m.taskType === type)?.risk ?? 'MEDIUM'
 }
 
 const SENSITIVE = /인증|토큰|비밀번호|세션|권한/
@@ -176,21 +176,20 @@ export function toTask(draft: Draft, order: number, project: Project, requester:
   }
 }
 
-export function analyzePrompt(prompt: string, requestId: string, project: Project, requester: UserRef): Plan {
+export function analyzePrompt(prompt: string, requestId: string, project: StoredProject, requester: UserRef): Plan {
   const tasks = buildDrafts(prompt, project).map((draft, i) => toTask(draft, i + 1, project, requester))
   return makePlan(requestId, project, tasks)
 }
 
 export function makePlan(
   requestId: string,
-  project: Project,
+  project: StoredProject,
   tasks: Task[],
   kind: Plan['kind'] = 'NORMAL',
 ): Plan {
   return {
     id: nextId('p'),
     requestId,
-    projectId: project.id,
     kind,
     repository: project.repository,
     baseCommit: project.baseCommit,

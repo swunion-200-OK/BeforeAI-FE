@@ -3,6 +3,7 @@ import { Download, ListFilter } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { auditApi } from '../../api/endpoints'
+import { MISSING_ON_SERVER_MESSAGE, isMissingOnServer } from '../../api/missingOnServer'
 import type { AuditLog, Role } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { NetworkBadge } from '../../components/badges'
@@ -97,7 +98,12 @@ export default function AuditPage() {
         title="감사 로그"
         description={SCOPE_DESCRIPTION[me.role]}
         actions={
-          <Button internalOnly onClick={() => setExportOpen(true)}>
+          <Button
+            internalOnly
+            disabled={isMissingOnServer(logs.error)}
+            disabledReason={MISSING_ON_SERVER_MESSAGE}
+            onClick={() => setExportOpen(true)}
+          >
             <Download size={15} aria-hidden />
             내보내기
           </Button>

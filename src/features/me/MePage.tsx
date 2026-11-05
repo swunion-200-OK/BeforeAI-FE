@@ -1,7 +1,9 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { meApi } from '../../api/endpoints'
-import type { Me, NotificationSettings } from '../../api/types'
+import { ApiError, errorMessage } from '../../api/errors'
+import { isMissingOnServer, MISSING_ON_SERVER_MESSAGE } from '../../api/missingOnServer'
+import type { NotificationSettings } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { toast } from '../../components/toast'
 import { Button, ErrorState, Field, Modal, Mono, PageHeader, Sheet, Spinner, TextInput } from '../../components/ui'
@@ -20,7 +22,7 @@ function SettingRow({
   title: string
   value?: ReactNode
   action: ReactNode
-  children: ReactNode
+  children?: ReactNode
 }) {
   return (
     <li className="flex items-center gap-4 px-6 py-4">
@@ -56,8 +58,12 @@ function PasswordRow() {
   )
 }
 
-function OtpRow({ me }: { me: Me }) {
-  const refreshAll = useRefreshAll()
+/**
+ * TODO(spec): /me에 OTP 등록 여부가 없다. 모르는 동안에는 등록됐다고도 안 됐다고도 적지 않는다.
+ * 등록을 마친 계정의 발급 요청을 서버가 INVALID_STATE로 거절하므로, 그때 등록됐음을 안다. 다시 등록은 서버가 받지 않는다.
+ */
+function OtpRow() {
+  const [enrolled, setEnrolled] = useState(false)
   const [secret, setSecret] = useState<string | null>(null)
   const [code, setCode] = useState('')
 
@@ -66,15 +72,24 @@ function OtpRow({ me }: { me: Me }) {
     setCode('')
   }
   const start = useMutation({
-    mutationFn: () => meApi.enrollOtp(),
-    onSuccess: (data) => setSecret(data.secret),
+    meta: { silent: true },
+    mutationFn: () => meApi.issueOtpSecret(),
+    onSuccess: (data) => setSecret(data.secret ?? null),
+    onError: (reason) => {
+      if (reason instanceof ApiError && reason.code === 'INVALID_STATE') {
+        setEnrolled(true)
+        toast.info('이미 OTP를 등록했습니다')
+      } else {
+        toast.error(errorMessage(reason))
+      }
+    },
   })
   const confirm = useMutation({
-    mutationFn: () => meApi.enrollOtp(code.trim()),
-    onSuccess: async () => {
+    mutationFn: () => meApi.confirmOtp(code.trim()),
+    onSuccess: () => {
       close()
+      setEnrolled(true)
       toast.success('OTP를 등록했습니다')
-      await refreshAll()
     },
   })
 
@@ -86,11 +101,13 @@ function OtpRow({ me }: { me: Me }) {
   return (
     <SettingRow
       title="OTP"
-      value={me.otpEnrolled ? '등록됨' : '외부망 로그인에 필요합니다'}
+      value={enrolled ? '등록됨' : '외부망 로그인에 필요합니다'}
       action={
-        <Button size="sm" internalOnly loading={start.isPending} onClick={() => start.mutate()}>
-          {me.otpEnrolled ? 'OTP 다시 등록' : 'OTP 등록'}
-        </Button>
+        !enrolled && (
+          <Button size="sm" internalOnly loading={start.isPending} onClick={() => start.mutate()}>
+            OTP 등록
+          </Button>
+        )
       }
     >
       <Modal open={secret !== null} title="OTP 등록" onClose={close}>
@@ -184,6 +201,10 @@ function SlackForm({ initial, onSaved }: { initial: NotificationSettings; onSave
 function SlackRow() {
   const settings = useQuery({ queryKey: ['me', 'notification-settings'], queryFn: meApi.notificationSettings })
   const [open, setOpen] = useState(false)
+  // 서버에 아직 없는 API다. 빈 값이나 고장처럼 보이지 않게 그렇다고 적고 설정 버튼을 내놓지 않는다.
+  if (isMissingOnServer(settings.error)) {
+    return <SettingRow title="Slack 알림" value={MISSING_ON_SERVER_MESSAGE} action={null} />
+  }
   return (
     <SettingRow
       title="Slack 알림"
@@ -210,14 +231,14 @@ export default function MePage() {
     <div className="max-w-[54rem]">
       <PageHeader
         title="내 정보"
-        description={`${me.name}, ${ROLE_LABEL[me.role]}, ${departmentName(me.departmentId)}, 사번 ${me.employeeNo}`}
+        description={`${me.name}, ${ROLE_LABEL[me.role]}, ${departmentName(me.departmentId)}, 사번 ${me.employeeNumber}`}
       />
       <div className="flex flex-col gap-4">
         <SigningKeySection me={me} />
         <Sheet flush>
           <ul className="divide-y divide-rule">
             <PasswordRow />
-            <OtpRow me={me} />
+            <OtpRow />
             <SlackRow />
           </ul>
         </Sheet>

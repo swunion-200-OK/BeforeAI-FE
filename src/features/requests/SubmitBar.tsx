@@ -1,23 +1,13 @@
 import { Link, useNavigate } from 'react-router'
 import { useMe } from '../../app/AuthProvider'
-import type { RequestDetail, Task } from '../../api/types'
+import type { RequestDetail, Task, TaskApprovalStatus } from '../../api/types'
 import { approversText } from '../../components/TaskCard'
 import { Button } from '../../components/ui'
+import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { RULE_LABEL } from '../../lib/labels'
+import { isSelfApprovable } from '../approvals/approvalFlow'
 import { CancelRequestButton } from './RequestParts'
 import { useSubmitRequest } from './useRequestActions'
-
-/**
- * 제출과 함께 본인 승인될 작업을 미리 보여 준다. 실제 목록은 제출 응답의 selfApprovableTaskIds가 정한다.
- * 문서 작업은 완성본을 보고 적용 여부를 정해야 하므로 자동 승인에서 뺀다 (기능 명세서 5.4).
- */
-function isSelfApprovable(task: Task) {
-  return (
-    task.type !== 'DOC' &&
-    (task.risk === 'LOW' || task.risk === 'MEDIUM') &&
-    task.requiredApprovers.every((requirement) => requirement.rule === 'ANYONE')
-  )
-}
 
 /** "작업 1, 3은" 처럼 순서에 맞는 조사를 붙인다. 1·3·6·7·8·0으로 끝나면 받침이 있다. 작업 ID는 UUID라 문장에 쓰지 않는다. */
 function topic(tasks: Task[]) {
@@ -25,8 +15,8 @@ function topic(tasks: Task[]) {
   return `작업 ${orders.join(', ')}${/[136780]$/.test(orders[orders.length - 1]) ? '은' : '는'}`
 }
 
-function whoApproves(request: RequestDetail, task: Task) {
-  const requirements = request.approvalStatus.find((status) => status.taskId === task.id)?.requirements ?? []
+function whoApproves(statuses: TaskApprovalStatus[], task: Task) {
+  const requirements = statuses.find((status) => status.taskId === task.id)?.requirements ?? []
   if (requirements.length === 0) return approversText(task.requiredApprovers)
   return requirements
     .map((requirement) => {
@@ -38,10 +28,10 @@ function whoApproves(request: RequestDetail, task: Task) {
 }
 
 /** 제출 버튼을 누르면 작업별로 어떻게 되는지 한 문장으로 쓴다. 제출과 승인이 다르다는 점이 여기서 드러난다. */
-function describeSubmit(request: RequestDetail, self: Task[], others: Task[], forbidden: Task[]) {
+function describeSubmit(statuses: TaskApprovalStatus[], self: Task[], others: Task[], forbidden: Task[]) {
   const byApprover = new Map<string, Task[]>()
   for (const task of others.filter((item) => item.type !== 'DOC')) {
-    const who = whoApproves(request, task)
+    const who = whoApproves(statuses, task)
     byApprover.set(who, [...(byApprover.get(who) ?? []), task])
   }
   const waits = [...byApprover].map(([who, tasks]) => `${topic(tasks)} ${who}의 승인을`).join(', ')
@@ -61,9 +51,11 @@ export function SubmitBar({ request }: { request: RequestDetail }) {
   const me = useMe()
   const navigate = useNavigate()
   const submit = useSubmitRequest(request, () => navigate(`/requests/${request.id}`))
-  const tasks = request.plan?.tasks ?? []
-  const forbidden = tasks.filter((task) => task.status === 'BLOCKED')
-  const runnable = tasks.filter((task) => task.status !== 'BLOCKED')
+  const statuses = useApprovalStatuses(request)
+  const tasks = request.currentPlan?.tasks ?? []
+  const isForbidden = (task: Task) => task.risk === 'FORBIDDEN' || task.status === 'BLOCKED'
+  const forbidden = tasks.filter(isForbidden)
+  const runnable = tasks.filter((task) => !isForbidden(task))
   const self = runnable.filter(isSelfApprovable)
   const others = runnable.filter((task) => !isSelfApprovable(task))
   const cannotSubmit = runnable.length === 0
@@ -71,7 +63,7 @@ export function SubmitBar({ request }: { request: RequestDetail }) {
     tasks.length === 0
       ? '남은 작업이 없습니다. 요청을 취소하거나 새로 요청해 주세요'
       : '금지 작업만 남아 있어 제출할 수 없습니다. 요청을 취소해 주세요'
-  const keyMissing = self.length > 0 && me.signingKeyStatus !== 'REGISTERED'
+  const keyMissing = self.length > 0 && !me.hasRegisteredSigningKey
 
   return (
     <aside
@@ -86,7 +78,7 @@ export function SubmitBar({ request }: { request: RequestDetail }) {
           </Link>
         </p>
       ) : (
-        <p className="min-w-0 text-sm text-ink">{cannotSubmit ? reason : describeSubmit(request, self, others, forbidden)}</p>
+        <p className="min-w-0 text-sm text-ink">{cannotSubmit ? reason : describeSubmit(statuses, self, others, forbidden)}</p>
       )}
       <div className="flex shrink-0 items-center gap-2">
         <CancelRequestButton requestId={request.id} size="lg" onDone={() => navigate('/requests')} />

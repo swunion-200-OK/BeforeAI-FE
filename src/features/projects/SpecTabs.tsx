@@ -19,7 +19,7 @@ import {
 import { MarkdownText } from '../documents/MarkdownText'
 import { formatDateTime } from '../../lib/format'
 import { useRefreshAll } from '../../lib/queries'
-import { changeRequestsQuery, specQuery } from './queries'
+import { changeRequestsQuery, specQuery, usePersonName } from './queries'
 
 // ── 기획서 본문 ────────────────────────────────────────────
 
@@ -81,23 +81,27 @@ export function ChangeRequestModal({
 
 /** 기획서 본문. draft가 있으면 고치는 중이고, 저장과 취소는 화면 머리글에 있다. */
 export function SpecTab({
-  projectId,
+  project,
   draft,
   onDraftChange,
 }: {
-  projectId: string
+  project: Project
   draft: string | null
   onDraftChange: (value: string) => void
 }) {
-  const spec = useQuery(specQuery(projectId))
+  const spec = useQuery(specQuery(project.id))
+  const personName = usePersonName(project)
 
   if (spec.isPending) return <Spinner />
   if (spec.isError) return <ErrorState error={spec.error} onRetry={() => spec.refetch()} />
 
+  const author = personName(spec.data.createdBy)
+
   return (
     <>
       <p className="mb-3 text-[0.875rem] text-ink-3">
-        현재 버전 v{spec.data.version}, {spec.data.updatedBy.name}, {formatDateTime(spec.data.updatedAt)}
+        현재 버전 v{spec.data.version}, {author && `${author}, `}
+        {formatDateTime(spec.data.createdAt)}
       </p>
       <Sheet flush>
         <div className="px-8 py-6">
@@ -122,6 +126,7 @@ export function SpecTab({
 
 export function VersionsTab({ project, canEdit }: { project: Project; canEdit: boolean }) {
   const refreshAll = useRefreshAll()
+  const personName = usePersonName(project)
   const [viewing, setViewing] = useState<ProjectSpec | null>(null)
   const [restoring, setRestoring] = useState<ProjectSpec | null>(null)
   const versions = useQuery({
@@ -161,9 +166,12 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
                   <td className="font-medium">
                     v{version.version}
                     {version.version === latest && <span className="ml-2 text-xs font-normal text-ink-3">현재</span>}
+                    {version.restoredFromVersion !== null && (
+                      <span className="ml-2 text-xs font-normal text-ink-3">v{version.restoredFromVersion}에서 복원</span>
+                    )}
                   </td>
-                  <td>{formatDateTime(version.updatedAt)}</td>
-                  <td>{version.updatedBy.name}</td>
+                  <td>{formatDateTime(version.createdAt)}</td>
+                  <td>{personName(version.createdBy) ?? '-'}</td>
                   <td>
                     <div className="flex justify-end gap-1.5">
                       <Button size="sm" variant="ghost" onClick={() => setViewing(version)}>
@@ -214,6 +222,7 @@ type StatusFilter = ChangeRequestStatus | 'ALL'
 
 export function ChangeRequestsTab({ project, canEdit }: { project: Project; canEdit: boolean }) {
   const refreshAll = useRefreshAll()
+  const personName = usePersonName(project)
   const [status, setStatus] = useState<StatusFilter>('ALL')
   const [rejecting, setRejecting] = useState<SpecChangeRequest | null>(null)
   const list = useQuery(changeRequestsQuery(project.id))
@@ -274,7 +283,7 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
               <Sheet>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-[0.875rem] text-ink-3">
-                    <span className="font-medium text-ink">{item.requester.name}</span>, {formatDateTime(item.createdAt)},{' '}
+                    <span className="font-medium text-ink">{personName(item.requesterId) ?? '요청자'}</span>, {formatDateTime(item.createdAt)},{' '}
                     <span className={`font-medium ${CR_STATUS_COLOR[item.status]}`}>{CR_STATUS_LABEL[item.status]}</span>
                   </p>
                   {canEdit && item.status === 'OPEN' && (
@@ -298,9 +307,9 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
                 <div className="mt-3 rounded-lg bg-sheet-alt p-3">
                   <MarkdownText body={item.content} />
                 </div>
-                {item.rejectReason && (
+                {item.rejectionReason && (
                   <p className="mt-3 max-w-[80ch] text-sm">
-                    <span className="text-ink-3">반려 사유</span> {item.rejectReason}
+                    <span className="text-ink-3">반려 사유</span> {item.rejectionReason}
                   </p>
                 )}
               </Sheet>

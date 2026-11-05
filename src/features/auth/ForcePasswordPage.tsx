@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
+import { renewAccessToken } from '../../api/client'
 import { useAuth, useMe } from '../../app/AuthProvider'
 import { NetworkBadge } from '../../components/badges'
 import { toast } from '../../components/toast'
@@ -34,6 +35,12 @@ export function ForcePasswordPage() {
           large
           submitLabel="비밀번호 바꾸기"
           onDone={async () => {
+            // /me는 바로 바뀌지만 지금 토큰으로는 다른 API가 모두 409다. 새 토큰을 받은 뒤에 화면을 넘긴다.
+            if (!(await renewAccessToken())) {
+              toast.info('비밀번호를 바꿨습니다. 다시 로그인해 주세요')
+              await signOut()
+              return
+            }
             toast.success('비밀번호를 바꿨습니다')
             await client.invalidateQueries({ queryKey: ['me'] })
           }}

@@ -1,12 +1,4 @@
-import type {
-  Dashboard,
-  PendingApproval,
-  RequestStatus,
-  RequestSummary,
-  RequestTaskSummary,
-  Risk,
-  Task,
-} from '../../types'
+import type { Dashboard, PendingApproval, RequestStatus, RequestSummary, Risk } from '../../types'
 import {
   approvalContext,
   cancelRequest,
@@ -25,13 +17,12 @@ import {
 } from '../engine'
 import { auditExportRoutes } from '../auditExport'
 import { auditInScope, inDepartment, selectAuditLogs } from '../auditScope'
-import { isCandidate, isExternallyApprovable, matchRequirement } from '../policy'
+import { isCandidate, matchRequirement } from '../policy'
 import { progressStream, progressTree } from '../progress'
 import { paginate, route, type Ctx, type Route } from '../router'
 import {
   HttpError,
   db,
-  requireProject,
   requireRequest,
   subscribeLogs,
   type StoredRequest,
@@ -50,22 +41,6 @@ function toSummary(request: StoredRequest): RequestSummary {
     currentPlanId: request.currentPlanId,
     createdAt: request.createdAt,
     updatedAt: request.updatedAt,
-    taskSummary: request.plan ? summarizeTasks(request) : undefined,
-  }
-}
-
-function summarizeTasks(request: StoredRequest): RequestTaskSummary {
-  const tasks = request.plan?.tasks ?? []
-  const risks: Record<Risk, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, FORBIDDEN: 0 }
-  for (const task of tasks) risks[task.risk] += 1
-  const count = (...statuses: Task['status'][]) => tasks.filter((t) => statuses.includes(t.status)).length
-  return {
-    total: tasks.length,
-    risks,
-    required: tasks.filter((t) => t.status !== 'BLOCKED').length,
-    approved: count('APPROVED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'SKIPPED', 'ROLLED_BACK'),
-    succeeded: count('SUCCEEDED', 'ROLLED_BACK'),
-    failed: count('FAILED'),
   }
 }
 
@@ -95,6 +70,7 @@ function viewable(ctx: Ctx): StoredRequest {
 /** 로그가 더 나올 수 있는 상태 */
 const LIVE_STATUSES: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
 
+/** 서버처럼 이벤트 이름은 log이고 id가 없으며 지난 줄을 보내지 않는다. 지난 줄은 목록 API로 읽는다. */
 function logStream(ctx: Ctx): Response {
   const request = viewable(ctx)
   const encoder = new TextEncoder()
@@ -109,13 +85,12 @@ function logStream(ctx: Ctx): Response {
         controller.close()
       }
       const send = (value: unknown) => {
-        if (!closed) controller.enqueue(encoder.encode(`data: ${JSON.stringify(value)}\n\n`))
+        if (!closed) controller.enqueue(encoder.encode(`event: log\ndata: ${JSON.stringify(value)}\n\n`))
       }
       if (ctx.signal?.aborted) {
         close()
         return
       }
-      for (const line of db().logs[request.id] ?? []) send(line)
       if (!LIVE_STATUSES.includes(request.status)) {
         close()
         return
@@ -130,29 +105,17 @@ function logStream(ctx: Ctx): Response {
   return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } })
 }
 
-function pendingFor(user: StoredUser, network: 'INTERNAL' | 'EXTERNAL'): PendingApproval[] {
+function pendingFor(user: StoredUser): PendingApproval[] {
   const items: PendingApproval[] = []
   for (const request of db().requests) {
     if (request.status !== 'PENDING_APPROVAL' || !request.plan) continue
-    const project = requireProject(request.projectId)
     for (const task of request.plan.tasks) {
       if (task.status !== 'PENDING' || !matchRequirement(user, task, request)) continue
-      items.push({
-        requestId: request.id,
-        taskId: task.id,
-        taskTitle: task.title,
-        type: task.type,
-        risk: task.risk,
-        requester: request.requester,
-        projectId: project.id,
-        projectName: project.name,
-        requestedAt: request.submittedAt ?? request.createdAt,
-        blockedReason: network === 'EXTERNAL' && !isExternallyApprovable(task) ? 'INTERNAL_NETWORK_ONLY' : null,
-      })
+      items.push({ requestId: request.id, planId: request.plan.id, requester: request.requester, requestedAt: request.createdAt, task })
     }
   }
-  // 오래 기다린 순
-  return items.sort((a, b) => a.requestedAt.localeCompare(b.requestedAt))
+  // 서버처럼 최근 요청부터 준다. 오래 기다린 순 정렬은 화면이 한다.
+  return items.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
 }
 
 function buildDashboard(ctx: Ctx): Dashboard {
@@ -257,7 +220,7 @@ export const requestRoutes: Route[] = [
   route('POST', '/requests/:requestId/kill', ({ me, params, body }) =>
     killRequest(requireRequest(params.requestId), me, body?.reason ?? ''),
   ),
-  route('POST', '/admin/kill-all', ({ me, body }) => ({ killedRequestIds: killAll(me, body?.reason ?? '') }), {
+  route('POST', '/admin/kill-all', ({ me, body }) => ({ status: 'KILLED', executionIds: killAll(me, body?.reason ?? '') }), {
     roles: ['ADMIN'],
   }),
   route('POST', '/requests/:requestId/retry', ({ me, params }) => retryFailedTasks(requireRequest(params.requestId), me), {
@@ -272,18 +235,25 @@ export const requestRoutes: Route[] = [
   }),
 
   // ── 승인 ────────────────────────────────────────────────
-  route('GET', '/approvals/pending', ({ me, network, query }) => paginate(pendingFor(me, network), query)),
-  route('GET', '/requests/:requestId/approval-context', ({ me, network, params }) =>
-    approvalContext(requireRequest(params.requestId), me, network),
+  route('GET', '/approvals/pending', ({ me, query }) => paginate(pendingFor(me), query)),
+  route('GET', '/requests/:requestId/approval-context', (ctx) => approvalContext(viewable(ctx), ctx.me, ctx.network)),
+  // 서버의 승인·거부 API는 내부망 전용이다 (ApprovalController).
+  route(
+    'POST',
+    '/requests/:requestId/approvals',
+    ({ me, network, params, body }) => submitApproval(requireRequest(params.requestId), me, network, body),
+    { internal: true },
   ),
-  route('POST', '/requests/:requestId/approvals', ({ me, network, params, body }) =>
-    submitApproval(requireRequest(params.requestId), me, network, body),
+  route(
+    'POST',
+    '/requests/:requestId/rejections',
+    ({ me, network, params, body }) => {
+      const request = requireRequest(params.requestId)
+      rejectRequest(request, me, network, body)
+      return { requestId: request.id, status: request.status }
+    },
+    { internal: true },
   ),
-  route('POST', '/requests/:requestId/rejections', ({ me, network, params, body }) => {
-    const request = requireRequest(params.requestId)
-    rejectRequest(request, me, network, body)
-    return { id: request.id, status: request.status }
-  }),
 
   // ── 문서 롤백 ───────────────────────────────────────────
   route('GET', '/requests/:requestId/tasks/:taskId/document', (ctx) =>

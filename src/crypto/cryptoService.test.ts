@@ -1,8 +1,37 @@
 import { x25519 } from '@noble/curves/ed25519.js'
+import { sha256 } from '@noble/hashes/sha2.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
 import { describe, expect, it } from 'vitest'
 import type { ApprovalEnvelope, SignedApproval } from '../api/types'
 import { cryptoService } from './cryptoService'
 import { base64ToBytes, bytesToBase64 } from './encoding'
+
+describe('웹쉘 공개키 확인', () => {
+  const raw = new Uint8Array(32).fill(7)
+  const publicKey = bytesToBase64(raw)
+  const fingerprint = `sha256:${bytesToHex(sha256(raw))}`
+  const valid = {
+    encryption: { algorithm: 'X25519', publicKey, fingerprint },
+    signing: { algorithm: 'Ed25519', publicKey, fingerprint },
+  }
+
+  it('서버 형식이면 통과한다', () => {
+    expect(() => cryptoService.assertWebshellKey(valid)).not.toThrow()
+  })
+
+  it('지문이 다르면 고정하지 않는다', () => {
+    const broken = { ...valid, signing: { ...valid.signing, fingerprint: 'sha256:00' } }
+    expect(() => cryptoService.assertWebshellKey(broken)).toThrow('지문')
+  })
+
+  it('32바이트가 아니거나 알고리즘이 다르면 고정하지 않는다', () => {
+    const long = bytesToBase64(new Uint8Array(44))
+    const longKey = { ...valid, encryption: { ...valid.encryption, publicKey: long } }
+    expect(() => cryptoService.assertWebshellKey(longKey)).toThrow('32바이트')
+    const wrong = { ...valid, encryption: { ...valid.encryption, algorithm: 'Ed25519' } }
+    expect(() => cryptoService.assertWebshellKey(wrong)).toThrow('X25519')
+  })
+})
 
 const signed: SignedApproval = {
   payload: {

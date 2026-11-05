@@ -22,10 +22,13 @@ export class ApiError extends Error {
   readonly status: number
   readonly code: ErrorCode | string
   readonly details: Record<string, unknown>
+  /** 서버가 보낸 문구 그대로. 코드 하나에 사유가 여럿일 때(로그인 실패 등) 화면이 표 대신 이 문구를 쓴다. */
+  readonly serverMessage: string
 
   constructor(status: number, code: ErrorCode | string, message: string, details: Record<string, unknown> = {}) {
     super(ERROR_MESSAGES[code as ErrorCode] ?? message)
     this.name = 'ApiError'
+    this.serverMessage = message
     this.status = status
     this.code = code
     this.details = details

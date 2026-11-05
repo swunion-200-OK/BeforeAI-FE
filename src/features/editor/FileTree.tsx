@@ -37,7 +37,7 @@ function DirectoryEntries({ path, depth, ...tree }: TreeProps & { path: string; 
   }
   return (
     <ul>
-      {listing.data.entries.map((entry) => (
+      {listing.data.items.map((entry) => (
         <TreeEntry key={entry.path} entry={entry} depth={depth} {...tree} />
       ))}
     </ul>
@@ -48,7 +48,7 @@ function TreeEntry({ entry, depth, ...tree }: TreeProps & { entry: FileEntry; de
   const [open, setOpen] = useState(false)
   const rowClass = 'flex w-full items-center gap-1.5 py-1.5 pr-2 text-left text-sm hover:bg-sheet-alt'
 
-  if (entry.type === 'dir') {
+  if (entry.type === 'DIR') {
     return (
       <li>
         <button

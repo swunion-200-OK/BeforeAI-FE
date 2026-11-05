@@ -29,11 +29,6 @@ const tree = (version: number): ProgressTree => ({
   },
 })
 const updated = (id: number, status = 'SUCCEEDED'): ProgressStreamEvent => ({ id, event: 'node.updated', data: { nodeId: 'task:a', status, at: '' } })
-const added = (id: number, parentId: string): ProgressStreamEvent => ({
-  id,
-  event: 'node.added',
-  data: { parentId, node: { id: 'step:s', type: 'STEP', label: 'x', status: 'RUNNING' } },
-})
 
 function setup(initial = tree(5)) {
   let current: ProgressTree | undefined = initial
@@ -110,7 +105,7 @@ describe('패치와 전체 다시 받기', () => {
   it('전체를 받는 사이 이미 포함된 이벤트는 다시 적용하지 않는다', async () => {
     const t = setup()
     t.sync.start()
-    t.emit({ id: 6, event: 'tree.replaced', data: { at: '' } })
+    t.emit({ id: 6, event: 'tree.replaced', data: { version: 6 } })
     t.emit(updated(7, 'FAILED'))
     await t.finishFetch(tree(7))
     expect(t.tree().version).toBe(7)
@@ -122,27 +117,28 @@ describe('패치와 전체 다시 받기', () => {
     const t = setup()
     t.fetchTree.mockImplementationOnce(() => Promise.reject(new Error('네트워크')))
     t.sync.start()
-    t.emit({ id: 6, event: 'tree.replaced', data: { at: '' } })
+    t.emit({ id: 6, event: 'tree.replaced', data: { version: 6 } })
     await vi.advanceTimersByTimeAsync(0)
     t.emit(updated(9))
     expect(t.fetchTree).toHaveBeenCalledTimes(2)
     t.sync.stop()
   })
 
-  it('부모를 모르는 node.added는 버전만 올리지 않고 전체를 다시 받는다', () => {
+  it('트리에 없는 노드의 node.updated는 버전만 올리지 않고 전체를 다시 받는다', () => {
     const t = setup()
+    const unknown: Extract<ProgressStreamEvent, { event: 'node.updated' }> = { id: 6, event: 'node.updated', data: { nodeId: 'task:없음', status: 'RUNNING', at: '' } }
     t.sync.start()
-    t.emit(added(6, 'task:없음'))
+    t.emit(unknown)
     expect(t.tree().version).toBe(5)
     expect(t.fetchTree).toHaveBeenCalledTimes(1)
-    expect(applyProgressEvent(tree(5), added(6, 'task:없음') as Extract<ProgressStreamEvent, { event: 'node.added' }>)).toBeNull()
+    expect(applyProgressEvent(tree(5), unknown)).toBeNull()
     t.sync.stop()
   })
 
   it('heartbeat는 트리를 건드리지 않는다', () => {
     const t = setup()
     t.sync.start()
-    t.emit({ id: null, event: 'heartbeat', data: { at: '' } })
+    t.emit({ id: null, event: 'heartbeat', data: {} })
     expect(t.tree().version).toBe(5)
     expect(t.fetchTree).not.toHaveBeenCalled()
     t.sync.stop()

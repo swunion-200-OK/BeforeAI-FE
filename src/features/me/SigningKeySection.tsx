@@ -6,7 +6,8 @@ import { errorMessage } from '../../api/errors'
 import type { Me, SigningKeyStatus } from '../../api/types'
 import { Stepper, type Step } from '../../components/RequestStepper'
 import { toast } from '../../components/toast'
-import { Banner, Button, ConfirmModal, ErrorState, Mono, Sheet, Spinner } from '../../components/ui'
+import { Banner, Button, ErrorState, Mono, Sheet, Spinner } from '../../components/ui'
+import { cryptoService } from '../../crypto/cryptoService'
 import { deviceStore } from '../../crypto/deviceStore'
 import { signingService } from '../../crypto/signingService'
 import { formatDateTime } from '../../lib/format'
@@ -61,14 +62,14 @@ export function SigningKeySection({ me }: { me: Me }) {
   })
   const device = deviceStore.get(me.id)
   const hasDeviceKey = signingService.hasDeviceKey(me.id)
-  const deviceKeyStatus = keys.data?.find((key) => key.keyId === device.keyId)?.status
+  const deviceKeyStatus = keys.data?.find((key) => key.id === device.keyId)?.status
   // 고정한 웹쉘 공개키가 없으면 서명을 암호화할 수 없어 쓸 수 없는 키다. 새로 만들어 고정한다.
   const deviceKeyUsable =
     hasDeviceKey && Boolean(device.pinnedWebshellKey) && (deviceKeyStatus === 'REGISTERED' || deviceKeyStatus === 'PENDING')
-  // 다른 기기에 살아 있는 키가 있으면 새로 만들기 전에 확인한다.
-  const activeKeyElsewhere = keys.data?.some((key) => key.status !== 'REVOKED') ?? false
+  // 서버는 폐기되지 않은 키를 사용자당 하나만 받는다. 남은 키가 있으면 폐기되기 전까지 새로 만들 수 없다.
+  const hasActiveKey = keys.data?.some((key) => key.status !== 'REVOKED') ?? false
+  const isAdmin = me.role === 'ADMIN'
 
-  const [confirmOpen, setConfirmOpen] = useState(false)
   const [pinMismatch, setPinMismatch] = useState(false)
 
   const create = useMutation({
@@ -79,15 +80,15 @@ export function SigningKeySection({ me }: { me: Me }) {
       const before = deviceStore.get(me.id)
       // 고정의 목적: 서버가 다른 키를 내밀어도 받아들이지 않는다.
       const pinned = before.pinnedWebshellKey
-      if (pinned && (pinned.encryptionKey !== webshellKey.encryptionKey || pinned.signingKey !== webshellKey.signingKey)) {
+      if (pinned && (pinned.encryption.publicKey !== webshellKey.encryption.publicKey || pinned.signing.publicKey !== webshellKey.signing.publicKey)) {
         throw new PinMismatchError()
       }
+      cryptoService.assertWebshellKey(webshellKey)
       const { publicKey } = signingService.generateDeviceKey(me.id)
-      // TODO(spec): 지문 형식이 명세에 없어 서버가 준 값을 그대로 보여 준다. 정해지면 기기에서 다시 계산해 비교한다.
       deviceStore.update(me.id, { pinnedWebshellKey: webshellKey })
       try {
         const key = await meApi.submitSigningKey(publicKey)
-        deviceStore.update(me.id, { keyId: key.keyId })
+        deviceStore.update(me.id, { keyId: key.id })
         return key
       } catch (error) {
         // 제출에 실패하면 새 비밀키와 옛 keyId가 섞이지 않게 이전 상태로 되돌린다.
@@ -102,12 +103,10 @@ export function SigningKeySection({ me }: { me: Me }) {
     },
     onMutate: () => setPinMismatch(false),
     onSuccess: async () => {
-      setConfirmOpen(false)
-      toast.success('승인 키를 만들어 제출했습니다. 관리자 등록을 기다려 주세요')
+      toast.success(isAdmin ? '승인 키를 만들어 제출했습니다. 설정의 승인 키 탭에서 등록해 주세요' : '승인 키를 만들어 제출했습니다. 관리자 등록을 기다려 주세요')
       await refreshAll()
     },
     onError: (error) => {
-      setConfirmOpen(false)
       if (error instanceof PinMismatchError) setPinMismatch(true)
       else toast.error(errorMessage(error))
     },
@@ -115,10 +114,10 @@ export function SigningKeySection({ me }: { me: Me }) {
 
   const state: KeyState = deviceKeyUsable && deviceKeyStatus === 'REGISTERED' ? 'ready' : deviceKeyUsable ? 'waiting' : 'none'
   const view = STATE_VIEW[state]
-  const revoked = state === 'none' && deviceKeyStatus === 'REVOKED'
-  const elsewhere = state === 'none' && !revoked && activeKeyElsewhere
-  // 키 목록을 모르는 동안에는 만들기를 내놓지 않는다. 등록된 기기의 키를 모르고 덮어쓰면 서명이 막힌다.
-  const canCreate = keys.isSuccess && !deviceKeyUsable
+  const elsewhere = state === 'none' && hasActiveKey
+  const revoked = state === 'none' && !hasActiveKey && deviceKeyStatus === 'REVOKED'
+  // 키 목록을 모르는 동안에는 만들기를 내놓지 않는다. 서버가 거절할 요청을 보내게 된다.
+  const canCreate = keys.isSuccess && !hasActiveKey
 
   return (
     <Sheet flush>
@@ -137,8 +136,12 @@ export function SigningKeySection({ me }: { me: Me }) {
                   {revoked
                     ? '승인하려면 새 키를 만들어 주세요.'
                     : elsewhere
-                      ? '다른 기기의 키가 있어, 이 기기에서 승인하려면 새로 만들어야 합니다.'
-                      : view.text}
+                      ? isAdmin
+                        ? '다른 기기의 키가 남아 있습니다. 설정의 승인 키 탭에서 폐기하면 이 기기에서 새로 만들 수 있습니다.'
+                        : '다른 기기의 키가 남아 있습니다. 관리자가 폐기하면 이 기기에서 새로 만들 수 있습니다.'
+                      : state === 'waiting' && isAdmin
+                        ? '설정의 승인 키 탭에서 직접 등록해 주세요.'
+                        : view.text}
                 </p>
               </div>
               {canCreate && (
@@ -147,7 +150,7 @@ export function SigningKeySection({ me }: { me: Me }) {
                   size="lg"
                   internalOnly
                   loading={create.isPending}
-                  onClick={() => (activeKeyElsewhere ? setConfirmOpen(true) : create.mutate())}
+                  onClick={() => create.mutate()}
                 >
                   이 기기에서 키 만들기
                 </Button>
@@ -173,7 +176,8 @@ export function SigningKeySection({ me }: { me: Me }) {
               <p className="text-sm text-ink-2">승인 서명은 이 기기의 개인키로 만들고, 개인키는 기기 밖으로 나가지 않습니다.</p>
               {device.pinnedWebshellKey && (
                 <p className="text-sm text-ink-2">
-                  고정한 웹쉘 공개키 지문 <Mono>{shorten(device.pinnedWebshellKey.fingerprint)}</Mono>
+                  고정한 웹쉘 공개키 지문: 암호화 <Mono>{shorten(device.pinnedWebshellKey.encryption.fingerprint)}</Mono>, 서명{' '}
+                  <Mono>{shorten(device.pinnedWebshellKey.signing.fingerprint)}</Mono>
                 </p>
               )}
               {keys.data.length > 0 && (
@@ -185,15 +189,14 @@ export function SigningKeySection({ me }: { me: Me }) {
                         <th>공개키</th>
                         <th>상태</th>
                         <th>제출</th>
-                        <th>등록</th>
                       </tr>
                     </thead>
                     <tbody>
                       {keys.data.map((key) => (
-                        <tr key={key.keyId}>
+                        <tr key={key.id}>
                           <td className="whitespace-nowrap">
-                            <Mono>{key.keyId}</Mono>
-                            {key.keyId === device.keyId && <span className="ml-1.5 text-xs text-ink-3">이 기기</span>}
+                            <Mono>{key.id}</Mono>
+                            {key.id === device.keyId && <span className="ml-1.5 text-xs text-ink-3">이 기기</span>}
                           </td>
                           <td title={key.publicKey}>
                             <Mono>{shorten(key.publicKey)}</Mono>
@@ -204,7 +207,6 @@ export function SigningKeySection({ me }: { me: Me }) {
                             </span>
                           </td>
                           <td className="whitespace-nowrap">{formatDateTime(key.createdAt)}</td>
-                          <td className="whitespace-nowrap">{key.registeredAt ? formatDateTime(key.registeredAt) : '-'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -215,17 +217,6 @@ export function SigningKeySection({ me }: { me: Me }) {
           </details>
         )}
       </div>
-
-      <ConfirmModal
-        open={confirmOpen}
-        title="이 기기에서 새 키를 만듭니다"
-        confirmLabel="이 기기에서 키 만들기"
-        loading={create.isPending}
-        onConfirm={() => create.mutate()}
-        onClose={() => setConfirmOpen(false)}
-      >
-        이미 등록하거나 제출한 키가 있습니다. 새 키는 관리자 등록을 받아야 쓸 수 있고, 그때까지 이 기기에서는 승인할 수 없습니다.
-      </ConfirmModal>
     </Sheet>
   )
 }

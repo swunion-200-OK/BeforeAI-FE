@@ -4,6 +4,7 @@ import type { RequestDetail, RequestStatus, TaskStatus } from '../../api/types'
 import { RequestStatusBadge } from '../../components/badges'
 import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
+import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { useProjects, useRequest } from '../../lib/queries'
 import { ProgressSection } from '../progress/ProgressTree'
 import { MoreDetails, RunLog, TaskApprovalLine } from './RequestDetailSections'
@@ -16,22 +17,25 @@ const PLAN_EDITABLE: RequestStatus[] = ['PENDING_APPROVAL', 'PARTIALLY_COMPLETED
 const LIVE: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
 /** 승인 현황 줄이 같은 말을 하므로 배지를 함께 그리지 않는 작업 상태 */
 const SAID_BY_APPROVAL_LINE: TaskStatus[] = ['PENDING', 'APPROVED']
+/** 실행을 시작한 뒤에만 갈 수 있는 상태. 이때는 실행 로그를 볼 수 있다 */
+const RAN: RequestStatus[] = ['RUNNING', 'ROLLING_BACK', 'KILLED', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLED_BACK', 'ROLLBACK_FAILED']
 
 function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPlan: boolean }) {
-  const tasks = request.plan?.tasks ?? []
+  const statuses = useApprovalStatuses(request)
+  const tasks = request.currentPlan?.tasks ?? []
   if (tasks.length === 0) return null
   return (
     <section aria-label="작업 목록" className="flex flex-col gap-3">
       <h2 className="text-lg font-semibold">작업 {tasks.length}개</h2>
       <TaskRows>
         {tasks.map((task) => {
-          const approval = approvalToShow(request, task)
+          const approval = approvalToShow(statuses, request, task)
           return (
             <TaskCard
               key={task.id}
               task={task}
               requestId={request.id}
-              highlighted={request.status === 'REAPPROVAL_REQUIRED' && request.changedTaskIds.includes(task.id)}
+              highlighted={request.status === 'REAPPROVAL_REQUIRED' && request.changedTaskIds?.includes(task.id)}
               spotlight={
                 request.status === 'RUNNING' && task.status === 'RUNNING'
                   ? 'running'
@@ -65,16 +69,15 @@ export default function RequestDetailPage() {
   const request = query.data
 
   const isRequester = request.requester.id === me.id
-  const hasSigned = request.approvalStatus.some((status) =>
-    status.requirements.some((requirement) => requirement.approvedBy.some((record) => record.userId === me.id)),
-  )
+  const hasSigned = request.approvals.some((approval) => approval.approverId === me.id)
   // 관리자는 전체, 부서 관리자는 소속 부서, 나머지는 본인 요청이나 본인이 승인한 작업만 멈출 수 있다 (3.2).
   const projectDepartmentId = projects.data?.find((project) => project.id === request.projectId)?.departmentId
   const managesProject = me.role === 'DEPT_MANAGER' && me.departmentId === projectDepartmentId
   const canKill = request.status === 'RUNNING' && (me.role === 'ADMIN' || managesProject || isRequester || hasSigned)
   const canEditPlan = isRequester && PLAN_EDITABLE.includes(request.status)
   const live = LIVE.includes(request.status)
-  const hasRun = request.events.some((event) => event.status === 'RUNNING' || event.status === 'ROLLING_BACK')
+  // 진행 기록은 서버에 없다. 있으면(목) 재시도 전의 실행도 찾아 준다.
+  const hasRun = RAN.includes(request.status) || Boolean(request.events?.some((event) => RAN.includes(event.status)))
 
   return (
     <div className="flex flex-col gap-6 [&>header]:mb-0">

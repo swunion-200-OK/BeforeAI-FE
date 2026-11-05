@@ -117,7 +117,7 @@ describe('변조 시연', () => {
     expect(db().logs[id]).toBeUndefined()
     // 저장된 기록을 웹쉘 검증에 다시 넣어도 같은 이유로 실패한다.
     const again = verifyExecution(
-      { plan: toHashTarget(request.plan!), approvals: request.approvalRecords.map(({ keyId, envelope }) => ({ keyId, envelope })) },
+      { plan: toHashTarget(request.plan!, request.projectId), approvals: request.approvalRecords.map(({ keyId, envelope }) => ({ keyId, envelope })) },
       request,
     )
     expect(again.failed).toContain('PLAN_HASH_MISMATCH')
@@ -141,7 +141,7 @@ describe('변조 시연', () => {
   describe('결과 문장은 실제로 돈 확인만 말한다', () => {
     const passed = { hashOk: true, displayOk: true, ok: true }
     const pending = { status: 'PENDING_APPROVAL' as const, failedChecks: [], approvalRecordCount: 0 }
-    const context = () => ({ plan: { id: 'p', tasks: stored('r-main').plan!.tasks }, hashTarget: toHashTarget(stored('r-main').plan!) })
+    const context = () => ({ plan: { ...stored('r-main').plan!, id: 'p' }, hashTarget: toHashTarget(stored('r-main').plan!, stored('r-main').projectId) })
     const toneOf = async (attack: Parameters<typeof describeOutcome>[0], id: string) => {
       const { request, context: ctx, integrity } = await evidence(id)
       return describeOutcome(attack, { request, context: ctx, integrity })
@@ -162,7 +162,7 @@ describe('변조 시연', () => {
     it('공격 1·2 뒤에 거부해도 이미 돈 기기 확인 결과는 그대로다', async () => {
       const id = tamper.ensure()
       tamper.swapBeforeSigning(id)
-      await approvalsApi.reject(id, { taskIds: ['t-1'], reason: '이상함' })
+      await approvalsApi.reject(id, { planId: stored(id).plan!.id, taskIds: ['t-1'], reason: '이상함' })
       expect((await toneOf('SWAP_BEFORE_SIGN', id))?.tone).toBe('caught')
     })
 
@@ -179,7 +179,7 @@ describe('변조 시연', () => {
     it('공격 3 뒤에 거부하면 웹쉘이 놓쳤다고 하지 않는다', async () => {
       const id = tamper.ensure()
       tamper.armSwapAfterSigning(id)
-      await approvalsApi.reject(id, { taskIds: ['t-1'], reason: '이상함' })
+      await approvalsApi.reject(id, { planId: stored(id).plan!.id, taskIds: ['t-1'], reason: '이상함' })
       const outcome = await toneOf('SWAP_AFTER_SIGN', id)
       expect(outcome?.tone).toBe('unverified')
       expect(outcome?.sentence).toContain('웹쉘 검증까지 가지 않았습니다')

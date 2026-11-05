@@ -5,7 +5,7 @@
  */
 import { ed25519, x25519 } from '@noble/curves/ed25519.js'
 import { sha256 } from '@noble/hashes/sha2.js'
-import { bytesToHex, concatBytes } from '@noble/hashes/utils.js'
+import { bytesToHex } from '@noble/hashes/utils.js'
 import { cryptoService } from '../../crypto/cryptoService'
 import { bytesToBase64 } from '../../crypto/encoding'
 import { canonicalize, hashService, toHashTarget } from '../../crypto/hashService'
@@ -15,7 +15,6 @@ import type {
   ApproverRule,
   ExecutionRequestBody,
   FailedCheck,
-  LogLevel,
   LogLine,
   Plan,
   RequestStatus,
@@ -58,10 +57,15 @@ const ENCRYPTION_SECRET = derive('beforeai-mock-webshell-encryption-key')
 const encryptionPublic = x25519.getPublicKey(ENCRYPTION_SECRET)
 const signingPublic = ed25519.getPublicKey(SIGNING_SECRET)
 
+const keyInfo = (algorithm: string, publicKey: Uint8Array) => ({
+  algorithm,
+  publicKey: bytesToBase64(publicKey),
+  fingerprint: `sha256:${bytesToHex(sha256(publicKey))}`,
+})
+
 export const WEBSHELL_PUBLIC_KEY: WebshellPublicKey = {
-  encryptionKey: bytesToBase64(encryptionPublic),
-  signingKey: bytesToBase64(signingPublic),
-  fingerprint: `sha256:${bytesToHex(sha256(concatBytes(encryptionPublic, signingPublic)))}`,
+  encryption: keyInfo('X25519', encryptionPublic),
+  signing: keyInfo('Ed25519', signingPublic),
 }
 
 /** 승인 봉투를 웹쉘 개인키로 연다. 개인키 대신 이 함수만 밖으로 내보낸다. */
@@ -78,17 +82,17 @@ export function signLogLine(requestId: string, line: Omit<LogLine, 'webshellSign
   return { ...line, webshellSignature: webshellSign({ requestId, ...line }) }
 }
 
-function webshellLog(requestId: string, level: LogLevel, taskId: string | null, text: string): number {
-  const seq = (db().logs[requestId]?.length ?? 0) + 1
-  appendLog(requestId, signLogLine(requestId, { seq, at: nowIso(), level, taskId, text }))
-  return seq
+function webshellLog(requestId: string, taskId: string | null, message: string): number {
+  const sequence = (db().logs[requestId]?.length ?? 0) + 1
+  appendLog(requestId, signLogLine(requestId, { sequence, at: nowIso(), taskId, message }))
+  return sequence
 }
 
 export function signedExecution(request: StoredRequest, executionId: string): WebshellExecution {
   const plan = request.plan as Plan
   const unsigned = {
     executionId,
-    planHash: hashService.computePlanHash(plan),
+    planHash: hashService.computePlanHash(plan, request.projectId),
     status: request.status,
     taskResults: plan.tasks.map((task) => ({ taskId: task.id, status: task.status })),
   }
@@ -113,7 +117,7 @@ function emitEvent(
 /**
  * 실행 단계의 시작과 결과를 알린다. 진행 상황 트리의 STEP 노드는 이 이벤트로만 만든다 (기능 명세서 5.12).
  * TODO(spec): 명세에는 "단계별 진행(시작·성공·실패·건너뜀)"만 있고 콜백 모양이 없다.
- * 스크립트가 `$ 명령` 줄에 닿을 때 시작을, 다음 단계나 작업 끝에서 결과를 보내고 구간은 로그 seq로 적는다.
+ * 스크립트가 `$ 명령` 줄에 닿을 때 시작을, 다음 단계나 작업 끝에서 결과를 보내고 구간은 로그 sequence로 적는다.
  */
 export function emitStepEvent(request: StoredRequest, taskId: string | undefined, step: WebshellStep, at?: string) {
   emitEvent(request, { type: 'STEP', taskId, step }, at)
@@ -314,7 +318,7 @@ export function requestExecution(request: StoredRequest): boolean {
   }
   const { failed, forbiddenTaskIds, taskIds, keyId } = verifyExecution(
     {
-      plan: toHashTarget(plan),
+      plan: toHashTarget(plan, request.projectId),
       approvals: request.approvalRecords
         .filter((record) => record.planId === plan.id)
         .map((record) => ({ keyId: record.keyId, envelope: record.envelope })),
@@ -347,7 +351,7 @@ export function requestExecution(request: StoredRequest): boolean {
   setStatus(request, rollingBack ? 'ROLLING_BACK' : 'RUNNING', SYSTEM_ACTOR.name)
   request.execution = signedExecution(request, crypto.randomUUID())
   audit(SYSTEM_ACTOR, 'EXECUTION_STARTED', { requestId: request.id, taskIds: plan.tasks.map((t) => t.id) })
-  webshellLog(request.id, 'INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다')
+  webshellLog(request.id, null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다')
   request.execLine = 0
   scheduleExecution(request.id)
   return true
@@ -356,11 +360,11 @@ export function requestExecution(request: StoredRequest): boolean {
 // ── 실행 시뮬레이션 ────────────────────────────────────────
 
 /** step이 있는 줄에서 새 실행 단계가 시작된다. */
-type Line = { level: LogLevel; text: string; step?: string }
+type Line = { text: string; step?: string }
 
 function scriptFor(task: Task, requestId: string): Line[] {
-  const cmd = (text: string): Line => ({ level: 'CMD', text: `$ ${text}`, step: text })
-  const info = (text: string): Line => ({ level: 'INFO', text })
+  const cmd = (text: string): Line => ({ text: `$ ${text}`, step: text })
+  const info = (text: string): Line => ({ text })
   switch (task.type) {
     case 'CODE_MINOR':
     case 'CODE_FEATURE':
@@ -404,7 +408,7 @@ function buildScript(request: StoredRequest): Array<Line & { taskId: string | nu
   const session = db().webshell.sessions[request.id]
   const script: Array<Line & { taskId: string | null; endOf?: Task }> = []
   for (const task of plan.tasks.filter((t) => session.includes(t.id) && WILL_RUN.includes(t.status))) {
-    script.push({ level: 'INFO', text: `[${task.id}] ${task.title} 시작`, taskId: task.id })
+    script.push({ text: `[${task.id}] ${task.title} 시작`, taskId: task.id })
     for (const line of scriptFor(task, request.id)) script.push({ ...line, taskId: task.id })
     script[script.length - 1].endOf = task
   }
@@ -436,13 +440,13 @@ export function scheduleExecution(requestId: string) {
       emitEvent(request, { type: 'TASK_STARTED', taskId: task.id })
     }
     if (current.step) closeSteps(request, 'SUCCEEDED')
-    const seq = webshellLog(request.id, current.level, current.taskId, current.text)
+    const sequence = webshellLog(request.id, current.taskId, current.text)
     if (current.step) {
       emitStepEvent(request, task.id, {
-        id: `s-${seq}`,
+        id: `s-${sequence}`,
         label: current.step,
         status: 'RUNNING',
-        logRange: { from: seq, to: null },
+        logRange: { from: sequence, to: null },
       })
     }
     if (current.endOf) {
@@ -464,7 +468,7 @@ function completeTask(request: StoredRequest, task: Task) {
   const shouldFail = request.prompt.includes('#실행실패') && task.order === Math.max(...plan.tasks.map((t) => t.order))
   if (shouldFail) {
     task.status = 'FAILED'
-    webshellLog(request.id, 'ERROR', task.id, `[${task.id}] 실패: 종료 코드 1`)
+    webshellLog(request.id, task.id, `[${task.id}] 실패: 종료 코드 1`)
     closeSteps(request, 'FAILED')
     emitEvent(request, { type: 'TASK_FAILED', taskId: task.id })
     audit(SYSTEM_ACTOR, 'TASK_FAILED', { requestId: request.id, taskIds: [task.id] })
@@ -472,7 +476,7 @@ function completeTask(request: StoredRequest, task: Task) {
     return
   }
   task.status = plan.kind === 'ROLLBACK' ? 'ROLLED_BACK' : 'SUCCEEDED'
-  webshellLog(request.id, 'SUCCESS', task.id, `[${task.id}] 성공`)
+  webshellLog(request.id, task.id, `[${task.id}] 성공`)
   closeSteps(request, 'SUCCEEDED')
   emitEvent(request, { type: 'TASK_SUCCEEDED', taskId: task.id })
   audit(SYSTEM_ACTOR, 'TASK_SUCCEEDED', { requestId: request.id, taskIds: [task.id] })
@@ -527,7 +531,7 @@ function finish(request: StoredRequest) {
   else if (!failedAt) final = 'COMPLETED'
   else final = succeeded > 0 ? 'PARTIALLY_COMPLETED' : 'FAILED'
 
-  webshellLog(request.id, 'INFO', null, '[웹쉘] 전용 세션을 닫습니다')
+  webshellLog(request.id, null, '[웹쉘] 전용 세션을 닫습니다')
   setStatus(request, final, SYSTEM_ACTOR.name)
   reportFinalStatus(request)
   if (plan.kind === 'ROLLBACK') {

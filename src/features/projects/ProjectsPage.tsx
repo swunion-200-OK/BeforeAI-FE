@@ -85,7 +85,8 @@ function ProjectBody({ project }: { project: Project }) {
   const canEdit = canEditSpec(me, project)
   const spec = useQuery(specQuery(project.id))
   const requests = useQuery(changeRequestsQuery(project.id))
-  const users = useQuery({ ...ownerCandidatesQuery, enabled: canEdit })
+  // 계정 목록은 관리자만 읽을 수 있다. 부서 관리자는 비활성 담당자 표시 없이 본다.
+  const users = useQuery({ ...ownerCandidatesQuery, enabled: me.role === 'ADMIN' })
   const save = useMutation({
     mutationFn: (body: string) => projectsApi.updateSpec(project.id, body),
     onSuccess: async (saved) => {
@@ -166,11 +167,7 @@ function ProjectBody({ project }: { project: Project }) {
           <KeyValues
             items={[
               { label: '저장소', value: <Mono>{project.repository}</Mono> },
-              { label: '기준 커밋', value: <Mono>{project.baseCommit}</Mono> },
-              {
-                label: '담당자',
-                value: project.owners.map((owner) => `${owner.name}(${departmentName(owner.departmentId)})`).join(', '),
-              },
+              { label: '담당자', value: ownerNames.join(', ') },
             ]}
           />
           <p className="mt-2 text-[0.875rem] text-ink-3">
@@ -191,7 +188,7 @@ function ProjectBody({ project }: { project: Project }) {
           ]}
         />
       )}
-      {tab === 'spec' && <SpecTab projectId={project.id} draft={draft} onDraftChange={setDraft} />}
+      {tab === 'spec' && <SpecTab project={project} draft={draft} onDraftChange={setDraft} />}
       {tab === 'versions' && <VersionsTab project={project} canEdit={canEdit} />}
       {tab === 'requests' && <ChangeRequestsTab project={project} canEdit={canEdit} />}
 

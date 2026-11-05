@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { Link } from 'react-router'
 import type { Dashboard, DepartmentStat, RequestStatus, RequestSummary, Risk } from '../../api/types'
 import { RequestStatusBadge, RiskBadge } from '../../components/badges'
-import { TaskProgress } from '../../components/rich'
 import { Button, ErrorState, Sheet, Spinner } from '../../components/ui'
 import { formatElapsed } from '../../lib/format'
 import { useIsExternal, usePendingApprovals, useProjects } from '../../lib/queries'
@@ -28,7 +27,6 @@ const PENDING_LIMIT = 7
 
 export function TodoPanel({ emptyText }: { emptyText: string }) {
   const pending = usePendingApprovals()
-  const projects = useProjects()
   // 승인 대기 목록과 같게 요청 하나를 한 줄로 보여 준다.
   const items = groupByRequest(pending.data ?? [])
   return (
@@ -44,7 +42,6 @@ export function TodoPanel({ emptyText }: { emptyText: string }) {
         <ul className="divide-y divide-rule">
           {items.slice(0, PENDING_LIMIT).map((group) => {
             const top = riskiestTask(group)
-            const blocked = group.tasks.filter((task) => task.blockedReason).length
             return (
               <li key={group.requestId}>
                 <Link
@@ -52,22 +49,16 @@ export function TodoPanel({ emptyText }: { emptyText: string }) {
                   className="grid grid-cols-[4.25rem_minmax(0,1fr)_minmax(0,11rem)_7rem] items-center gap-x-4 px-4 py-3.5 hover:bg-sheet-alt"
                 >
                   <span>
-                    <RiskBadge risk={top.risk} />
+                    <RiskBadge risk={top.task.risk} />
                   </span>
                   <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
                     <span className="line-clamp-2 text-base font-medium text-ink">
-                      {top.taskTitle}
+                      {top.task.title}
                       {group.tasks.length > 1 && ` 외 ${group.tasks.length - 1}건`}
                     </span>
-                    {blocked > 0 && (
-                      <span className="shrink-0 text-xs font-medium text-external">
-                        {blocked < group.tasks.length ? '일부 내부망 승인 필요' : '내부망 승인 필요'}
-                      </span>
-                    )}
                   </span>
                   <span className="truncate text-sm text-ink-2">
-                    {/* 프로젝트 이름은 명세의 승인 대기 항목에 없어 프로젝트 목록에서 먼저 찾는다 */}
-                    {group.requester.name}, {projects.data?.find((project) => project.id === group.tasks[0].projectId)?.name ?? group.projectName}
+                    {group.requester.name}
                   </span>
                   <span className="text-right text-sm whitespace-nowrap text-ink-3 tabular-nums">
                     {formatElapsed(group.requestedAt)} 대기
@@ -104,7 +95,6 @@ function RequestLine({ request, projectName, external }: { request: RequestSumma
       <span className="truncate text-sm text-ink-2">
         {request.requester.name}, {projectName}
       </span>
-      <span>{request.taskSummary && <TaskProgress summary={request.taskSummary} />}</span>
       <span className="text-right text-sm whitespace-nowrap text-ink-3 tabular-nums">{ago(request.updatedAt)}</span>
     </Link>
   )

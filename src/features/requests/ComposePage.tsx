@@ -7,10 +7,11 @@ import { requestsApi } from '../../api/endpoints'
 import type { RequestDetail } from '../../api/types'
 import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { Button, ErrorState, Field, PageHeader, Select, Sheet, Spinner, TextArea } from '../../components/ui'
+import { useAnalysisOverdue } from '../../lib/analysisWait'
 import { formatElapsed } from '../../lib/format'
 import { REQUEST_STATUS_LABEL } from '../../lib/labels'
 import { useIsExternal, useProjects, useRefreshAll, useRequest } from '../../lib/queries'
-import { AnalysisFailedPanel, RequestMeta, TaskEditButtons } from './RequestParts'
+import { AnalysisFailedPanel, AnalysisOverdueBanner, RequestMeta, TaskEditButtons } from './RequestParts'
 import { pathFor } from './requestPaths'
 import { SubmitBar } from './SubmitBar'
 import { usePatchPlan } from './useRequestActions'
@@ -137,10 +138,10 @@ function ClarificationForm({ request }: { request: RequestDetail }) {
         className="flex flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault()
-          if (answer.trim()) patch.mutate({ answer: answer.trim() })
+          if (answer.trim()) patch.mutate({ basePlanId: request.currentPlanId ?? undefined, answer: answer.trim() })
         }}
       >
-        <p className="text-base text-ink">{request.clarification?.question}</p>
+        <p className="text-base text-ink">{request.clarification}</p>
         <Field label="답변">
           {(id) => <TextArea id={id} rows={4} value={answer} onChange={(event) => setAnswer(event.target.value)} />}
         </Field>
@@ -161,7 +162,9 @@ function ClarificationForm({ request }: { request: RequestDetail }) {
 }
 
 /** 분석 결과가 오기 전에 기다리는 이유와 다음에 볼 것을 알려 준다. 움직임은 돌아가는 표시 하나뿐이다. */
-function AnalyzingPlaceholder() {
+function AnalyzingPlaceholder({ request }: { request: RequestDetail }) {
+  const overdue = useAnalysisOverdue(request)
+  if (overdue) return <AnalysisOverdueBanner requestId={request.id} />
   return (
     <div role="status" className="flex items-start gap-4 rounded-lg border border-rule bg-sheet p-6">
       <Loader2 size={26} className="mt-0.5 shrink-0 animate-spin text-seal" aria-hidden />
@@ -174,7 +177,7 @@ function AnalyzingPlaceholder() {
 }
 
 function PlanCards({ request }: { request: RequestDetail }) {
-  const tasks = request.plan?.tasks ?? []
+  const tasks = request.currentPlan?.tasks ?? []
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-2">AI가 작업 {tasks.length}개로 나눴습니다.</p>
@@ -213,7 +216,7 @@ function ReviewStep({ requestId }: { requestId: string }) {
     <div className={`flex flex-col ${reviewing ? '-mb-16 min-h-[calc(100dvh-84px)]' : ''}`}>
       <PageHeader title={request.prompt} meta={<RequestMeta request={request} />} />
       <div className="flex-1">
-        {request.status === 'ANALYZING' && <AnalyzingPlaceholder />}
+        {request.status === 'ANALYZING' && <AnalyzingPlaceholder request={request} />}
         {request.status === 'ANALYSIS_FAILED' && <AnalysisFailedPanel request={request} isRequester />}
         {request.status === 'REVIEWING' && request.clarification && <ClarificationForm request={request} />}
         {reviewing && <PlanCards request={request} />}

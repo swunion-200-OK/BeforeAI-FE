@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 import { useMe } from '../../app/AuthProvider'
 import { adminApi } from '../../api/endpoints'
+import { ApiError, errorMessage } from '../../api/errors'
 import type { Role, User } from '../../api/types'
 import { toast } from '../../components/toast'
 import { Banner, Button, ErrorState, Field, Modal, Mono, Select, TextInput } from '../../components/ui'
@@ -27,15 +28,17 @@ function DepartmentSelect({
   id,
   value,
   onChange,
+  allowNone = true,
 }: {
   id: string
   value: string | null
   onChange: (departmentId: string | null) => void
+  allowNone?: boolean
 }) {
   const { data } = useDepartments()
   return (
     <Select id={id} value={value ?? ''} onChange={(event) => onChange(event.target.value || null)}>
-      <option value="">소속 없음</option>
+      {allowNone && <option value="">소속 없음</option>}
       {data?.map((department) => (
         <option key={department.id} value={department.id}>
           {department.name}
@@ -82,25 +85,27 @@ export function CreateUserModal({
 }) {
   const refresh = useRefreshAll()
   const formId = useId()
-  const [employeeNo, setEmployeeNo] = useState('')
+  const [employeeNumber, setEmployeeNumber] = useState('')
   const [name, setName] = useState('')
   const [role, setRole] = useState<Role>('EMPLOYEE')
   const [departmentId, setDepartmentId] = useState<string | null>(null)
-  const [slackUserId, setSlackUserId] = useState('')
   const create = useMutation({
+    meta: { silent: true },
     mutationFn: () =>
       adminApi.createUser({
-        employeeNo: employeeNo.trim(),
+        employeeNumber: employeeNumber.trim(),
         name: name.trim(),
         role,
         departmentId,
-        slackUserId: slackUserId.trim() || undefined,
       }),
     onSuccess: async (result) => {
       onIssued({ name: result.user.name, password: result.initialPassword })
       onClose()
       await refresh()
     },
+    // 서버는 사번이 겹치면 INVALID_STATE로 답한다. 표의 일반 문구로는 무엇을 고칠지 모른다.
+    onError: (reason) =>
+      toast.error(reason instanceof ApiError && reason.code === 'INVALID_STATE' ? '이미 쓰고 있는 사번입니다' : errorMessage(reason)),
   })
   return (
     <Modal
@@ -114,7 +119,7 @@ export function CreateUserModal({
             type="submit"
             form={formId}
             variant="primary"
-            disabled={!employeeNo.trim() || !name.trim()}
+            disabled={!employeeNumber.trim() || !name.trim()}
             disabledReason="사번과 이름을 입력해 주세요"
             loading={create.isPending}
           >
@@ -128,28 +133,23 @@ export function CreateUserModal({
         className="grid grid-cols-2 gap-3"
         onSubmit={(event) => {
           event.preventDefault()
-          if (employeeNo.trim() && name.trim()) create.mutate()
+          if (employeeNumber.trim() && name.trim()) create.mutate()
         }}
       >
         <Field label="사번">
-          {(id) => <TextInput id={id} value={employeeNo} onChange={(event) => setEmployeeNo(event.target.value)} />}
+          {(id) => <TextInput id={id} value={employeeNumber} onChange={(event) => setEmployeeNumber(event.target.value)} />}
         </Field>
         <Field label="이름">
           {(id) => <TextInput id={id} value={name} onChange={(event) => setName(event.target.value)} />}
         </Field>
         <Field label="역할">{(id) => <RoleSelect id={id} value={role} onChange={setRole} />}</Field>
         <Field label="부서">{(id) => <DepartmentSelect id={id} value={departmentId} onChange={setDepartmentId} />}</Field>
-        <div className="col-span-2">
-          <Field label="Slack 사용자 ID" hint="비워 두면 나중에 지정할 수 있습니다">
-            {(id) => <TextInput id={id} value={slackUserId} onChange={(event) => setSlackUserId(event.target.value)} />}
-          </Field>
-        </div>
       </form>
     </Modal>
   )
 }
 
-/** 표의 "관리" 버튼으로 연다. 역할·부서·Slack ID 변경과 비밀번호 초기화, 비활성화를 여기서 한다. */
+/** 표의 "관리" 버튼으로 연다. 역할·부서 변경과 비밀번호 초기화, 비활성화를 여기서 한다. */
 export function ManageUserModal({
   user,
   onClose,
@@ -167,9 +167,8 @@ export function ManageUserModal({
   const refresh = useRefreshAll()
   const [role, setRole] = useState<Role>(user.role)
   const [departmentId, setDepartmentId] = useState(user.departmentId)
-  const [slackUserId, setSlackUserId] = useState(user.slackUserId ?? '')
   const update = useMutation({
-    mutationFn: () => adminApi.updateUser(user.id, { role, departmentId, slackUserId: slackUserId.trim() || null }),
+    mutationFn: () => adminApi.updateUser(user.id, { role, departmentId }),
     onSuccess: async () => {
       toast.success(`${user.name} 계정을 변경했습니다`)
       await refresh()
@@ -192,9 +191,9 @@ export function ManageUserModal({
     >
       <div className="flex flex-col gap-3">
         <Field label="역할">{(id) => <RoleSelect id={id} value={role} onChange={setRole} />}</Field>
-        <Field label="부서">{(id) => <DepartmentSelect id={id} value={departmentId} onChange={setDepartmentId} />}</Field>
-        <Field label="Slack 사용자 ID">
-          {(id) => <TextInput id={id} value={slackUserId} onChange={(event) => setSlackUserId(event.target.value)} />}
+        {/* 서버는 부서 null을 "바꾸지 않음"으로 읽는다. 소속이 있는 계정에 "소속 없음"을 내놓으면 저장해도 그대로다. */}
+        <Field label="부서">
+          {(id) => <DepartmentSelect id={id} value={departmentId} onChange={setDepartmentId} allowNone={user.departmentId === null} />}
         </Field>
         <div className="mt-2 flex gap-2 border-t border-rule pt-4">
           <Button onClick={onResetPassword}>비밀번호 초기화</Button>

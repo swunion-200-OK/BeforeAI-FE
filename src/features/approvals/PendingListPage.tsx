@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router'
 import { usePendingApprovals } from '../../lib/queries'
 import { ApprovalWorkspace } from './ApprovalWorkspace'
+import { groupByRequest } from './queueGroups'
 
 /**
  * 선택한 요청이 없으면 가장 오래 기다린 요청을 바로 연다.
@@ -9,7 +10,7 @@ import { ApprovalWorkspace } from './ApprovalWorkspace'
  */
 export default function PendingListPage() {
   const pending = usePendingApprovals()
-  const oldest = pending.isSuccess && pending.isFetchedAfterMount ? pending.data[0]?.requestId : undefined
+  const oldest = pending.isSuccess && pending.isFetchedAfterMount ? groupByRequest(pending.data)[0]?.requestId : undefined
   if (oldest) return <Navigate to={`/approvals/${oldest}`} replace />
   return <ApprovalWorkspace />
 }

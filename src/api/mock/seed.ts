@@ -48,23 +48,23 @@ const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).
 
 interface SeedUser {
   id: string
-  employeeNo: string
+  employeeNumber: string
   name: string
   role: Role
   departmentId: string | null
   key?: { keyId: string; status: 'REGISTERED' | 'PENDING' }
-  mustChangePassword?: boolean
+  passwordChangeRequired?: boolean
 }
 
 const SEED_USERS: SeedUser[] = [
-  { id: 'u-admin', employeeNo: 'E0001', name: '박CTO', role: 'ADMIN', departmentId: null, key: { keyId: 'k-admin-a', status: 'REGISTERED' } },
-  { id: 'u-mgr-be', employeeNo: 'E1001', name: '최팀장', role: 'DEPT_MANAGER', departmentId: 'd-backend', key: { keyId: 'k-mgr-be-a', status: 'REGISTERED' } },
-  { id: 'u-mgr-in', employeeNo: 'E2001', name: '정팀장', role: 'DEPT_MANAGER', departmentId: 'd-infra', key: { keyId: 'k-mgr-in-a', status: 'REGISTERED' } },
-  { id: 'u-01', employeeNo: 'E1101', name: '홍길동', role: 'EMPLOYEE', departmentId: 'd-backend', key: { keyId: 'k-01-a', status: 'REGISTERED' } },
-  { id: 'u-07', employeeNo: 'E1107', name: '김담당', role: 'EMPLOYEE', departmentId: 'd-backend', key: { keyId: 'k-07-a', status: 'REGISTERED' } },
-  { id: 'u-09', employeeNo: 'E1109', name: '이담당', role: 'EMPLOYEE', departmentId: 'd-backend', key: { keyId: 'k-09-a', status: 'PENDING' } },
-  { id: 'u-21', employeeNo: 'E2101', name: '오인프라', role: 'EMPLOYEE', departmentId: 'd-infra' },
-  { id: 'u-31', employeeNo: 'E1131', name: '강신입', role: 'EMPLOYEE', departmentId: 'd-backend', mustChangePassword: true },
+  { id: 'u-admin', employeeNumber: 'E0001', name: '박CTO', role: 'ADMIN', departmentId: null, key: { keyId: 'k-admin-a', status: 'REGISTERED' } },
+  { id: 'u-mgr-be', employeeNumber: 'E1001', name: '최팀장', role: 'DEPT_MANAGER', departmentId: 'd-backend', key: { keyId: 'k-mgr-be-a', status: 'REGISTERED' } },
+  { id: 'u-mgr-in', employeeNumber: 'E2001', name: '정팀장', role: 'DEPT_MANAGER', departmentId: 'd-infra', key: { keyId: 'k-mgr-in-a', status: 'REGISTERED' } },
+  { id: 'u-01', employeeNumber: 'E1101', name: '홍길동', role: 'EMPLOYEE', departmentId: 'd-backend', key: { keyId: 'k-01-a', status: 'REGISTERED' } },
+  { id: 'u-07', employeeNumber: 'E1107', name: '김담당', role: 'EMPLOYEE', departmentId: 'd-backend', key: { keyId: 'k-07-a', status: 'REGISTERED' } },
+  { id: 'u-09', employeeNumber: 'E1109', name: '이담당', role: 'EMPLOYEE', departmentId: 'd-backend', key: { keyId: 'k-09-a', status: 'PENDING' } },
+  { id: 'u-21', employeeNumber: 'E2101', name: '오인프라', role: 'EMPLOYEE', departmentId: 'd-infra' },
+  { id: 'u-31', employeeNumber: 'E1131', name: '강신입', role: 'EMPLOYEE', departmentId: 'd-backend', passwordChangeRequired: true },
 ]
 
 function seedKeyPair(userId: string) {
@@ -86,8 +86,8 @@ function emptyDb(): MockDb {
     projects: [],
     specs: {},
     changeRequests: [],
-    policy: { preset: 'SMALL', slackNotifications: 'OPTIONAL', auditRetention: '90일', slackIntegration: null },
-    matrix: DEFAULT_MATRIX.map((row) => ({ ...row })),
+    policy: { preset: 'SMALL', version: 1, slackIntegration: null },
+    matrix: structuredClone(DEFAULT_MATRIX),
     signingKeys: [],
     forbiddenRules: [],
     proposals: [],
@@ -107,7 +107,7 @@ function emptyDb(): MockDb {
         keys: [],
         forbiddenRules: [],
         preset: 'SMALL',
-        matrix: DEFAULT_MATRIX.map((row) => ({ ...row })),
+        matrix: structuredClone(DEFAULT_MATRIX),
       },
     },
   }
@@ -118,19 +118,19 @@ function seedPeople() {
   for (const seed of SEED_USERS) {
     const user: StoredUser = {
       id: seed.id,
-      employeeNo: seed.employeeNo,
+      employeeNumber: seed.employeeNumber,
       name: seed.name,
       role: seed.role,
       departmentId: seed.departmentId,
-      slackUserId: `U${seed.employeeNo}`,
       active: true,
-      mustChangePassword: seed.mustChangePassword ?? false,
+      passwordChangeRequired: seed.passwordChangeRequired ?? false,
       password: DEMO_PASSWORD,
       otpEnrolled: seed.role !== 'EMPLOYEE' || seed.id === 'u-07',
+      otpSecret: null,
     }
     database.users.push(user)
     database.notificationSettings[user.id] = {
-      slackUserId: user.slackUserId,
+      slackUserId: `U${seed.employeeNumber}`,
       approvalRequests: true,
       requestResults: true,
     }
@@ -143,13 +143,12 @@ function seedPeople() {
       pinnedWebshellKey: WEBSHELL_PUBLIC_KEY,
     })
     database.signingKeys.push({
-      keyId: seed.key.keyId,
-      userId: seed.id,
-      userName: seed.name,
+      id: seed.key.keyId,
+      algorithm: 'Ed25519',
       publicKey: pair.publicKey,
       status: seed.key.status,
       createdAt: minutesAgo(60 * 24 * 7),
-      registeredAt: seed.key.status === 'REGISTERED' ? minutesAgo(60 * 24 * 6) : null,
+      userId: seed.id,
     })
     if (seed.key.status === 'REGISTERED') {
       database.webshell.policy.keys.push({ keyId: seed.key.keyId, userId: seed.id, publicKey: pair.publicKey })
@@ -162,6 +161,11 @@ function ref(userId: string) {
   return { id: user.id, name: user.name, departmentId: user.departmentId }
 }
 
+function owner(userId: string) {
+  const { id, name } = ref(userId)
+  return { id, name }
+}
+
 function seedProjects() {
   const database = db()
   database.projects.push(
@@ -171,7 +175,7 @@ function seedProjects() {
       departmentId: 'd-backend',
       repository: AUTH_REPOSITORY,
       baseCommit: AUTH_BASE_COMMIT,
-      owners: [ref('u-07'), ref('u-09')],
+      owners: [owner('u-07'), owner('u-09')],
     },
     {
       id: 'prj-deploy',
@@ -179,27 +183,34 @@ function seedProjects() {
       departmentId: 'd-infra',
       repository: 'git@internal:deploy-pipeline.git',
       baseCommit: 'c41d7aa',
-      owners: [ref('u-mgr-in'), ref('u-21')],
+      owners: [owner('u-mgr-in'), owner('u-21')],
     },
   )
   const by = (id: string) => ({ id, name: ref(id).name })
+  const specVersion = (projectId: string, version: number, body: string, createdAt: string, createdBy: string) => ({
+    projectId,
+    version,
+    body,
+    createdAt,
+    createdBy,
+    restoredFromVersion: null,
+  })
   database.specs['prj-auth'] = [
-    { projectId: 'prj-auth', version: 1, body: AUTH_SPEC_V1, updatedAt: minutesAgo(60 * 24 * 30), updatedBy: by('u-admin') },
-    { projectId: 'prj-auth', version: 2, body: AUTH_SPEC_V2, updatedAt: minutesAgo(60 * 24 * 3), updatedBy: by('u-mgr-be') },
+    specVersion('prj-auth', 1, AUTH_SPEC_V1, minutesAgo(60 * 24 * 30), 'u-admin'),
+    specVersion('prj-auth', 2, AUTH_SPEC_V2, minutesAgo(60 * 24 * 3), 'u-mgr-be'),
   ]
   database.specs['prj-deploy'] = [
-    { projectId: 'prj-deploy', version: 1, body: DEPLOY_SPEC, updatedAt: minutesAgo(60 * 24 * 20), updatedBy: by('u-admin') },
+    specVersion('prj-deploy', 1, DEPLOY_SPEC, minutesAgo(60 * 24 * 20), 'u-admin'),
   ]
   database.changeRequests.push({
     id: 'cr-1',
     projectId: 'prj-auth',
     content: '## 세션 정책\n\n- 외부망 세션은 30분 동안 활동이 없으면 만료합니다.',
     reason: '보안 점검에서 세션 만료 정책을 기획서에 적으라는 지적이 있었습니다.',
-    requester: ref('u-01'),
+    requesterId: 'u-01',
     status: 'OPEN',
-    rejectReason: null,
+    rejectionReason: null,
     createdAt: minutesAgo(180),
-    decidedAt: null,
   })
   database.documents.push(
     { id: 'doc-readme', projectId: 'prj-auth', title: 'README', path: 'docs/README.md', currentVersion: 2, updatedAt: minutesAgo(600) },
@@ -212,8 +223,8 @@ function seedProjects() {
     { documentId: 'doc-api', version: 1, body: AUTH_FILES['docs/api-guide.md'], createdAt: minutesAgo(60 * 24 * 10), createdBy: by('u-mgr-be'), requestId: null },
   )
   database.forbiddenRules.push(
-    { id: 'rule-1', departmentId: 'd-backend', taskType: 'DB', target: 'prod', reason: '운영 DB 스키마는 AI 작업으로 바꾸지 않습니다', status: 'ACTIVE', createdAt: minutesAgo(60 * 24 * 14) },
-    { id: 'rule-2', departmentId: 'd-infra', taskType: 'DEPLOY', target: 'production', reason: '운영 배포는 변경 관리 절차로만 합니다', status: 'ACTIVE', createdAt: minutesAgo(60 * 24 * 14) },
+    { id: 'rule-1', departmentId: 'd-backend', taskType: 'DB', target: 'prod', reason: '운영 DB 스키마는 AI 작업으로 바꾸지 않습니다', status: 'CONFIRMED' },
+    { id: 'rule-2', departmentId: 'd-infra', taskType: 'DEPLOY', target: 'production', reason: '운영 배포는 변경 관리 절차로만 합니다', status: 'CONFIRMED' },
   )
   for (const rule of database.forbiddenRules) {
     database.webshell.policy.forbiddenRules.push({
@@ -229,9 +240,6 @@ function seedProjects() {
     target: 'users',
     reason: '사용자 테이블은 AI 작업으로 직접 수정하지 않습니다',
     status: 'OPEN',
-    proposer: ref('u-mgr-be'),
-    rejectReason: null,
-    createdAt: minutesAgo(240),
   })
 }
 
@@ -332,7 +340,6 @@ export function addRequest(seed: SeedRequest): StoredRequest {
     pendingAnalysis: null,
     submittedAt: path.includes('PENDING_APPROVAL') ? events[path.indexOf('PENDING_APPROVAL')].at : null,
     clarification: null,
-    analysisError: null,
     changedTaskIds: [],
     removedTaskTitles: [],
     failedChecks: [],
@@ -344,7 +351,7 @@ export function addRequest(seed: SeedRequest): StoredRequest {
   if (tasks.length > 0) {
     request.plan = makePlan(request.id, project, tasks, seed.kind ?? 'NORMAL')
     request.currentPlanId = request.plan.id
-    if (path.includes('PENDING_APPROVAL')) request.plan.planHash = hashService.computePlanHash(request.plan)
+    if (path.includes('PENDING_APPROVAL')) request.plan.planHash = hashService.computePlanHash(request.plan, request.projectId)
     if (path.includes('RUNNING')) request.execution = signedExecution(request, crypto.randomUUID())
   }
   database.requests.push(request)
@@ -368,8 +375,9 @@ function signFor(request: StoredRequest, userId: string, taskIds: string[], netw
     nonce: crypto.randomUUID(),
     network,
   })
+  const recordId = crypto.randomUUID()
   request.approvalRecords.push({
-    id: crypto.randomUUID(),
+    id: recordId,
     requestId: request.id,
     planId: plan.id,
     planHash: plan.planHash as string,
@@ -377,13 +385,14 @@ function signFor(request: StoredRequest, userId: string, taskIds: string[], netw
     approverId: userId,
     keyId: device.keyId as string,
     network,
-    envelope: cryptoService.encryptForWebshell(signed, WEBSHELL_PUBLIC_KEY.encryptionKey),
+    envelope: cryptoService.encryptForWebshell(signed, WEBSHELL_PUBLIC_KEY.encryption.publicKey),
     createdAt: at,
   })
   for (const taskId of taskIds) {
     const task = plan.tasks.find((t) => t.id === taskId) as Task
     const requirement = task.requiredApprovers[0]
     request.approvals.push({
+      id: recordId,
       planId: plan.id,
       taskId,
       rule: requirement.rule,
@@ -396,14 +405,13 @@ function signFor(request: StoredRequest, userId: string, taskIds: string[], netw
   }
 }
 
-function addLogs(requestId: string, lines: Array<[LogLine['level'], string | null, string]>, ageMinutes: number) {
-  db().logs[requestId] = lines.map(([level, taskId, text], index) =>
+function addLogs(requestId: string, lines: Array<[string | null, string]>, ageMinutes: number) {
+  db().logs[requestId] = lines.map(([taskId, message], index) =>
     signLogLine(requestId, {
-      seq: index + 1,
+      sequence: index + 1,
       at: minutesAgo(ageMinutes - index * 0.1),
-      level,
       taskId,
-      text,
+      message,
     }),
   )
 }
@@ -503,8 +511,7 @@ function seedRequests() {
 
   addRequest({ id: 'r-analyzing', requesterId: 'u-01', prompt: '비밀번호 재설정 메일 문구를 다듬어줘', status: 'ANALYZING', ageMinutes: 1, frozen: true })
 
-  addRequest({ id: 'r-analysis-failed', requesterId: 'u-01', prompt: '결제 모듈 연동 테스트를 추가해줘', status: 'ANALYSIS_FAILED', ageMinutes: 25 }).analysisError =
-    'AI 분석 엔진이 응답하지 않았습니다'
+  addRequest({ id: 'r-analysis-failed', requesterId: 'u-01', prompt: '결제 모듈 연동 테스트를 추가해줘', status: 'ANALYSIS_FAILED', ageMinutes: 25 })
 
   addRequest({
     id: 'r-reviewing',
@@ -527,9 +534,8 @@ function seedRequests() {
     ],
   })
 
-  addRequest({ id: 'r-clarify', requesterId: 'u-01', prompt: '이거 좀 알아서 고쳐줘', status: 'REVIEWING', ageMinutes: 12 }).clarification = {
-    question: '어떤 동작을 어떻게 바꾸면 될까요? 대상 기능과 바라는 결과를 알려 주세요.',
-  }
+  addRequest({ id: 'r-clarify', requesterId: 'u-01', prompt: '이거 좀 알아서 고쳐줘', status: 'REVIEWING', ageMinutes: 12 }).clarification =
+    '어떤 동작을 어떻게 바꾸면 될까요? 대상 기능과 바라는 결과를 알려 주세요.'
 
   addRequest({
     id: 'r-forbidden',
@@ -576,7 +582,7 @@ function seedRequests() {
     id: 'p-reapproval-v1',
     tasks: [{ ...changedTask, content: { diff: loginDiff() } }, unchangedTask],
   }
-  firstPlan.planHash = hashService.computePlanHash(firstPlan)
+  firstPlan.planHash = hashService.computePlanHash(firstPlan, reapproval.projectId)
   reapproval.planHistory = [{ version: 1, plan: firstPlan, supersededAt: minutesAgo(30) }]
 
   const verificationFailed = addRequest({
@@ -628,12 +634,12 @@ function seedRequests() {
   addLogs(
     running.id,
     [
-      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
-      ['INFO', 't-1', '[t-1] 로그인 테스트 보강 시작'],
-      ['CMD', 't-1', '$ git apply tests_login.test.ts.patch'],
-      ['SUCCESS', 't-1', '[t-1] 성공'],
-      ['INFO', 't-long', '[t-long] 스테이징 DB 마이그레이션 시작'],
-      ['CMD', 't-long', '$ npm run migrate:up'],
+      [null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
+      ['t-1', '[t-1] 로그인 테스트 보강 시작'],
+      ['t-1', '$ git apply tests_login.test.ts.patch'],
+      ['t-1', '[t-1] 성공'],
+      ['t-long', '[t-long] 스테이징 DB 마이그레이션 시작'],
+      ['t-long', '$ npm run migrate:up'],
     ],
     4,
   )
@@ -651,15 +657,15 @@ function seedRequests() {
   addLogs(
     completed.id,
     [
-      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
-      ['INFO', 't-1', '[t-1] README 장애 대응 절차 추가 시작'],
-      ['INFO', 't-1', '문서 새 버전 저장'],
-      ['SUCCESS', 't-1', '[t-1] 성공'],
-      ['INFO', 't-2', '[t-2] 로그인 테스트 보강 시작'],
-      ['CMD', 't-2', '$ npm test'],
-      ['INFO', 't-2', 'Tests  43 passed (43)'],
-      ['SUCCESS', 't-2', '[t-2] 성공'],
-      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
+      [null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
+      ['t-1', '[t-1] README 장애 대응 절차 추가 시작'],
+      ['t-1', '문서 새 버전 저장'],
+      ['t-1', '[t-1] 성공'],
+      ['t-2', '[t-2] 로그인 테스트 보강 시작'],
+      ['t-2', '$ npm test'],
+      ['t-2', 'Tests  43 passed (43)'],
+      ['t-2', '[t-2] 성공'],
+      [null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     600,
   )
@@ -677,14 +683,14 @@ function seedRequests() {
   addLogs(
     partial.id,
     [
-      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
-      ['INFO', 't-1', '[t-1] 로그인 실패 메시지 변경 시작'],
-      ['SUCCESS', 't-1', '[t-1] 성공'],
-      ['INFO', 't-2', '[t-2] 스테이징 배포 시작'],
-      ['CMD', 't-2', '$ ./deploy.sh staging'],
-      ['ERROR', 't-2', 'error: rollout timed out after 300s'],
-      ['ERROR', 't-2', '[t-2] 실패: 종료 코드 1'],
-      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
+      [null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
+      ['t-1', '[t-1] 로그인 실패 메시지 변경 시작'],
+      ['t-1', '[t-1] 성공'],
+      ['t-2', '[t-2] 스테이징 배포 시작'],
+      ['t-2', '$ ./deploy.sh staging'],
+      ['t-2', 'error: rollout timed out after 300s'],
+      ['t-2', '[t-2] 실패: 종료 코드 1'],
+      [null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     320,
   )
@@ -699,14 +705,14 @@ function seedRequests() {
   })
   signFor(killed, 'u-01', ['t-1'])
   signFor(killed, 'u-07', ['t-2'])
-  killed.kill = { by: '홍길동', reason: '잘못된 브랜치에 배포 중', at: minutesAgo(470), skippedTaskIds: ['t-2'] }
+  killed.kill = { by: '홍길동', reason: '잘못된 브랜치에 배포 중', at: minutesAgo(470) }
   addLogs(
     killed.id,
     [
-      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
-      ['INFO', 't-1', '[t-1] 로그인 실패 메시지 변경 시작'],
-      ['SUCCESS', 't-1', '[t-1] 성공'],
-      ['ERROR', null, '[웹쉘] 킬 스위치로 중단했습니다'],
+      [null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
+      ['t-1', '[t-1] 로그인 실패 메시지 변경 시작'],
+      ['t-1', '[t-1] 성공'],
+      [null, '[웹쉘] 킬 스위치로 중단했습니다'],
     ],
     471,
   )
@@ -745,11 +751,11 @@ function seedRequests() {
   addLogs(
     failed.id,
     [
-      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
-      ['CMD', 't-1', '$ ./deploy.sh staging'],
-      ['ERROR', 't-1', 'error: cluster unreachable'],
-      ['ERROR', 't-1', '[t-1] 실패: 종료 코드 1'],
-      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
+      [null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
+      ['t-1', '$ ./deploy.sh staging'],
+      ['t-1', 'error: cluster unreachable'],
+      ['t-1', '[t-1] 실패: 종료 코드 1'],
+      [null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     990,
   )
@@ -781,11 +787,11 @@ function seedRequests() {
   addLogs(
     kimDone.id,
     [
-      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
-      ['CMD', 't-1', '$ npm test'],
-      ['INFO', 't-1', 'Tests  43 passed (43)'],
-      ['SUCCESS', 't-1', '[t-1] 성공'],
-      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
+      [null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
+      ['t-1', '$ npm test'],
+      ['t-1', 'Tests  43 passed (43)'],
+      ['t-1', '[t-1] 성공'],
+      [null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     290,
   )
@@ -861,7 +867,7 @@ function seedRequests() {
     ageMinutes: 16,
     tasks: [{ ...deployTask('PENDING'), title: '스테이징 재배포' }],
   })
-  const forged = toHashTarget(displayMismatch.plan!)
+  const forged = toHashTarget(displayMismatch.plan!, displayMismatch.projectId)
   forged.tasks[0] = { ...forged.tasks[0], target: 'production', content: { command: './deploy.sh production --force' } }
   displayMismatch.forgedHashTarget = forged
   displayMismatch.plan!.planHash = hashService.computeTargetHash(forged)
@@ -905,19 +911,20 @@ function seedStepEvents() {
     for (const task of request.plan?.tasks ?? []) {
       const lines = logs.filter((line) => line.taskId === task.id)
       if (lines.length === 0) continue
-      const commands = lines.filter((line) => line.level === 'CMD')
+      const isCommand = (line: LogLine) => line.message.startsWith('$ ')
+      const commands = lines.filter(isCommand)
       // `$ 명령` 줄이 없는 짧은 시드 로그는 작업 전체를 한 단계로 본다.
       const starts = commands.length > 0 ? commands : [lines[0]]
       starts.forEach((start, index) => {
         const next = starts[index + 1]
         const end = next ? lines[lines.indexOf(next) - 1] : lines[lines.length - 1]
         const label =
-          start.level === 'CMD' ? start.text.replace(/^\$ /, '') : task.type === 'DOC' ? '문서 작성' : 'diff 적용'
-        const step = { id: `s-${start.seq}`, label }
-        emitStepEvent(request, task.id, { ...step, status: 'RUNNING', logRange: { from: start.seq, to: null } }, start.at)
+          isCommand(start) ? start.message.replace(/^\$ /, '') : task.type === 'DOC' ? '문서 작성' : 'diff 적용'
+        const step = { id: `s-${start.sequence}`, label }
+        emitStepEvent(request, task.id, { ...step, status: 'RUNNING', logRange: { from: start.sequence, to: null } }, start.at)
         if (!next && task.status === 'RUNNING') return
         const status = !next && task.status === 'FAILED' ? 'FAILED' : 'SUCCEEDED'
-        emitStepEvent(request, task.id, { ...step, status, logRange: { from: start.seq, to: end.seq } }, end.at)
+        emitStepEvent(request, task.id, { ...step, status, logRange: { from: start.sequence, to: end.sequence } }, end.at)
       })
     }
   }

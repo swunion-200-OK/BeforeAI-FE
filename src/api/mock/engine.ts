@@ -6,7 +6,9 @@ import type {
   ApprovalEnvelope,
   Plan,
   PlanChange,
+  PlanRetryResponse,
   RejectBody,
+  RequestApproval,
   RequestDetail,
   RequestStatus,
   SubmitApprovalResponse,
@@ -26,10 +28,8 @@ import {
   buildRequiredApprovers,
   isCandidate,
   isExternallyApprovable,
-  isSelfApprovable,
   isTaskFullyApproved,
   matchRequirement,
-  toApprovalStatus,
 } from './policy'
 import {
   HttpError,
@@ -70,8 +70,28 @@ function assertRequester(request: StoredRequest, user: StoredUser) {
   if (request.requester.id !== user.id) throw new HttpError(403, 'FORBIDDEN_ROLE', '요청자만 할 수 있습니다')
 }
 
+/** 서버 ApprovalResponse 모양. 현재 Plan의 승인만 준다. 목은 작업별로 저장하므로 승인 기록 ID로 다시 묶는다. */
+export function toApprovals(request: StoredRequest): RequestApproval[] {
+  const grouped = new Map<string, RequestApproval>()
+  for (const approval of request.approvals) {
+    if (approval.planId !== request.currentPlanId) continue
+    const found = grouped.get(approval.id)
+    if (found) found.taskIds.push(approval.taskId)
+    else {
+      grouped.set(approval.id, {
+        id: approval.id,
+        planId: approval.planId,
+        approverId: approval.userId,
+        taskIds: [approval.taskId],
+        network: approval.network,
+        createdAt: approval.at,
+      })
+    }
+  }
+  return [...grouped.values()]
+}
+
 export function toDetail(request: StoredRequest): RequestDetail {
-  const project = requireProject(request.projectId)
   return {
     id: request.id,
     projectId: request.projectId,
@@ -83,11 +103,9 @@ export function toDetail(request: StoredRequest): RequestDetail {
     currentPlanId: request.currentPlanId,
     createdAt: request.createdAt,
     updatedAt: request.updatedAt,
-    projectName: project.name,
-    plan: request.plan,
-    approvalStatus: toApprovalStatus(request),
+    currentPlan: request.plan,
+    approvals: toApprovals(request),
     clarification: request.clarification,
-    analysisError: request.analysisError,
     changedTaskIds: request.changedTaskIds,
     removedTaskTitles: request.removedTaskTitles,
     failedChecks: request.failedChecks,
@@ -127,7 +145,6 @@ export function createRequest(
     pendingAnalysis: pending,
     submittedAt: null,
     clarification: null,
-    analysisError: null,
     changedTaskIds: [],
     removedTaskTitles: [],
     failedChecks: [],
@@ -169,18 +186,16 @@ function finishAnalysis(request: StoredRequest) {
     return
   }
   if (request.prompt.includes('#분석실패')) {
-    request.analysisError = 'AI 분석 엔진이 응답하지 않았습니다'
     setStatus(request, 'ANALYSIS_FAILED', 'AI 분석')
     return
   }
   const prompt = pending.kind === 'ANSWER' ? `${request.prompt} ${pending.answer}` : request.prompt
   if (pending.kind === 'NEW' && isAmbiguous(prompt)) {
-    request.clarification = { question: CLARIFICATION_QUESTION }
+    request.clarification = CLARIFICATION_QUESTION
     setStatus(request, 'REVIEWING', 'AI 분석')
     return
   }
   request.clarification = null
-  request.analysisError = null
   request.plan = analyzePrompt(prompt, request.id, project, request.requester)
   request.currentPlanId = request.plan.id
   setStatus(request, 'REVIEWING', 'AI 분석')
@@ -205,13 +220,14 @@ export function patchPlan(
 ) {
   assertRequester(request, user)
   assertStatus(request, ['REVIEWING', 'PENDING_APPROVAL', 'PARTIALLY_COMPLETED'])
+  // 서버는 답변일 때도 basePlanId를 현재 Plan과 비교한다 (RequestPlanService.patchPlan).
+  if ((body.basePlanId ?? null) !== request.currentPlanId) {
+    throw new HttpError(409, 'INVALID_STATE', '현재 Plan이 아닙니다')
+  }
   if (body.answer !== undefined) {
     if (!request.clarification) throw new HttpError(409, 'INVALID_STATE', 'AI 확인 질문이 없습니다')
     request.pendingAnalysis = { kind: 'ANSWER', answer: body.answer }
   } else {
-    if (body.basePlanId !== request.currentPlanId) {
-      throw new HttpError(409, 'INVALID_STATE', '현재 Plan이 아닙니다')
-    }
     request.pendingAnalysis = {
       kind: 'PATCH',
       changes: body.changes ?? [],
@@ -273,7 +289,14 @@ function submitResponse(request: StoredRequest): SubmitResponse {
     status: request.status,
     planId: plan.id,
     planHash: plan.planHash as string,
-    selfApprovableTaskIds: plan.tasks.filter(isSelfApprovable).map((t) => t.id),
+    // 서버와 같은 규칙: 금지가 아니고 누구나 승인이거나 요청자가 후보에 있으면 담는다. 무엇을 바로 서명할지는 화면이 더 좁게 정한다.
+    selfApprovableTaskIds: plan.tasks
+      .filter(
+        (t) =>
+          t.risk !== 'FORBIDDEN' &&
+          t.requiredApprovers.some((r) => r.rule === 'ANYONE' || r.candidates?.includes(request.requester.id)),
+      )
+      .map((t) => t.id),
   }
 }
 
@@ -301,7 +324,7 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
   }
   // 부분완료에서 실패 작업을 모두 지웠다면 승인받을 작업이 없다. 승인대기에 멈추지 않고 그대로 끝낸다.
   if (plan.tasks.every((t) => t.status === 'BLOCKED' || t.status === 'SUCCEEDED')) {
-    plan.planHash = hashService.computePlanHash(plan)
+    plan.planHash = hashService.computePlanHash(plan, request.projectId)
     setStatus(request, 'COMPLETED', user.name)
     audit(user, 'SUBMITTED', { requestId: request.id }, { planHash: plan.planHash, nothingLeft: true })
     return submitResponse(request)
@@ -315,7 +338,7 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
   request.approvalRecords = []
   request.failedChecks = []
   request.forgedHashTarget = undefined
-  plan.planHash = hashService.computePlanHash(plan)
+  plan.planHash = hashService.computePlanHash(plan, request.projectId)
   request.submittedAt = nowIso()
   setStatus(request, 'PENDING_APPROVAL', user.name)
   audit(user, 'SUBMITTED', { requestId: request.id }, { planHash: plan.planHash })
@@ -328,22 +351,17 @@ export function approvalContext(
   user: StoredUser,
   network: 'INTERNAL' | 'EXTERNAL',
 ): ApprovalContext {
+  // 서버는 볼 수 있는 요청이면 제출 전이든 승인권자가 아니든 승인 자료를 준다 (ApprovalService.approvalContext).
   const plan = request.plan
-  if (!plan?.planHash) {
-    throw new HttpError(409, 'INVALID_STATE', '아직 제출되지 않은 요청입니다')
-  }
-  const signedBefore = request.approvals.some((a) => a.userId === user.id)
-  if (!isCandidate(user, request) && !signedBefore) {
-    throw new HttpError(403, 'NOT_APPROVER', '이 작업의 승인권자가 아닙니다')
-  }
+  if (!plan) throw new HttpError(409, 'INVALID_STATE', '아직 Plan이 없습니다')
   const open = request.status === 'PENDING_APPROVAL'
   const eligible = open ? plan.tasks.filter((t) => t.status === 'PENDING' && matchRequirement(user, t, request)) : []
   const blocked = network === 'EXTERNAL' ? eligible.filter((t) => !isExternallyApprovable(t)) : []
   return {
     requestId: request.id,
-    plan: { id: plan.id, tasks: plan.tasks },
-    planHash: plan.planHash,
-    hashTarget: request.forgedHashTarget ?? toHashTarget(plan),
+    plan,
+    planHash: plan.planHash ?? hashService.computePlanHash(plan, request.projectId),
+    hashTarget: request.forgedHashTarget ?? toHashTarget(plan, request.projectId),
     approvableTaskIds: eligible.filter((t) => !blocked.includes(t)).map((t) => t.id),
     blockedTaskIds: blocked.map((t) => t.id),
     blockedReason: blocked.length ? 'INTERNAL_NETWORK_ONLY' : null,
@@ -374,14 +392,15 @@ export function submitApproval(
     if (!requirement) throw new HttpError(403, 'NOT_APPROVER', '이 작업의 승인권자가 아닙니다')
     return { task, requirement }
   })
-  const key = db().signingKeys.find((k) => k.keyId === body.keyId && k.userId === user.id)
+  const key = db().signingKeys.find((k) => k.id === body.keyId && k.userId === user.id)
   if (key?.status !== 'REGISTERED') {
     throw new HttpError(403, 'KEY_NOT_REGISTERED', '승인 키가 등록되지 않았습니다')
   }
 
   const at = nowIso()
+  const recordId = crypto.randomUUID()
   request.approvalRecords.push({
-    id: crypto.randomUUID(),
+    id: recordId,
     requestId: request.id,
     planId: plan.id,
     planHash: body.planHash,
@@ -394,6 +413,7 @@ export function submitApproval(
   })
   for (const { task, requirement } of matched) {
     request.approvals.push({
+      id: recordId,
       planId: plan.id,
       taskId: task.id,
       rule: requirement.rule,
@@ -428,8 +448,10 @@ export function rejectRequest(
   body: RejectBody,
 ) {
   assertStatus(request, ['PENDING_APPROVAL'])
-  if (!body.reason?.trim()) throw new HttpError(400, 'VALIDATION_ERROR', '거부 사유를 입력해 주세요')
   const plan = request.plan as Plan
+  if (!body.planId) throw new HttpError(400, 'VALIDATION_ERROR', 'planId가 필요합니다')
+  if (body.planId !== plan.id) throw new HttpError(409, 'INVALID_STATE', '현재 Plan이 아닙니다')
+  const reason = body.reason?.trim() ?? ''
   const tasks = plan.tasks.filter((t) => body.taskIds.includes(t.id))
   if (tasks.length === 0) throw new HttpError(400, 'VALIDATION_ERROR', '거부할 작업을 고르세요')
   if (network === 'EXTERNAL' && tasks.some((t) => !isExternallyApprovable(t))) {
@@ -439,9 +461,9 @@ export function rejectRequest(
     throw new HttpError(403, 'NOT_APPROVER', '이 작업의 승인권자가 아닙니다')
   }
   for (const task of tasks) task.status = 'REJECTED'
-  request.rejection = { by: user.name, reason: body.reason, at: nowIso(), taskIds: body.taskIds }
+  request.rejection = { by: user.name, reason, at: nowIso(), taskIds: body.taskIds }
   setStatus(request, 'REJECTED', user.name)
-  audit(user, 'REJECTED', { requestId: request.id, taskIds: body.taskIds }, { reason: body.reason })
+  audit(user, 'REJECTED', { requestId: request.id, taskIds: body.taskIds }, { reason })
   notify(
     [request.requester.id],
     `요청이 거부되었습니다: ${request.prompt.slice(0, 30)}`,
@@ -478,7 +500,7 @@ export function killRequest(request: StoredRequest, user: StoredUser, reason: st
       skipped.push(task.id)
     }
   }
-  request.kill = { by: user.name, reason, at: nowIso(), skippedTaskIds: skipped }
+  request.kill = { by: user.name, reason, at: nowIso() }
   setStatus(request, 'KILLED', user.name)
   audit(user, 'KILLED', { requestId: request.id, taskIds: skipped }, { reason })
   reportFinalStatus(request)
@@ -486,14 +508,17 @@ export function killRequest(request: StoredRequest, user: StoredUser, reason: st
   return { id: request.id, status: request.status, skippedTaskIds: skipped }
 }
 
-export function retryFailedTasks(request: StoredRequest, user: StoredUser): SubmitResponse {
+/** 서버처럼 실패·건너뛴 작업만 새 Plan으로 옮기고 새 해시를 낸다 (RequestPlanService.retryFailedTasks). 본인 승인 목록은 주지 않는다. */
+export function retryFailedTasks(request: StoredRequest, user: StoredUser): PlanRetryResponse {
   assertRequester(request, user)
   assertStatus(request, ['PARTIALLY_COMPLETED'])
   const previous = request.plan as Plan
   const project = requireProject(request.projectId)
-  const tasks = previous.tasks.map((task) => ({
+  const retryable = previous.tasks.filter((task) => task.status === 'FAILED' || task.status === 'SKIPPED')
+  if (retryable.length === 0) throw new HttpError(409, 'INVALID_STATE', '재시도할 작업이 없습니다')
+  const tasks = retryable.map((task) => ({
     ...task,
-    status: (task.status === 'FAILED' || task.status === 'SKIPPED' ? 'PENDING' : task.status) as Task['status'],
+    status: 'PENDING' as const,
     requiredApprovers: buildRequiredApprovers(project, request.requester, task.type, task.risk),
   }))
   archivePlan(request)
@@ -503,12 +528,12 @@ export function retryFailedTasks(request: StoredRequest, user: StoredUser): Subm
   request.approvalRecords = []
   // 재시도 프롬프트에는 강제 실패 키워드를 남기지 않아 두 번째 실행은 성공한다.
   request.prompt = request.prompt.replace('#실행실패', '').trim()
-  request.plan.planHash = hashService.computePlanHash(request.plan)
+  request.plan.planHash = hashService.computePlanHash(request.plan, request.projectId)
   request.submittedAt = nowIso()
   setStatus(request, 'PENDING_APPROVAL', user.name)
   audit(user, 'SUBMITTED', { requestId: request.id }, { retry: true, planHash: request.plan.planHash })
   notifyApprovers(request)
-  return submitResponse(request)
+  return { id: request.id, status: request.status, planId: request.plan.id, planHash: request.plan.planHash }
 }
 
 export function requestRollback(
@@ -551,7 +576,7 @@ export function requestRollback(
   request.approvals = []
   request.approvalRecords = []
   request.rollback = body
-  request.plan.planHash = hashService.computePlanHash(request.plan)
+  request.plan.planHash = hashService.computePlanHash(request.plan, request.projectId)
   request.submittedAt = nowIso()
   setStatus(request, 'PENDING_APPROVAL', user.name)
   audit(user, 'ROLLBACK_REQUESTED', { requestId: request.id, taskIds: [task.id] }, { ...body })
