@@ -4,6 +4,7 @@
  * 시드에 넣지 않고 시연 화면을 떠나면 지우므로, 다른 화면의 승인 대기 목록과 집계에는 남지 않는다.
  */
 import { hashService, toHashTarget } from '../../crypto/hashService'
+import { randomUuid } from '../../crypto/randomUuid'
 import type { Plan, TaskContent } from '../types'
 import { addRequest, deployTask } from './seed'
 import { db, nextId, nowIso, persist, type StoredRequest, type TamperAttack } from './store'
@@ -122,7 +123,7 @@ export const tamperDemo = {
   /** 공격 4: 서명 없이 승인 기록만 적고 실행을 요청한다. 결재란에는 도장이 보이지만 웹쉘은 평문 기록을 보지 않는다. */
   forgeApproval(requestId: string) {
     const request = attackable(requestId)
-    const forgedId = crypto.randomUUID()
+    const forgedId = randomUuid()
     for (const task of request.plan.tasks) {
       for (const requirement of task.requiredApprovers) {
         request.approvals.push({

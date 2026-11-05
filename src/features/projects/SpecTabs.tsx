@@ -7,7 +7,6 @@ import { SegmentedTabs } from '../../components/rich'
 import { toast } from '../../components/toast'
 import {
   Button,
-  ConfirmModal,
   EmptyState,
   ErrorState,
   Field,
@@ -18,6 +17,7 @@ import {
   TextArea,
 } from '../../components/ui'
 import { MarkdownText } from '../documents/MarkdownText'
+import { restoredFromText } from './specView'
 import { formatDateTime } from '../../lib/format'
 import { useRefreshAll } from '../../lib/queries'
 import { changeRequestsQuery, specQuery, usePersonName } from './queries'
@@ -131,18 +131,23 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
   const personName = usePersonName(project)
   const [viewing, setViewing] = useState<ProjectSpec | null>(null)
   const [restoring, setRestoring] = useState<ProjectSpec | null>(null)
+  const [restoreReason, setRestoreReason] = useState('')
   const versions = useQuery({
     queryKey: ['project-spec-versions', project.id],
     queryFn: async () => (await projectsApi.specVersions(project.id)).items,
   })
   const restore = useMutation({
-    mutationFn: (version: number) => projectsApi.restoreSpec(project.id, version),
+    mutationFn: (version: number) => projectsApi.restoreSpec(project.id, version, restoreReason),
     onSuccess: async (saved) => {
       await refreshAll()
       toast.success(`이전 버전을 복원해 v${saved.version}으로 저장했습니다`)
     },
-    onSettled: () => setRestoring(null),
+    onSettled: () => closeRestore(),
   })
+  const closeRestore = () => {
+    setRestoring(null)
+    setRestoreReason('')
+  }
 
   if (versions.isPending) return <Spinner />
   if (versions.isError) return <ErrorState error={versions.error} onRetry={() => versions.refetch()} />
@@ -168,9 +173,7 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
                   <td className="font-medium">
                     v{version.version}
                     {version.version === latest && <span className="ml-2 text-xs font-normal text-ink-3">현재</span>}
-                    {version.restoredFromVersion !== null && (
-                      <span className="ml-2 text-xs font-normal text-ink-3">v{version.restoredFromVersion}에서 복원</span>
-                    )}
+                    {restoredFromText(version) && <span className="ml-2 text-xs font-normal text-ink-3">{restoredFromText(version)}</span>}
                   </td>
                   <td>{formatDateTime(version.createdAt)}</td>
                   <td>{personName(version.createdBy) ?? '-'}</td>
@@ -197,16 +200,26 @@ export function VersionsTab({ project, canEdit }: { project: Project; canEdit: b
         {viewing && <MarkdownText body={viewing.body} />}
       </Modal>
 
-      <ConfirmModal
+      <Modal
         open={restoring !== null}
         title={`v${restoring?.version ?? ''}을 복원할까요?`}
-        confirmLabel="복원"
-        loading={restore.isPending}
-        onConfirm={() => restoring && restore.mutate(restoring.version)}
-        onClose={() => setRestoring(null)}
+        onClose={closeRestore}
+        footer={
+          <>
+            <Button onClick={closeRestore}>닫기</Button>
+            <Button variant="primary" loading={restore.isPending} onClick={() => restoring && restore.mutate(restoring.version)}>
+              복원
+            </Button>
+          </>
+        }
       >
-        지금 버전을 지우지 않고, 고른 버전의 내용으로 새 버전을 저장합니다.
-      </ConfirmModal>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-ink-2">지금 버전을 지우지 않고, 고른 버전의 내용으로 새 버전을 저장합니다.</p>
+          <Field label="사유 (선택)">
+            {(id) => <TextArea id={id} rows={3} value={restoreReason} onChange={(event) => setRestoreReason(event.target.value)} />}
+          </Field>
+        </div>
+      </Modal>
     </>
   )
 }

@@ -88,20 +88,20 @@ function describeDetail(log: AuditLog): string {
 
 function toRow(log: AuditLog): string[] {
   const database = db()
-  const actor = database.users.find((user) => user.id === log.actor.id)
+  const actor = database.users.find((user) => user.id === log.actor?.id)
   const department = database.departments.find((item) => item.id === actor?.departmentId)
   const request = log.target.requestId ? database.requests.find((item) => item.id === log.target.requestId) : undefined
   const projectId = log.target.projectId ?? request?.projectId
   const row = [
     kstDateTime(log.at),
-    log.actor.name,
+    log.actor?.name ?? '',
     department?.name ?? '',
     AUDIT_ACTION_LABEL[log.action] ?? log.action,
     database.projects.find((item) => item.id === projectId)?.name ?? '',
     log.target.requestId ?? '',
     log.target.taskIds?.join(', ') ?? '',
-    NETWORK_LABEL[log.network] ?? log.network,
-    log.ip,
+    log.network ? (NETWORK_LABEL[log.network] ?? log.network) : '',
+    log.ip ?? '',
     RESULT_BY_ACTION[log.action] ?? '성공',
     describeDetail(log),
   ]

@@ -10,7 +10,8 @@ export interface DocumentBox {
 }
 
 export interface DocumentSlot {
-  order: number
+  /** 화면과 같은 1부터 세는 번호 (taskNumber). order는 서버에서 0부터 시작할 수 있다 */
+  number: number
   title: string
   type: TaskType
   risk: Risk
@@ -36,7 +37,7 @@ export interface ApprovalDocumentContent {
   planHash: string | null
   slots: DocumentSlot[]
   /** 실행을 시작하기 전에는 비어 있다 */
-  results: Array<{ order: number; title: string; status: TaskStatus }>
+  results: Array<{ number: number; title: string; status: TaskStatus }>
 }
 
 /** A4를 150dpi로 그린다. */
@@ -189,7 +190,7 @@ export function paintApprovalDocument(ctx: CanvasRenderingContext2D, doc: Approv
   const metaStyle: TextStyle = { size: 22, color: MUTED }
   for (const slot of doc.slots) {
     const infoInner = infoWidth - CELL_PADDING * 2
-    const titleLines = linesOf(`#${slot.order} ${slot.title}`, infoInner, titleStyle)
+    const titleLines = linesOf(`#${slot.number} ${slot.title}`, infoInner, titleStyle)
     const metaLines = [
       ...linesOf(`${TASK_TYPE_LABEL[slot.type]} · 위험도 ${RISK_LABEL[slot.risk]}`, infoInner, metaStyle),
       ...linesOf(`대상 ${slot.target}`, infoInner, metaStyle),
@@ -234,7 +235,7 @@ export function paintApprovalDocument(ctx: CanvasRenderingContext2D, doc: Approv
     const statusWidth = 200
     const resultStyle: TextStyle = { size: 24 }
     for (const result of doc.results) {
-      const lines = linesOf(`#${result.order} ${result.title}`, CONTENT_WIDTH - statusWidth - CELL_PADDING * 2, resultStyle)
+      const lines = linesOf(`#${result.number} ${result.title}`, CONTENT_WIDTH - statusWidth - CELL_PADDING * 2, resultStyle)
       const height = heightOf(lines, resultStyle) + CELL_PADDING * 2
       box(MARGIN, y, CONTENT_WIDTH - statusWidth, height)
       box(MARGIN + CONTENT_WIDTH - statusWidth, y, statusWidth, height, HEAD_BG)

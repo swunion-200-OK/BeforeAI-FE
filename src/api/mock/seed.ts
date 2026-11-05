@@ -8,8 +8,9 @@ import { cryptoService } from '../../crypto/cryptoService'
 import { deviceStore } from '../../crypto/deviceStore'
 import { bytesToBase64 } from '../../crypto/encoding'
 import { hashService, toHashTarget } from '../../crypto/hashService'
+import { randomUuid } from '../../crypto/randomUuid'
 import { signingService } from '../../crypto/signingService'
-import { makeUnifiedDiff } from '../../lib/diff'
+import { appendAddedLine, makeUnifiedDiff } from '../../lib/diff'
 import { explainTask } from '../../lib/explain'
 import type {
   AuditAction,
@@ -356,7 +357,7 @@ export function addRequest(seed: SeedRequest): StoredRequest {
       request.plan.planHash = hashService.computePlanHash(request.plan, request.projectId)
       recordSubmission(request, request.submittedAt ?? undefined)
     }
-    if (path.includes('RUNNING')) request.execution = signedExecution(request, crypto.randomUUID())
+    if (path.includes('RUNNING')) request.execution = signedExecution(request, randomUuid())
   }
   database.requests.push(request)
   return request
@@ -376,10 +377,10 @@ function signFor(request: StoredRequest, userId: string, taskIds: string[], netw
     approverId: userId,
     keyId: device.keyId as string,
     issuedAt: at,
-    nonce: crypto.randomUUID(),
+    nonce: randomUuid(),
     network,
   })
-  const recordId = crypto.randomUUID()
+  const recordId = randomUuid()
   request.approvalRecords.push({
     id: recordId,
     requestId: request.id,
@@ -572,7 +573,7 @@ function seedRequests() {
     tasks: [
       {
         ...loginTask('PENDING'),
-        content: { diff: `${loginDiff()}\n+// 수정 지시: 메시지를 한국어와 영어 둘 다 보여줘` },
+        content: { diff: appendAddedLine(loginDiff(), '// 수정 지시: 메시지를 한국어와 영어 둘 다 보여줘') },
         description: '로그인 실패 시 보여 주는 문구를 바꿉니다. 수정 지시: 메시지를 한국어와 영어 둘 다 보여줘',
       },
       deployTask('PENDING'),

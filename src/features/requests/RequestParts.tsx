@@ -4,6 +4,7 @@ import type { RequestDetail, Task } from '../../api/types'
 import { Banner, Button, ConfirmModal, ReasonModal } from '../../components/ui'
 import { formatDateTime } from '../../lib/format'
 import { useProjects, useRequest } from '../../lib/queries'
+import { taskDeleteTitle, taskEditTitle } from '../../lib/taskLabel'
 import { useCancelRequest, usePatchPlan, useRetryAnalysis } from './useRequestActions'
 
 const MAX_ANALYSIS_ATTEMPTS = 3
@@ -48,7 +49,7 @@ export function TaskEditButtons({
 
       <ReasonModal
         open={mode === 'edit'}
-        title={`${task.id} 작업 수정`}
+        title={taskEditTitle(task)}
         description={warning ?? 'AI에게 어떻게 고칠지 문장으로 알려 주세요. 수정하면 Plan을 다시 분석합니다.'}
         label="수정 지시"
         placeholder="메시지를 한국어와 영어 둘 다 보여줘"
@@ -65,7 +66,7 @@ export function TaskEditButtons({
       />
       <ConfirmModal
         open={mode === 'delete'}
-        title={`${task.id} 작업 삭제`}
+        title={taskDeleteTitle(task)}
         confirmLabel="작업 삭제"
         danger
         loading={patch.isPending}

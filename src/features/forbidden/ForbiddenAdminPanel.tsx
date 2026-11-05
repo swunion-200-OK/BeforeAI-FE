@@ -6,6 +6,7 @@ import type { ForbiddenProposal, ForbiddenProposalStatus, ForbiddenRule } from '
 import { useMe } from '../../app/AuthProvider'
 import { toast } from '../../components/toast'
 import {
+  Banner,
   Button,
   ConfirmModal,
   ErrorState,
@@ -17,13 +18,14 @@ import {
   Sheet,
   Spinner,
 } from '../../components/ui'
-import { UNSIGNED_POLICY_NOTICE, policyAdminProof } from '../../crypto/adminProof'
+import { UNSIGNED_POLICY_NOTICE, adminKeyMissingReason, policyAdminProof } from '../../crypto/adminProof'
 import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames, useDepartments, useRefreshAll } from '../../lib/queries'
+import { AdminKeyNotice } from '../admin/AdminKeyNotice'
 import { proposalsQuery } from '../admin/adminQueries'
 import { onPolicyError } from '../admin/policyChange'
 import { ForbiddenFields } from './ForbiddenFields'
-import { EMPTY_FORBIDDEN_INPUT, isForbiddenInputComplete } from './forbiddenInput'
+import { EMPTY_FORBIDDEN_INPUT, addRuleBlockedReason, isForbiddenInputComplete } from './forbiddenInput'
 import { ForbiddenRuleTable, RELEASE_PENDING_NOTICE } from './ForbiddenRuleTable'
 
 const STATUSES: ForbiddenProposalStatus[] = ['OPEN', 'CONFIRMED', 'REJECTED']
@@ -31,10 +33,18 @@ const STATUSES: ForbiddenProposalStatus[] = ['OPEN', 'CONFIRMED', 'REJECTED']
 function AddRuleModal({ onClose }: { onClose: () => void }) {
   const me = useMe()
   const refresh = useRefreshAll()
-  const { data: departments } = useDepartments()
+  const { data: departments, isPending: departmentsPending, isError: departmentsFailed } = useDepartments()
   const [departmentId, setDepartmentId] = useState('')
   const [input, setInput] = useState<ForbiddenInput>(EMPTY_FORBIDDEN_INPUT)
   const selected = departmentId || departments?.[0]?.id || ''
+  const blockedReason = addRuleBlockedReason({
+    departmentsPending,
+    departmentsFailed,
+    hasDepartment: Boolean(selected),
+    inputComplete: isForbiddenInputComplete(input),
+  })
+  // 잠긴 버튼의 이유는 툴팁뿐이라 입력과 상관없는 이유는 창 안에 바로 보여 준다.
+  const noDepartment = !departmentsPending && !selected
   const finish = async () => {
     await refresh()
     onClose()
@@ -58,8 +68,8 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
           <Button onClick={onClose}>닫기</Button>
           <Button
             variant="primary"
-            disabled={!selected || !isForbiddenInputComplete(input)}
-            disabledReason="대상과 사유를 입력해 주세요"
+            disabled={Boolean(blockedReason)}
+            disabledReason={blockedReason}
             loading={add.isPending}
             onClick={() => add.mutate()}
           >
@@ -69,6 +79,7 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="flex flex-col gap-3">
+        {noDepartment && <Banner tone="warning">{blockedReason}</Banner>}
         <Field label="부서">
           {(id) => (
             <Select id={id} value={selected} onChange={(event) => setDepartmentId(event.target.value)}>
@@ -161,7 +172,13 @@ function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
         proposals={proposals}
         renderLast={(proposal, index) => (
           <div className="flex justify-end gap-1.5">
-            <Button size="sm" variant={index === 0 ? 'primary' : 'secondary'} onClick={() => setConfirming(proposal)}>
+            <Button
+              size="sm"
+              variant={index === 0 ? 'primary' : 'secondary'}
+              disabled={Boolean(adminKeyMissingReason(me.id))}
+              disabledReason={adminKeyMissingReason(me.id)}
+              onClick={() => setConfirming(proposal)}
+            >
               확정
             </Button>
             <Button size="sm" onClick={() => setRejecting(proposal)}>
@@ -237,6 +254,7 @@ function RulesSection({
   /** 처리할 제안이 있으면 그쪽이 주인공이라 직접 추가는 조용히 둔다. */
   primaryAdd: boolean
 }) {
+  const me = useMe()
   const refresh = useRefreshAll()
   const [adding, setAdding] = useState(false)
   const [releasing, setReleasing] = useState<ForbiddenRule | null>(null)
@@ -260,7 +278,12 @@ function RulesSection({
       title={loading ? '확정 규칙' : `확정 규칙 ${rules.length}건`}
       flush
       actions={
-        <Button variant={primaryAdd ? 'primary' : 'secondary'} onClick={() => setAdding(true)}>
+        <Button
+          variant={primaryAdd ? 'primary' : 'secondary'}
+          disabled={Boolean(adminKeyMissingReason(me.id))}
+          disabledReason={adminKeyMissingReason(me.id)}
+          onClick={() => setAdding(true)}
+        >
           <Plus size={15} aria-hidden />
           직접 추가
         </Button>
@@ -322,6 +345,7 @@ export function ForbiddenAdminPanel() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AdminKeyNotice />
       {proposalError && (
         <Sheet title="제안">
           <ErrorState error={proposalError.error} onRetry={() => proposalError.refetch()} />

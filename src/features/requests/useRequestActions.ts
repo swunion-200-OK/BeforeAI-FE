@@ -5,6 +5,7 @@ import type { PlanChange, RequestDetail } from '../../api/types'
 import { toast } from '../../components/toast'
 import { useRefreshAll } from '../../lib/queries'
 import { submitWithSelfApproval, type ReviewedPlan, type SubmitOutcome } from '../approvals/approvalFlow'
+import { executionDeferredText } from './statusBannerText'
 
 /**
  * 제출 결과를 문구로 알린다. 제출(1차 확인)과 승인(2차)을 섞어 쓰지 않는다.
@@ -24,7 +25,7 @@ async function announceSubmit(requestId: string, outcome: SubmitOutcome) {
     }
     toast.success(`${approved}. 필요한 승인이 모두 모여 실행을 요청했습니다`)
   } else if (outcome.executionDeferred) {
-    toast.info(`${approved}. 웹쉘에 연결할 수 없어 실행 요청을 다시 시도합니다`)
+    toast.info(`${approved}. ${executionDeferredText()}`)
   } else if (outcome.selfApprovedTaskIds.length > 0) {
     toast.success(approved)
   } else {

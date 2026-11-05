@@ -1,5 +1,6 @@
 /** 승인 기록 문서. 판 번호와 상태 규칙은 BeforeAi-BE의 ApprovalDocumentService와 같다. */
 import { RULE_LABEL } from '../../lib/labels'
+import { taskNumber } from '../../lib/taskLabel'
 import type { ApprovalDocumentStatus, ApprovalDocumentVersion, ApproverRule, Plan, RequestStatus, Task, TaskStatus } from '../types'
 import { PAGE_HEIGHT, PAGE_WIDTH, renderApprovalDocumentJpeg, type ApprovalDocumentContent, type DocumentBox } from './approvalDocumentImage'
 import { buildImagePdf } from './imagePdf'
@@ -107,14 +108,14 @@ function toContent(request: StoredRequest, entry: StoredDocumentVersion, current
     baseCommit: plan.baseCommit,
     planHash: plan.planHash,
     slots: plan.tasks.map((task) => ({
-      order: task.order,
+      number: taskNumber(task, plan.tasks),
       title: task.title,
       type: task.type,
       risk: task.risk,
       target: task.target,
       boxes: task.risk === 'FORBIDDEN' ? [] : toBoxes(task, approvals),
     })),
-    results: ran ? plan.tasks.map((task) => ({ order: task.order, title: task.title, status: task.status })) : [],
+    results: ran ? plan.tasks.map((task) => ({ number: taskNumber(task, plan.tasks), title: task.title, status: task.status })) : [],
   }
 }
 

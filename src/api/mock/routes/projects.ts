@@ -23,7 +23,7 @@ function latestSpec(projectId: string): ProjectSpec {
   return versions[versions.length - 1]
 }
 
-function saveSpec(projectId: string, body: string, user: StoredUser, restoredFromVersion: number | null = null): ProjectSpec {
+function saveSpec(projectId: string, body: string, user: StoredUser, restoredFromVersion: number | null = null, reason?: string): ProjectSpec {
   const versions = (db().specs[projectId] ??= [])
   const spec: ProjectSpec = {
     projectId,
@@ -34,7 +34,7 @@ function saveSpec(projectId: string, body: string, user: StoredUser, restoredFro
     restoredFromVersion,
   }
   versions.push(spec)
-  audit(user, 'SPEC_UPDATED', { projectId, label: `기획서 v${spec.version}` })
+  audit(user, 'SPEC_UPDATED', { projectId, label: `기획서 v${spec.version}` }, reason ? { reason } : {})
   return spec
 }
 
@@ -133,11 +133,11 @@ export const projectRoutes: Route[] = [
   route(
     'POST',
     '/projects/:projectId/spec/versions/:version/restore',
-    ({ me, params }) => {
+    ({ me, params, body }) => {
       assertSpecEditor(me, requireProject(params.projectId))
       const target = db().specs[params.projectId]?.find((v) => v.version === Number(params.version))
       if (!target) throw new HttpError(404, 'NOT_FOUND', '해당 버전이 없습니다')
-      return saveSpec(params.projectId, target.body, me, target.version)
+      return saveSpec(params.projectId, target.body, me, target.version, body?.reason)
     },
     { internal: true },
   ),
@@ -362,7 +362,9 @@ export const projectRoutes: Route[] = [
       (v) => v.documentId === params.documentId && v.version === Number(params.version),
     )
     if (!found) throw new HttpError(404, 'NOT_FOUND', '해당 버전이 없습니다')
-    return found
+    // 서버처럼 상세에는 적용 요청과 작성자를 싣지 않는다. 화면은 목록의 값을 쓴다.
+    const { requestId: _requestId, createdBy: _createdBy, ...version } = found
+    return version
   }),
 
   // ── 웹 코드 에디터 ──────────────────────────────────────

@@ -25,6 +25,7 @@ import { toast } from "../../components/toast";
 import {
   Banner,
   Button,
+  ConfirmModal,
   EmptyState,
   ErrorState,
   Mono,
@@ -35,6 +36,9 @@ import { deviceStore } from "../../crypto/deviceStore";
 import { signingService } from "../../crypto/signingService";
 import { useApprovalStatuses } from "../../lib/approvalStatus";
 import { formatDateTime } from "../../lib/format";
+import { isRequestEnded } from "../../lib/settledTask";
+import { taskNumber } from "../../lib/taskLabel";
+import { executionDeferredText } from "../requests/statusBannerText";
 import { REQUEST_STATUS_LABEL, SOURCE_LABEL } from "../../lib/labels";
 import {
   useDepartmentNames,
@@ -188,10 +192,12 @@ function StampSheet({
   statuses,
   tasks,
   stamped,
+  requestStatus,
 }: {
   statuses: TaskApprovalStatus[];
   tasks: Task[];
   stamped?: JustStamped;
+  requestStatus: RequestStatus;
 }) {
   return (
     <ul className="flex flex-col gap-4">
@@ -210,6 +216,7 @@ function StampSheet({
             <div className="overflow-x-auto">
               <ApprovalStamps
                 status={status}
+                requestStatus={requestStatus}
                 justStampedBy={
                   stamped?.taskIds.includes(status.taskId)
                     ? stamped.userId
@@ -392,7 +399,10 @@ export function ApprovalDetail({
       );
       await refreshAll();
     },
-    onError: () => setDecision(null),
+    onError: async () => {
+      setDecision(null);
+      await refreshAll();
+    },
   });
 
   if (requestQuery.isPending) {
@@ -543,6 +553,8 @@ export function ApprovalDetail({
   // 작업을 고를 수 있거나 일부가 막혀 있을 때만 몇 개에 서명하는지 알려 준다.
   const showSelectedCount =
     selected.length > 0 && approvable.length + blocked.length > 1;
+  const canDecide =
+    selected.length > 0 && !sign.isPending && accepting && !external;
 
   // 안내는 한 번에 하나만, 가장 중요한 것을 보여 준다.
   let notice: ReactNode = null;
@@ -615,10 +627,10 @@ export function ApprovalDetail({
   }
 
   return (
-    <>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
       {/* 가운데: 무엇이 바뀌는지 */}
-      <div className="quiet-scroll min-w-0 flex-1 overflow-y-auto bg-paper">
-        <div className="mx-auto flex max-w-[65rem] flex-col gap-5 px-7 py-7">
+      <div className="quiet-scroll min-h-0 min-w-0 flex-1 overflow-y-auto bg-paper">
+        <div className="mx-auto flex max-w-[65rem] flex-col gap-5 px-4 py-5 xl:px-7 xl:py-7">
           <header>
             <div className="flex items-start justify-between gap-4">
               <h2 className="text-[1.625rem] leading-snug font-semibold tracking-[-0.02em] whitespace-pre-wrap">
@@ -655,12 +667,16 @@ export function ApprovalDetail({
                   <TaskCard
                     key={task.id}
                     task={task}
+                    number={taskNumber(task, tasks)}
                     requestId={requestId}
-                    defaultOpen={task.risk === "HIGH" || integrityFailed}
+                    requestStatus={request.status}
+                    planKind={context?.plan.kind ?? request.currentPlan?.kind}
+                    defaultOpen={task.risk === "HIGH" || task.type === "DOC" || integrityFailed}
                     highlighted={request.changedTaskIds?.includes(task.id)}
                     leading={
                       !context ? undefined : task.risk !== "FORBIDDEN" &&
-                        task.status === "PENDING" ? (
+                        task.status === "PENDING" &&
+                        !isRequestEnded(request.status) ? (
                         <input
                           type="checkbox"
                           className="size-4 accent-seal disabled:cursor-not-allowed"
@@ -682,7 +698,7 @@ export function ApprovalDetail({
                       )
                     }
                     footer={
-                      task.risk === "FORBIDDEN"
+                      task.risk === "FORBIDDEN" || isRequestEnded(request.status)
                         ? undefined
                         : taskNote(
                             task,
@@ -699,6 +715,27 @@ export function ApprovalDetail({
             </TaskRows>
           )}
 
+          <div className="flex flex-col gap-6 xl:hidden">
+            {integrity && context && (
+              <IntegrityCheck
+                result={integrity}
+                receivedHash={context.planHash}
+                awaitingKey={onlyAwaitingKey}
+              />
+            )}
+            {approvalStatuses.length > 0 && (
+              <section>
+                <h2 className="mb-3 text-base font-semibold">결재란</h2>
+                <StampSheet
+                  statuses={approvalStatuses}
+                  tasks={tasks}
+                  stamped={stamped}
+                  requestStatus={request.status}
+                />
+              </section>
+            )}
+          </div>
+
           <ApprovalDocumentSection
             request={request}
             integrityFailed={integrity ? integrityFailed : undefined}
@@ -709,9 +746,9 @@ export function ApprovalDetail({
       {/* 오른쪽: 확인하고 결정한다 */}
       <aside
         aria-label="승인 결정"
-        className="flex w-[18rem] shrink-0 flex-col border-l border-rule bg-sheet"
+        className="flex w-full shrink-0 flex-col border-t border-rule bg-sheet xl:w-[18rem] xl:border-l xl:border-t-0"
       >
-        <div className="quiet-scroll flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
+        <div className="quiet-scroll hidden min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 xl:flex xl:p-5">
           {integrity && context && (
             <IntegrityCheck
               result={integrity}
@@ -726,13 +763,14 @@ export function ApprovalDetail({
                 statuses={approvalStatuses}
                 tasks={tasks}
                 stamped={stamped}
+                requestStatus={request.status}
               />
             </section>
           )}
         </div>
 
         {context && integrity && (
-          <div className="flex flex-col gap-3 border-t border-rule p-5">
+          <div className="flex shrink-0 flex-col gap-3 border-t border-rule p-4 xl:p-5">
             {runState && runState !== "done" && (
               <SignProgress step={step} state={runState} />
             )}
@@ -781,7 +819,7 @@ export function ApprovalDetail({
                       {request.status === "PENDING_APPROVAL" && (
                         <p>
                           {nothingLeft
-                            ? "웹쉘에 연결할 수 없어 실행 요청을 다시 시도합니다."
+                            ? `${executionDeferredText()}.`
                             : "다른 작업의 승인이 모이면 실행을 요청합니다."}
                         </p>
                       )}
@@ -834,29 +872,27 @@ export function ApprovalDetail({
                   <Button
                     variant="ghost"
                     size="md"
-                    disabled={
-                      selected.length === 0 ||
-                      sign.isPending ||
-                      !accepting ||
-                      external
-                    }
+                    disabled={!canDecide}
                     onClick={() => setDecision("reject")}
                   >
                     {rejectLabel}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="md"
-                    disabled={
-                      selected.length === 0 ||
-                      sign.isPending ||
-                      !accepting ||
-                      external
-                    }
-                    onClick={() => setDecision("change")}
-                  >
-                    수정 요청
-                  </Button>
+                  {USE_MOCK ? (
+                    <Button
+                      variant="ghost"
+                      size="md"
+                      disabled={!canDecide}
+                      onClick={() => setDecision("change")}
+                    >
+                      수정 요청
+                    </Button>
+                  ) : (
+                    canDecide && approvable.length > 0 && (
+                      <p role="status" className="self-center text-xs text-ink-3">
+                        현재 서버는 수정 요청을 지원하지 않습니다.
+                      </p>
+                    )
+                  )}
                 </div>
               </>
             )}
@@ -865,7 +901,7 @@ export function ApprovalDetail({
       </aside>
 
       <ReasonModal
-        open={decision === "reject"}
+        open={USE_MOCK && decision === "reject" && canDecide}
         title={docMode ? "문서를 적용하지 않습니다" : "작업을 거부합니다"}
         description="선택한 작업을 거부하면 요청 전체가 거부 상태가 되고 요청자에게 알립니다."
         label="사유"
@@ -875,8 +911,19 @@ export function ApprovalDetail({
         onConfirm={(reason) => decide.mutate({ reason, kind: "reject" })}
         onClose={() => setDecision(null)}
       />
+      <ConfirmModal
+        open={!USE_MOCK && decision === "reject" && canDecide}
+        title={docMode ? "문서를 미적용 처리할까요?" : "요청을 거부할까요?"}
+        confirmLabel={rejectLabel}
+        danger
+        loading={decide.isPending}
+        onConfirm={() => decide.mutate({ reason: "", kind: "reject" })}
+        onClose={() => setDecision(null)}
+      >
+        선택한 작업과 요청 전체가 거부 상태로 바뀝니다. 현재 서버는 거부 사유를 저장하지 않습니다.
+      </ConfirmModal>
       <ReasonModal
-        open={decision === "change"}
+        open={USE_MOCK && decision === "change" && canDecide}
         title="수정을 요청합니다"
         description="요청은 거부 상태가 되고, 적은 내용이 요청자에게 전달됩니다."
         label="수정할 내용"
@@ -887,6 +934,6 @@ export function ApprovalDetail({
         onConfirm={(reason) => decide.mutate({ reason, kind: "change" })}
         onClose={() => setDecision(null)}
       />
-    </>
+    </div>
   );
 }

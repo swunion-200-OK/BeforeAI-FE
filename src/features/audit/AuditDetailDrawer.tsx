@@ -8,6 +8,7 @@ import { Banner, Drawer, ErrorState, Mono, Spinner } from '../../components/ui'
 import { AUDIT_DETAIL_LABEL, FAILED_CHECK_LABEL } from '../../lib/labels'
 import { useProjects } from '../../lib/queries'
 import { AuditActionLabel } from './AuditActionLabel'
+import { actorName } from './auditLogView'
 
 const MONO_KEYS = new Set(['keyId', 'planHash', 'documentId'])
 
@@ -66,17 +67,21 @@ function LogBody({ log }: { log: AuditLog }) {
       )}
 
       <dl className="grid grid-cols-[6rem_1fr] gap-x-3 gap-y-2 text-sm">
-        <Row label="시각">{fullDateTime.format(new Date(log.at))}</Row>
-        <Row label="사용자">{log.actor.name}</Row>
+        <Row label="시각">{Number.isNaN(Date.parse(log.at)) ? '-' : fullDateTime.format(new Date(log.at))}</Row>
+        <Row label="사용자">{actorName(log)}</Row>
         <Row label="액션">
           <AuditActionLabel action={log.action} />
         </Row>
-        <Row label="접속 환경">
-          <NetworkBadge network={log.network} />
-        </Row>
-        <Row label="IP">
-          <Mono>{log.ip}</Mono>
-        </Row>
+        {log.network && (
+          <Row label="접속 환경">
+            <NetworkBadge network={log.network} />
+          </Row>
+        )}
+        {log.ip && (
+          <Row label="IP">
+            <Mono>{log.ip}</Mono>
+          </Row>
+        )}
         {log.target.requestId && (
           <Row label="요청">
             <Link to={`/requests/${log.target.requestId}`} className="font-medium text-seal hover:underline">

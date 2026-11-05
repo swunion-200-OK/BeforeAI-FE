@@ -14,7 +14,7 @@ export function auditInScope(log: AuditLog, user: StoredUser): boolean {
   const request = log.target.requestId ? db().requests.find((r) => r.id === log.target.requestId) : undefined
   if (user.role === 'DEPT_MANAGER') {
     if (request) return inDepartment(request, user.departmentId)
-    const actor = db().users.find((u) => u.id === log.actor.id)
+    const actor = db().users.find((u) => u.id === log.actor?.id)
     return actor?.departmentId === user.departmentId
   }
   return request?.requester.id === user.id
@@ -31,8 +31,8 @@ function auditMatches(log: AuditLog, query: URLSearchParams): boolean {
   const to = query.get('to')
   const database = db()
   const request = log.target.requestId ? database.requests.find((r) => r.id === log.target.requestId) : undefined
-  if (actorId && log.actor.id !== actorId) return false
-  if (departmentId && database.users.find((u) => u.id === log.actor.id)?.departmentId !== departmentId) return false
+  if (actorId && log.actor?.id !== actorId) return false
+  if (departmentId && database.users.find((u) => u.id === log.actor?.id)?.departmentId !== departmentId) return false
   if (projectId && (log.target.projectId ?? request?.projectId) !== projectId) return false
   if (requestId && log.target.requestId !== requestId) return false
   if (action && log.action !== action) return false

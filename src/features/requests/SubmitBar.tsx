@@ -5,15 +5,10 @@ import { approversText } from '../../components/TaskCard'
 import { Button } from '../../components/ui'
 import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { RULE_LABEL } from '../../lib/labels'
+import { tasksTopic } from '../../lib/taskLabel'
 import { isSelfApprovable } from '../approvals/approvalFlow'
 import { CancelRequestButton } from './RequestParts'
 import { useSubmitRequest } from './useRequestActions'
-
-/** "작업 1, 3은" 처럼 순서에 맞는 조사를 붙인다. 1·3·6·7·8·0으로 끝나면 받침이 있다. 작업 ID는 UUID라 문장에 쓰지 않는다. */
-function topic(tasks: Task[]) {
-  const orders = tasks.map((task) => String(task.order))
-  return `작업 ${orders.join(', ')}${/[136780]$/.test(orders[orders.length - 1]) ? '은' : '는'}`
-}
 
 function whoApproves(statuses: TaskApprovalStatus[], task: Task) {
   const requirements = statuses.find((status) => status.taskId === task.id)?.requirements ?? []
@@ -29,6 +24,8 @@ function whoApproves(statuses: TaskApprovalStatus[], task: Task) {
 
 /** 제출 버튼을 누르면 작업별로 어떻게 되는지 한 문장으로 쓴다. 제출과 승인이 다르다는 점이 여기서 드러난다. */
 function describeSubmit(statuses: TaskApprovalStatus[], self: Task[], others: Task[], forbidden: Task[]) {
+  const all = [...self, ...others, ...forbidden]
+  const topic = (tasks: Task[]) => tasksTopic(tasks, all)
   const byApprover = new Map<string, Task[]>()
   for (const task of others.filter((item) => item.type !== 'DOC')) {
     const who = whoApproves(statuses, task)

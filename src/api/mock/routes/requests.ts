@@ -133,17 +133,17 @@ function buildDashboard(ctx: Ctx): Dashboard {
     return request.requester.id === me.id
   })
 
-  const riskDistribution: Record<Risk, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, FORBIDDEN: 0 }
+  const riskCounts: Record<Risk, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, FORBIDDEN: 0 }
   const statusCounts: Dashboard['statusCounts'] = {}
   for (const request of selected) {
     statusCounts[request.status] = (statusCounts[request.status] ?? 0) + 1
-    for (const task of request.plan?.tasks ?? []) riskDistribution[task.risk] += 1
+    for (const task of request.plan?.tasks ?? []) riskCounts[task.risk] += 1
   }
   const result: Dashboard = {
     scope,
     requestCount: selected.length,
     pendingApprovalCount: selected.filter((r) => r.status === 'PENDING_APPROVAL').length,
-    riskDistribution,
+    riskCounts,
     statusCounts,
   }
   if (scope === 'COMPANY') {

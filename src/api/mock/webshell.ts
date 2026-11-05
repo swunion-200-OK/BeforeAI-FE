@@ -9,6 +9,7 @@ import { bytesToHex } from '@noble/hashes/utils.js'
 import { cryptoService } from '../../crypto/cryptoService'
 import { bytesToBase64 } from '../../crypto/encoding'
 import { canonicalize, hashService, toHashTarget } from '../../crypto/hashService'
+import { randomUuid } from '../../crypto/randomUuid'
 import { signingService } from '../../crypto/signingService'
 import type {
   ApprovalEnvelope,
@@ -142,7 +143,7 @@ export function reportFinalStatus(request: StoredRequest) {
   // 실행이 끝나면 전용 세션도 닫는다. 다시 실행하려면 새 검증이 필요하다.
   delete db().webshell.sessions[request.id]
   closeSteps(request, 'SKIPPED')
-  request.execution = signedExecution(request, request.execution?.executionId ?? crypto.randomUUID())
+  request.execution = signedExecution(request, request.execution?.executionId ?? randomUuid())
   emitEvent(request, { type: 'FINAL_STATUS', status: request.status })
 }
 
@@ -349,7 +350,7 @@ export function requestExecution(request: StoredRequest): boolean {
   db().webshell.sessions[request.id] = taskIds
   const rollingBack = plan.kind === 'ROLLBACK'
   setStatus(request, rollingBack ? 'ROLLING_BACK' : 'RUNNING', SYSTEM_ACTOR.name)
-  request.execution = signedExecution(request, crypto.randomUUID())
+  request.execution = signedExecution(request, randomUuid())
   audit(SYSTEM_ACTOR, 'EXECUTION_STARTED', { requestId: request.id, taskIds: plan.tasks.map((t) => t.id) })
   webshellLog(request.id, null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다')
   request.execLine = 0

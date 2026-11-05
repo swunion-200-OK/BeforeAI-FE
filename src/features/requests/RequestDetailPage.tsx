@@ -7,6 +7,7 @@ import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { useProjects, useRequest } from '../../lib/queries'
 import { ApprovalDocumentSection } from '../approvals/ApprovalDocumentSection'
+import { taskNumber } from '../../lib/taskLabel'
 import { ProgressSection } from '../progress/ProgressTree'
 import { MoreDetails, RunLog, TaskApprovalLine } from './RequestDetailSections'
 import { approvalToShow } from './requestPaths'
@@ -19,7 +20,7 @@ const LIVE: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
 /** 승인 현황 줄이 같은 말을 하므로 배지를 함께 그리지 않는 작업 상태 */
 const SAID_BY_APPROVAL_LINE: TaskStatus[] = ['PENDING', 'APPROVED']
 /** 실행을 시작한 뒤에만 갈 수 있는 상태. 이때는 실행 로그를 볼 수 있다 */
-const RAN: RequestStatus[] = ['RUNNING', 'ROLLING_BACK', 'KILLED', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLED_BACK', 'ROLLBACK_FAILED']
+const RAN: RequestStatus[] = ['RUNNING', 'ROLLING_BACK', 'KILLED', 'COMPLETED', 'PARTIALLY_COMPLETED', 'FAILED', 'ROLLED_BACK', 'ROLLBACK_FAILED', 'VERIFICATION_FAILED']
 
 function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPlan: boolean }) {
   const statuses = useApprovalStatuses(request)
@@ -35,7 +36,10 @@ function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPla
             <TaskCard
               key={task.id}
               task={task}
+              number={taskNumber(task, tasks)}
               requestId={request.id}
+              requestStatus={request.status}
+              planKind={request.currentPlan?.kind}
               highlighted={request.status === 'REAPPROVAL_REQUIRED' && request.changedTaskIds?.includes(task.id)}
               spotlight={
                 request.status === 'RUNNING' && task.status === 'RUNNING'

@@ -1,6 +1,6 @@
 import { ArrowRight } from 'lucide-react'
 import type { Risk, Task, TaskChangeItem, TaskType } from '../api/types'
-import { diffStats, explanationOf } from '../lib/explain'
+import { UNCOUNTABLE_DIFF, diffStats, explanationOf } from '../lib/explain'
 import { useDepartmentNames } from '../lib/queries'
 
 function BeforeAfter({ change }: { change: TaskChangeItem }) {
@@ -107,19 +107,22 @@ export function ChangeDetails({ task }: { task: Task }) {
         </section>
       )}
 
-      <div className="grid grid-cols-[3fr_2fr] gap-8">
-        <section aria-label="어디가 바뀌나요">
-          <h4 className={PLAIN_TITLE}>어디가 바뀌나요</h4>
-          <ul className="mt-2 flex flex-col gap-3">
-            {explanation.changes.map((change, index) => (
-              <li key={index} className="flex flex-col gap-1">
-                <p className="text-base font-medium text-ink">{change.where}</p>
-                <p className="text-base text-ink-2">{change.what}</p>
-                <BeforeAfter change={change} />
-              </li>
-            ))}
-          </ul>
-        </section>
+      {/* 서버 작업에는 설명이 없어 changes가 비어 있다. 내용이 없으면 제목도 칸도 두지 않는다. */}
+      <div className={explanation.changes.length > 0 ? 'grid grid-cols-[3fr_2fr] gap-8' : ''}>
+        {explanation.changes.length > 0 && (
+          <section aria-label="어디가 바뀌나요">
+            <h4 className={PLAIN_TITLE}>어디가 바뀌나요</h4>
+            <ul className="mt-2 flex flex-col gap-3">
+              {explanation.changes.map((change, index) => (
+                <li key={index} className="flex flex-col gap-1">
+                  <p className="text-base font-medium text-ink">{change.where}</p>
+                  <p className="text-base text-ink-2">{change.what}</p>
+                  <BeforeAfter change={change} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section aria-label="되돌릴 수 있나요">
           <h4 className={PLAIN_TITLE}>되돌릴 수 있나요</h4>
@@ -136,6 +139,7 @@ export function ChangeStats({ task }: { task: Task }) {
   const { diff, command, query, body } = task.content ?? {}
   if (diff !== undefined) {
     const stats = diffStats(diff)
+    if (!stats.wellFormed) return <span className="text-sm text-ink-3">{UNCOUNTABLE_DIFF}</span>
     return (
       <span className="inline-flex items-center gap-1.5 text-sm text-ink-3 tabular-nums">
         파일 {Math.max(stats.files, 1)}개

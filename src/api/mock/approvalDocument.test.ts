@@ -278,6 +278,31 @@ describe('승인 기록 문서 목 API', () => {
     ])
   })
 
+  it('작업 번호는 화면처럼 1부터 세고, 해시 대상인 order는 바꾸지 않는다', async () => {
+    const plan = db().requests.find((request) => request.id === 'r-main')!.plan!
+    // 서버의 AI 분석 Plan처럼 0부터 매긴다.
+    plan.tasks.forEach((task, index) => {
+      task.order = index
+    })
+    await approvalDocumentApi.version('r-main', 1)
+    const [first, second] = plan.tasks
+    expect(drawn).toContain(`#1 ${first.title}`)
+    expect(drawn).toContain(`#2 ${second.title}`)
+    expect(drawn.some((text) => text.startsWith('#0'))).toBe(false)
+    expect(plan.tasks.map((task) => task.order)).toEqual([0, 1])
+  })
+
+  it('문서 롤백 Plan은 판을 만들지 않고, 롤백 전 판의 내용과 도장을 그대로 보여 준다', async () => {
+    const before = await summary('r-completed')
+    const { currentPlan } = await requestsApi.get('r-completed')
+    await requestsApi.rollback('r-completed', { taskIds: [currentPlan!.tasks[0].id], targetVersion: 1 })
+    expect((await requestsApi.get('r-completed')).currentPlan!.kind).toBe('ROLLBACK')
+    expect(await summary('r-completed')).toEqual(before)
+    await approvalDocumentApi.version('r-completed', 2)
+    expect(drawn).toContain(`#2 ${currentPlan!.tasks[1].title}`)
+    expect(drawn).toContain('김담당')
+  })
+
   it('이전 판의 저장은 상한이 있고 판 번호는 이어진다', async () => {
     for (let round = 0; round < 7; round += 1) {
       const { currentPlanId } = await requestsApi.get('r-main')

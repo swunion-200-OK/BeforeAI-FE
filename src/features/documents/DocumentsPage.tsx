@@ -3,7 +3,6 @@ import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router'
 import { documentsApi, requestsApi } from '../../api/endpoints'
 import { ApiError, errorMessage } from '../../api/errors'
-import { isMissingOnServer } from '../../api/missingOnServer'
 import type { DocumentSummary, DocumentVersionSummary, RequestStatus } from '../../api/types'
 import { DiffViewer } from '../../components/DiffViewer'
 import { toast } from '../../components/toast'
@@ -23,12 +22,11 @@ import {
 import { makeUnifiedDiff } from '../../lib/diff'
 import { diffStats } from '../../lib/explain'
 import { formatDateTime } from '../../lib/format'
-import { REQUEST_STATUS_LABEL } from '../../lib/labels'
+import { REQUEST_STATUS_LABEL, labelOf } from '../../lib/labels'
 import { usePendingApprovals, useProjects, useRefreshAll, useRequest } from '../../lib/queries'
+import { ROLLBACK_ALLOWED, isDocumentsLoading, rollbackBlockedReason as blockedReasonOf, rollbackTaskIds } from './documentsView'
 import { MarkdownText } from './MarkdownText'
 
-/** 문서 롤백을 걸 수 있는 요청 상태 (API 명세 6장) */
-const ROLLBACK_ALLOWED: RequestStatus[] = ['COMPLETED', 'PARTIALLY_COMPLETED', 'KILLED', 'ROLLBACK_FAILED']
 /** 아직 진행 중이라 끝나면 다시 시도할 수 있는 상태 */
 const IN_PROGRESS: RequestStatus[] = [
   'ANALYZING',
@@ -103,26 +101,27 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
   const appliedBy = items.find((item) => item.requestId)?.requestId ?? null
   const isCurrent = selected === document.currentVersion
 
-  // 대상 요청의 상태를 미리 봐서, 눌러 보기 전에 왜 안 되는지 알려 준다. 조회 권한이 없으면 서버 판단에 맡긴다.
+  // 서버는 문서가 아니라 요청의 문서 작업을 받으므로 대상 요청의 지금 Plan에서 그 작업을 찾는다. 상태도 미리 봐서 왜 안 되는지 알려 준다.
   const appliedRequest = useRequest(appliedBy ?? undefined)
   const requestStatus = appliedRequest.data?.status
   const statusBlocks = requestStatus !== undefined && !ROLLBACK_ALLOWED.includes(requestStatus)
+  const taskIds = rollbackTaskIds(appliedRequest.data?.currentPlan, document.path)
 
   const rollback = useMutation({
     meta: { silent: true },
-    mutationFn: () => requestsApi.rollback(appliedBy as string, { documentId: document.id, version: selected }),
+    mutationFn: () => requestsApi.rollback(appliedBy as string, { taskIds, targetVersion: selected }),
     onError: (error) => {
-      // TODO(spec): 명세 6장은 ROLLED_BACK 상태에서 다시 롤백을 허용하지 않는다.
+      // 서버는 ROLLED_BACK 상태에서 다시 롤백을 받지 않는다 (RequestRollbackService).
       // 문서 버전이 요청에 묶여 있어 한 번 되돌린 문서는 새 문서 작업이 적용되기 전까지 다시 되돌릴 수 없다.
       if (error instanceof ApiError && error.code === 'INVALID_STATE') setRollbackRefused(true)
       else toast.error(errorMessage(error))
     },
-    onSuccess: async ({ id }) => {
+    onSuccess: async ({ requestId }) => {
       // 화면을 옮기기 전에 확인 창을 먼저 닫는다. 그래야 토스트가 닫힌 창 안에 갇히지 않는다.
       setConfirming(false)
       await refreshAll()
       toast.success('롤백 Plan을 만들었습니다. 승인하면 문서가 되돌아갑니다')
-      navigate(`/approvals/${id}`)
+      navigate(`/approvals/${requestId}`)
     },
     onSettled: () => setConfirming(false),
   })
@@ -134,11 +133,12 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
   }
 
   const selectedItem = items.find((item) => item.version === selected)
-  const rollbackBlockedReason = !appliedBy
-    ? '이 문서를 적용한 요청이 없어 되돌릴 수 없습니다'
-    : statusBlocks
-      ? `이 문서를 마지막으로 적용한 요청이 ${REQUEST_STATUS_LABEL[requestStatus]} 상태라 롤백할 수 없습니다`
-      : null
+  const rollbackBlockedReason = blockedReasonOf({
+    appliedBy,
+    requestPending: Boolean(appliedBy) && appliedRequest.isPending,
+    requestStatus,
+    taskIds,
+  })
   const showBlockedNotice = !isCurrent && Boolean(appliedBy) && (statusBlocks || rollbackRefused)
   const stillRunning = requestStatus !== undefined && IN_PROGRESS.includes(requestStatus)
   // 첫 버전은 비교할 앞 버전이 없다.
@@ -181,7 +181,8 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
         {canCompare ? compareToggle : <Tooltip text="첫 버전이라 비교할 이전 버전이 없습니다">{compareToggle}</Tooltip>}
         {selectedItem && (
           <span className="text-[0.875rem] text-ink-3">
-            {selectedItem.createdBy.name}, {formatDateTime(selectedItem.createdAt)},{' '}
+            {selectedItem.createdBy && `${selectedItem.createdBy.name}, `}
+            {formatDateTime(selectedItem.createdAt)},{' '}
             {selectedItem.requestId ? (
               <>
                 적용 요청{' '}
@@ -215,7 +216,7 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
             요청
           </Link>
           {stillRunning ? (
-            <>이 {requestStatus && REQUEST_STATUS_LABEL[requestStatus]} 상태입니다. 그 요청이 끝난 뒤 다시 시도해 주세요.</>
+            <>이 {requestStatus && labelOf(REQUEST_STATUS_LABEL, requestStatus)} 상태입니다. 그 요청이 끝난 뒤 다시 시도해 주세요.</>
           ) : (
             <>
               이 이미 롤백을 마쳤거나 진행 중입니다. 이전 내용으로 되돌리려면 작업 요청에서 문서 수정을 새 요청으로 만들어
@@ -271,16 +272,18 @@ export default function DocumentsPage() {
   if (!documentId && listed.length > 0) return <Navigate to={`/documents/${listed[0].id}`} replace />
 
   if (projects.isError) return <ErrorState error={projects.error} onRetry={() => projects.refetch()} />
-  if (documents.isError && isMissingOnServer(documents.error)) {
+  if (documents.isError) return <ErrorState error={documents.error} onRetry={() => documents.refetch()} />
+  if (!projects.data || isDocumentsLoading({ projectsPending: projects.isPending, projectCount: projectIds.length, documentsPending: documents.isPending })) {
+    return <Spinner />
+  }
+  if (projectIds.length === 0) {
     return (
       <>
         <PageHeader title="문서" />
-        <ErrorState error={documents.error} />
+        <EmptyState title="볼 수 있는 프로젝트가 없습니다">프로젝트가 생기면 문서가 여기에 나타납니다.</EmptyState>
       </>
     )
   }
-  if (documents.isError) return <ErrorState error={documents.error} onRetry={() => documents.refetch()} />
-  if (projects.isPending || documents.isPending) return <Spinner />
 
   return (
     <div className="grid grid-cols-[15rem_minmax(0,1fr)] items-start gap-8">

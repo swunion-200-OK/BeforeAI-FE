@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import type { AuditAction } from '../../api/types'
 import { Field, Select, TextInput } from '../../components/ui'
 import { AUDIT_ACTION_LABEL, NETWORK_LABEL } from '../../lib/labels'
 import { useDepartments, useProjects } from '../../lib/queries'
-import type { FilterKey } from './auditFilterParams'
+import { isRequestIdFilter, type FilterKey } from './auditFilterParams'
 
 const ACTIONS = Object.keys(AUDIT_ACTION_LABEL) as AuditAction[]
 
@@ -20,6 +21,18 @@ export function AuditFilters({
   const departments = useDepartments()
   const projects = useProjects()
   const value = (key: FilterKey) => params.get(key) ?? ''
+  const [typedInvalid, setTypedInvalid] = useState(false)
+  const requestIdInvalid = typedInvalid || (value('requestId') !== '' && !isRequestIdFilter(value('requestId')))
+  // 형식이 틀리면 서버에 묻지 않는다. 입력은 그대로 두고 칸 아래에 알린다.
+  const commitRequestId = (typed: string) => {
+    const next = typed.trim()
+    if (next && !isRequestIdFilter(next)) {
+      setTypedInvalid(true)
+      return
+    }
+    setTypedInvalid(false)
+    onChange('requestId', next)
+  }
 
   const actorId = value('actorId')
   const actorOptions =
@@ -67,7 +80,7 @@ export function AuditFilters({
           </Select>
         )}
       </Field>
-      <Field label="요청 ID">
+      <Field label="요청 ID" error={requestIdInvalid ? '요청 ID 형식이 올바르지 않습니다' : null}>
         {(id) => (
           // URL 값이 바뀌면 key가 바뀌어 입력칸도 새 값으로 다시 그려진다.
           <TextInput
@@ -76,9 +89,9 @@ export function AuditFilters({
             id={id}
             defaultValue={value('requestId')}
             placeholder="입력 후 Enter"
-            onBlur={(event) => onChange('requestId', event.target.value.trim())}
+            onBlur={(event) => commitRequestId(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') onChange('requestId', event.currentTarget.value.trim())
+              if (event.key === 'Enter') commitRequestId(event.currentTarget.value)
             }}
           />
         )}

@@ -17,6 +17,7 @@ import type {
 } from '../../api/types'
 import { isAnalysisOverdue } from '../../lib/analysisWait'
 import { FAILED_CHECK_LABEL, RULE_LABEL } from '../../lib/labels'
+import { allApprovedNowText } from '../requests/statusBannerText'
 
 // ── 웹쉘 검증 관문 ─────────────────────────────────────────
 
@@ -166,7 +167,7 @@ function waitingForApproval(root: ProgressRequestNode, since: string | undefined
     // 승인 노드를 받지 못했을 뿐 승인을 기다리는 작업이 있으면 모였다고 말하지 않는다.
     const undecided = tasksOf(root).filter((task) => task.status === 'PENDING')
     if (undecided.length > 0) return { text: '승인을 기다립니다', since, leaves: undecided.map((task) => task.id), mode: 'wait' }
-    return { text: '승인이 모두 모였습니다. 웹쉘에 실행을 요청하는 중입니다', since, leaves: [GATE_ID], mode: 'wait' }
+    return { text: allApprovedNowText(), since, leaves: [GATE_ID], mode: 'wait' }
   }
   if (waiting.length > 1) {
     const names = waiting.map(({ task }) => title(task)).join(', ')
@@ -288,6 +289,9 @@ export function progressNow(
       return { text: '문서를 이전 버전으로 되돌렸습니다', leaves: [], mode: null }
     case 'ROLLBACK_FAILED':
       return { text: '문서를 되돌리지 못했습니다', leaves: failedLeaves(root), mode: 'failed' }
+    default:
+      // 서버가 새 상태를 보내도 화면이 깨지지 않게 한다. 알지 못하는 상태를 설명하지 않는다.
+      return { text: '요청 상태를 확인해 주세요', leaves: [], mode: null }
   }
 }
 

@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { parseUnifiedDiff, type DiffCell } from '../lib/diff'
+import { parseUnifiedDiff, readUnifiedDiff, type DiffCell } from '../lib/diff'
+import { CodeBlock } from './ui'
 
 const CELL_BG = {
   context: '',
@@ -39,6 +40,9 @@ function Cell({ cell, side }: { cell: DiffCell | null; side: 'left' | 'right' })
 /** unified diff를 좌우로 나란히 보여 준다. */
 export function DiffViewer({ diff }: { diff: string }) {
   const rows = useMemo(() => parseUnifiedDiff(diff), [diff])
+  const wellFormed = useMemo(() => readUnifiedDiff(diff).wellFormed, [diff])
+  // 읽지 못한 변경을 "바뀐 내용 없음"이라고 하면 안 된다. 원문을 그대로 보여 준다.
+  if (!wellFormed) return <CodeBlock label="형식을 읽지 못해 원문을 그대로 보여 줍니다">{diff}</CodeBlock>
   if (!rows.some((row) => row.type === 'line')) {
     return <p className="rounded-md border border-rule bg-sheet-alt p-3 text-sm text-ink-3">바뀐 내용이 없습니다.</p>
   }

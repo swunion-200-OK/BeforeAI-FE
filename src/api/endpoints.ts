@@ -62,6 +62,7 @@ import type {
   Risk,
   Role,
   RollbackBody,
+  RollbackResponse,
   SigningKey,
   SlackIntegration,
   SpecChangeRequest,
@@ -102,27 +103,32 @@ const withItems = <T, R>(page: Page<T>, change: (item: T) => R): Page<R> => ({ .
 /** 명세에 없는 필드는 빠지거나 null로 올 수 있다. */
 type Loose<T> = { [K in keyof T]?: T[K] | null }
 
-/** 사람 정보가 빠졌을 때 화면이 깨지지 않게 하는 자리 값. 지어낸 이름 대신 모른다고 쓴다. */
-const UNKNOWN_USER = { id: '', name: '알 수 없음', departmentId: null }
-
-function withVersionDefaults<T extends { createdBy?: DocumentVersionSummary['createdBy'] | null }>(version: T) {
-  return { ...version, createdBy: version.createdBy ?? UNKNOWN_USER }
+/** 시스템 기록은 행위자, 접속 환경, IP가 비어 있다 (서버 AuditLog). 화면은 null만 다루면 되게 한다. */
+function withAuditDefaults(raw: Pick<AuditLog, 'id' | 'at' | 'action'> & Loose<AuditLog>): AuditLog {
+  return { ...raw, actor: raw.actor ?? null, target: raw.target ?? {}, network: raw.network ?? null, ip: raw.ip ?? null, detail: raw.detail ?? {} }
 }
 
-/** TODO(spec): 롤백 응답 모양은 명세에 없다 (3.7). 제출 응답(4.3)과 같다고 보되, 상태를 이미 바꾼 뒤 여기서 터지지 않게 한다. */
-function withSubmitDefaults(requestId: string, result: Omit<SubmitResponse, 'id' | 'selfApprovableTaskIds'> & Loose<SubmitResponse>): SubmitResponse {
-  return { ...result, id: result.id ?? requestId, selfApprovableTaskIds: result.selfApprovableTaskIds ?? [] }
+/** 서버 라벨은 "{order}. 제목"이고 AI 분석 Plan의 order는 0부터다. 화면 번호는 1부터 센다. order는 해시 대상이라 라벨만 바꾼다. */
+function withTaskNumbers(children: ProgressNode[]): ProgressNode[] {
+  let number = 0
+  return children.map((child) => {
+    if (child.type !== 'TASK') return child
+    number += 1
+    return { ...child, label: (child.label ?? '').replace(/^\d+\.\s*/, `${number}. `) }
+  })
 }
 
 /**
+ * 서버는 null 필드를 내려 주지 않아(ProgressNodeResponse) dependsOn이나 children이 빠질 수 있다. 화면은 항상 배열을 본다.
  * 서버의 승인 노드 ID는 approval:{승인 기록 id}라서 한 번에 여러 작업을 서명하면 작업마다 같은 ID가 나온다.
  * 화면은 ID로 노드를 찾고 선을 그리므로, 작업 ID를 앞에 붙여 트리 안에서 하나로 만든다.
  */
 function withUniqueNodeIds<T extends ProgressNode>(node: T): T {
   if (node.type === 'APPROVAL' || node.type === 'STEP') return node
-  if (node.type !== 'TASK') return { ...node, children: node.children.map(withUniqueNodeIds) }
-  const children = node.children.map((child) => (child.type === 'APPROVAL' ? { ...child, id: `${node.id}/${child.id}` } : child))
-  return { ...node, children }
+  const nodeChildren: ProgressNode[] = node.children ?? []
+  if (node.type !== 'TASK') return { ...node, children: withTaskNumbers(nodeChildren).map(withUniqueNodeIds) }
+  const children = nodeChildren.map((child) => (child.type === 'APPROVAL' ? { ...child, id: `${node.id}/${child.id}` } : child))
+  return { ...node, label: node.label ?? '', dependsOn: node.dependsOn ?? [], children }
 }
 
 function withTreeIds(tree: ProgressTree): ProgressTree {
@@ -164,16 +170,13 @@ const SIGNING_KEY_ALGORITHM = 'Ed25519'
 
 const NO_RISKS: Record<Risk, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, FORBIDDEN: 0 }
 
-/**
- * TODO(spec): 대시보드 필드 이름은 명세에 없다 (3.9). 집계가 빠졌을 때 0으로 채우면 "실행 중 0건"이라는 거짓말이 되므로
- * 모르는 값은 null로 두고 화면이 모른다고 표시한다.
- */
+/** 집계가 빠졌을 때 0으로 채우면 "실행 중 0건"이라는 거짓말이 되므로 모르는 값은 null로 두고 화면이 모른다고 표시한다. */
 function withDashboardDefaults(raw: Pick<Dashboard, 'scope'> & Loose<Dashboard>): Dashboard {
   return {
     ...raw,
     requestCount: raw.requestCount ?? null,
     pendingApprovalCount: raw.pendingApprovalCount ?? null,
-    riskDistribution: raw.riskDistribution ? { ...NO_RISKS, ...raw.riskDistribution } : null,
+    riskCounts: raw.riskCounts ? { ...NO_RISKS, ...raw.riskCounts } : null,
     statusCounts: raw.statusCounts ?? null,
     byDepartment: raw.byDepartment ?? undefined,
   }
@@ -227,7 +230,9 @@ export const adminApi = {
   signingKeys: () => allPages<AdminSigningKey>('/admin/signing-keys'),
   registerKey: (keyId: string, adminProof: AdminProof) =>
     http<RegisterKeyResponse>('POST', `/admin/signing-keys/${keyId}/register`, { body: { adminProof } }),
-  revokeKey: (keyId: string) => http<void>('DELETE', `/admin/signing-keys/${keyId}`),
+  /** 등록된 키는 adminProof가 필수이고, 등록 대기 키는 본문 없이 폐기한다 (서버 SigningKeyCommandService.revoke) */
+  revokeKey: (keyId: string, adminProof?: AdminProof) =>
+    http<void>('DELETE', `/admin/signing-keys/${keyId}`, adminProof ? { body: { adminProof } } : undefined),
   updateSlack: (body: SlackIntegration) => whenOnServer(http<SlackIntegration>('PUT', '/admin/integrations/slack', { body })),
   killAll: (reason: string) => http<KillAllResponse>('POST', '/admin/kill-all', { body: { reason } }),
   createProject: (body: {
@@ -251,8 +256,9 @@ export const projectsApi = {
   updateSpec: (projectId: string, body: string) =>
     http<ProjectSpec>('PUT', `/projects/${projectId}/spec`, { body: { body } }),
   specVersions: (projectId: string) => allPages<ProjectSpec>(`/projects/${projectId}/spec/versions`),
-  restoreSpec: (projectId: string, version: number) =>
-    http<ProjectSpec>('POST', `/projects/${projectId}/spec/versions/${version}/restore`),
+  /** 사유는 선택이다. 없으면 본문 없이 보낸다 (서버 SpecRestoreRequest) */
+  restoreSpec: (projectId: string, version: number, reason?: string) =>
+    http<ProjectSpec>('POST', `/projects/${projectId}/spec/versions/${version}/restore`, reason?.trim() ? { body: { reason: reason.trim() } } : undefined),
   updateOwners: (projectId: string, ownerIds: string[]) =>
     whenOnServer(http<Project>('PUT', `/projects/${projectId}/owners`, { body: { ownerIds } })),
   createChangeRequest: (projectId: string, body: { content: string; reason: string }) =>
@@ -336,9 +342,9 @@ export const requestsApi = {
       lastVersion === undefined ? undefined : String(lastVersion),
     ),
   taskDocument: (requestId: string, taskId: string) =>
-    whenOnServer(http<TaskDocument>('GET', `/requests/${requestId}/tasks/${taskId}/document`)),
+    http<TaskDocument>('GET', `/requests/${requestId}/tasks/${taskId}/document`),
   rollback: (requestId: string, body: RollbackBody) =>
-    whenOnServer(http<SubmitResponse>('POST', `/requests/${requestId}/rollback`, { body })).then((result) => withSubmitDefaults(requestId, result)),
+    http<RollbackResponse>('POST', `/requests/${requestId}/rollback`, { body }),
 }
 
 export const approvalsApi = {
@@ -364,11 +370,16 @@ export const approvalDocumentApi = {
 }
 
 export const documentsApi = {
-  list: (projectId: string) => whenOnServer(allPages<DocumentSummary>(`/projects/${projectId}/documents`)),
-  versions: (documentId: string) =>
-    whenOnServer(allPages<DocumentVersionSummary>(`/documents/${documentId}/versions`)).then((page) => withItems(page, withVersionDefaults)),
-  version: (documentId: string, version: number) =>
-    whenOnServer(http<DocumentVersion>('GET', `/documents/${documentId}/versions/${version}`)).then(withVersionDefaults),
+  list: (projectId: string) => allPages<DocumentSummary>(`/projects/${projectId}/documents`),
+  versions: (documentId: string) => allPages<DocumentVersionSummary>(`/documents/${documentId}/versions`),
+  version: (documentId: string, version: number) => http<DocumentVersion>('GET', `/documents/${documentId}/versions/${version}`),
+  /** 지금 적용된 버전. 문서 한 건을 읽는 API가 없어 프로젝트의 문서 목록에서 currentVersion을 찾는다 */
+  current: async (projectId: string, documentId: string) => {
+    const { items } = await documentsApi.list(projectId)
+    const document = items.find((item) => item.id === documentId)
+    if (!document) throw new Error('문서를 찾을 수 없습니다')
+    return documentsApi.version(documentId, document.currentVersion)
+  },
 }
 
 export const editorApi = {
@@ -382,17 +393,18 @@ export const editorApi = {
 
 export const dashboardApi = {
   get: (scope: DashboardScope, departmentId?: string) =>
-    whenOnServer(http<Dashboard>('GET', '/dashboard', { query: { scope, departmentId } })).then(withDashboardDefaults),
+    http<Dashboard>('GET', '/dashboard', { query: { scope, departmentId } }).then(withDashboardDefaults),
 }
 
 export const auditApi = {
-  list: (query: AuditLogQuery) => whenOnServer(http<Page<AuditLog>>('GET', '/audit-logs', { query: { ...query } })),
-  get: (logId: string) => whenOnServer(http<AuditLog>('GET', `/audit-logs/${logId}`)),
+  list: (query: AuditLogQuery) =>
+    http<Page<AuditLog>>('GET', '/audit-logs', { query: { ...query } }).then((page) => withItems(page, withAuditDefaults)),
+  get: (logId: string) => http<AuditLog>('GET', `/audit-logs/${logId}`).then(withAuditDefaults),
 }
 
 export const auditExportApi = {
-  create: (body: CreateAuditExportBody) => whenOnServer(http<AuditExportAccepted>('POST', '/audit-logs/exports', { body })),
-  list: () => whenOnServer(http<Page<AuditExport>>('GET', '/audit-logs/exports')),
-  get: (exportId: string) => whenOnServer(http<AuditExport>('GET', `/audit-logs/exports/${exportId}`)),
-  download: (exportId: string, fileName: string) => whenOnServer(downloadFile(`/audit-logs/exports/${exportId}/file`, fileName)),
+  create: (body: CreateAuditExportBody) => http<AuditExportAccepted>('POST', '/audit-logs/exports', { body }),
+  list: () => http<Page<AuditExport>>('GET', '/audit-logs/exports'),
+  get: (exportId: string) => http<AuditExport>('GET', `/audit-logs/exports/${exportId}`),
+  download: (exportId: string, fileName: string) => downloadFile(`/audit-logs/exports/${exportId}/file`, fileName),
 }

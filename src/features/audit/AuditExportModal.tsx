@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, CircleCheck } from 'lucide-react'
 import { useState } from 'react'
+import { USE_MOCK } from '../../api/client'
 import { ApiError, errorMessage } from '../../api/errors'
 import { auditExportApi } from '../../api/endpoints'
 import type { AuditExport, AuditExportAccepted, AuditLogQuery, ExportFormat, Role } from '../../api/types'
@@ -79,7 +80,7 @@ function Processing({ rowCount }: { rowCount: number }) {
       <p className="text-xl font-semibold text-ink">파일을 만들고 있습니다</p>
       <p className="text-base text-ink-2">{rowCountText(rowCount)}</p>
       <div className="my-1 h-1 w-full animate-pulse bg-seal motion-reduce:animate-none" role="progressbar" aria-label="파일 만드는 중" />
-      <p className="text-sm text-ink-3">창을 닫아도 계속 만듭니다. 준비되면 Slack으로 알려 드립니다.</p>
+      <p className="text-sm text-ink-3">창을 닫아도 계속 만듭니다. {USE_MOCK ? '준비되면 Slack으로 알려 드립니다.' : '다시 열면 이어서 볼 수 있습니다.'}</p>
     </div>
   )
 }
