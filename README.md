@@ -104,8 +104,10 @@ VITE_API_BASE_URL=https://service.example.com/api/v1 npm run build
 | `hashService.computePlanHash` | 실제 구현 (RFC 8785 JCS + SHA-256) |
 | `signingService.sign` / `verify*` | 실제 구현 (Ed25519) |
 | `cryptoService.encryptForWebshell` | 실제 구현 (RFC 9180 HPKE: DHKEM(X25519, HKDF-SHA256) / HKDF-SHA256 / AES-256-GCM). `info`·AAD·키 표기는 명세에 없어 임시값이며 백엔드와 맞춰야 합니다 |
-| 기기 키 저장 (`deviceStore`) | **목**: localStorage에 둡니다. 운영에서는 내보낼 수 없는 키로 바꿔야 합니다 |
+| 기기 키 저장 (`deviceStore`, `privateSigningKeyStore`) | WebCrypto Ed25519 비추출 개인키를 IndexedDB에 보관합니다 |
 | 웹쉘 (`src/api/mock/webshell.ts`) | **목**: 고정 키로 서명하지만, 서명·해시·1회용 ID 검증은 실제로 수행합니다. 연결 끊김은 `mockConfig.webshellReachable = false`로 재현합니다 |
+
+개인키 원문은 localStorage와 일반 앱 저장소에 두지 않습니다. 기존 v2 localStorage 키는 시작할 때 IndexedDB로 옮기며, 이전할 수 없으면 원문을 지우고 관리자 키 폐기 후 재등록을 안내합니다. 키는 브라우저 프로필별로 분리되고 로그아웃해도 유지됩니다. 기기 변경이나 브라우저 저장 데이터 삭제 시 기존 키 폐기와 재등록이 필요합니다.
 
 ## 폴더 구조
 

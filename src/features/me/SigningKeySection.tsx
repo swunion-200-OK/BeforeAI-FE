@@ -30,7 +30,7 @@ type KeyState = 'ready' | 'waiting' | 'none'
 const STATE_VIEW: Record<KeyState, { label: string; color: string; text: string }> = {
   ready: { label: '등록됨', color: 'text-low', text: '이 기기에서 승인할 수 있습니다.' },
   waiting: { label: '등록 대기', color: 'text-medium', text: '관리자 등록을 기다리고 있습니다.' },
-  none: { label: '없음', color: 'text-ink', text: '이 기기에서 키를 만들고 관리자 등록을 받으면 승인할 수 있습니다.' },
+  none: { label: '없음', color: 'text-ink', text: '이 브라우저에서 키를 만들고 관리자 등록을 받으면 승인할 수 있습니다.' },
 }
 
 function shorten(key: string) {
@@ -60,12 +60,19 @@ export function SigningKeySection({ me }: { me: Me }) {
     queryKey: ['me', 'signing-keys'],
     queryFn: async () => (await meApi.signingKeys()).items,
   })
+  const localSigningKey = useQuery({
+    queryKey: ['device-signing-key', me.id],
+    queryFn: () => signingService.hasDeviceKey(me.id),
+  })
   const device = deviceStore.get(me.id)
-  const hasDeviceKey = signingService.hasDeviceKey(me.id)
+  const hasDeviceKey = localSigningKey.data === true
   const deviceKeyStatus = keys.data?.find((key) => key.id === device.keyId)?.status
   // 고정한 웹쉘 공개키가 없으면 서명을 암호화할 수 없어 쓸 수 없는 키다. 새로 만들어 고정한다.
   const deviceKeyUsable =
-    hasDeviceKey && Boolean(device.pinnedWebshellKey) && (deviceKeyStatus === 'REGISTERED' || deviceKeyStatus === 'PENDING')
+    hasDeviceKey &&
+    device.keyMigrationStatus !== 'NEEDS_REENROLLMENT' &&
+    Boolean(device.pinnedWebshellKey) &&
+    (deviceKeyStatus === 'REGISTERED' || deviceKeyStatus === 'PENDING')
   // 서버는 폐기되지 않은 키를 사용자당 하나만 받는다. 남은 키가 있으면 폐기되기 전까지 새로 만들 수 없다.
   const hasActiveKey = keys.data?.some((key) => key.status !== 'REVOKED') ?? false
   const isAdmin = me.role === 'ADMIN'
@@ -84,18 +91,20 @@ export function SigningKeySection({ me }: { me: Me }) {
         throw new PinMismatchError()
       }
       cryptoService.assertWebshellKey(webshellKey)
-      const { publicKey } = signingService.generateDeviceKey(me.id)
+      const previousKey = await signingService.snapshotDeviceKey(me.id)
+      const { publicKey } = await signingService.generateDeviceKey(me.id)
       deviceStore.update(me.id, { pinnedWebshellKey: webshellKey })
       try {
         const key = await meApi.submitSigningKey(publicKey)
         deviceStore.update(me.id, { keyId: key.id })
         return key
       } catch (error) {
-        // 제출에 실패하면 새 비밀키와 옛 keyId가 섞이지 않게 이전 상태로 되돌린다.
+        // 제출에 실패하면 새 공개키와 옛 keyId가 섞이지 않게 IndexedDB의 키 쌍도 복원한다.
+        await signingService.restoreDeviceKey(me.id, previousKey)
         deviceStore.update(me.id, {
           keyId: before.keyId,
-          secretKey: before.secretKey,
           publicKey: before.publicKey,
+          keyMigrationStatus: before.keyMigrationStatus,
           pinnedWebshellKey: before.pinnedWebshellKey,
         })
         throw error
@@ -104,6 +113,7 @@ export function SigningKeySection({ me }: { me: Me }) {
     onMutate: () => setPinMismatch(false),
     onSuccess: async () => {
       toast.success(isAdmin ? '승인 키를 만들어 제출했습니다. 설정의 승인 키 탭에서 등록해 주세요' : '승인 키를 만들어 제출했습니다. 관리자 등록을 기다려 주세요')
+      await localSigningKey.refetch()
       await refreshAll()
     },
     onError: (error) => {
@@ -115,9 +125,26 @@ export function SigningKeySection({ me }: { me: Me }) {
   const state: KeyState = deviceKeyUsable && deviceKeyStatus === 'REGISTERED' ? 'ready' : deviceKeyUsable ? 'waiting' : 'none'
   const view = STATE_VIEW[state]
   const elsewhere = state === 'none' && hasActiveKey
+  const needsReenrollment = device.keyMigrationStatus === 'NEEDS_REENROLLMENT'
   const revoked = state === 'none' && !hasActiveKey && deviceKeyStatus === 'REVOKED'
   // 키 목록을 모르는 동안에는 만들기를 내놓지 않는다. 서버가 거절할 요청을 보내게 된다.
-  const canCreate = keys.isSuccess && !hasActiveKey
+  const canCreate = keys.isSuccess && localSigningKey.isSuccess && !hasActiveKey
+  const stateMessage = (() => {
+    if (revoked) return '승인하려면 새 키를 만들어 주세요.'
+    if (elsewhere && needsReenrollment) {
+      return isAdmin
+        ? '기존 키를 이 브라우저로 안전하게 옮기지 못했습니다. 설정의 승인 키 탭에서 기존 키를 폐기한 뒤 새 키를 등록해 주세요.'
+        : '기존 키를 이 브라우저로 안전하게 옮기지 못했습니다. 관리자에게 기존 키 폐기와 재등록을 요청해 주세요.'
+    }
+    if (elsewhere) {
+      return isAdmin
+        ? '다른 기기의 키가 남아 있습니다. 설정의 승인 키 탭에서 폐기하면 이 브라우저에서 새로 만들 수 있습니다.'
+        : '다른 기기의 키가 남아 있습니다. 관리자가 폐기하면 이 브라우저에서 새로 만들 수 있습니다.'
+    }
+    if (needsReenrollment) return '기존 키를 이 브라우저로 안전하게 옮기지 못했습니다. 새 키를 만들어 관리자 등록을 받아 주세요.'
+    if (state === 'waiting' && isAdmin) return '설정의 승인 키 탭에서 직접 등록해 주세요.'
+    return view.text
+  })()
 
   return (
     <Sheet flush>
@@ -133,15 +160,7 @@ export function SigningKeySection({ me }: { me: Me }) {
                   {revoked ? '폐기됨' : elsewhere ? '이 기기에 없음' : view.label}
                 </p>
                 <p className="mt-1 text-sm text-ink-2">
-                  {revoked
-                    ? '승인하려면 새 키를 만들어 주세요.'
-                    : elsewhere
-                      ? isAdmin
-                        ? '다른 기기의 키가 남아 있습니다. 설정의 승인 키 탭에서 폐기하면 이 기기에서 새로 만들 수 있습니다.'
-                        : '다른 기기의 키가 남아 있습니다. 관리자가 폐기하면 이 기기에서 새로 만들 수 있습니다.'
-                      : state === 'waiting' && isAdmin
-                        ? '설정의 승인 키 탭에서 직접 등록해 주세요.'
-                        : view.text}
+                  {stateMessage}
                 </p>
               </div>
               {canCreate && (
@@ -165,6 +184,10 @@ export function SigningKeySection({ me }: { me: Me }) {
           </Banner>
         )}
 
+        {localSigningKey.isError && (
+          <ErrorState error={localSigningKey.error} onRetry={() => localSigningKey.refetch()} />
+        )}
+
         {keys.isSuccess && (
           <details className="group">
             <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm text-ink-3 hover:text-ink-2 [&::-webkit-details-marker]:hidden">
@@ -173,7 +196,9 @@ export function SigningKeySection({ me }: { me: Me }) {
             </summary>
             <div className="mt-4 flex flex-col gap-4">
               <Stepper steps={stepsFor(state)} />
-              <p className="text-sm text-ink-2">승인 서명은 이 기기의 개인키로 만들고, 개인키는 기기 밖으로 나가지 않습니다.</p>
+              <p className="text-sm text-ink-2">
+                승인 서명은 이 브라우저 프로필에 저장된 비추출 키로 만듭니다. 로그아웃해도 키는 이 브라우저에 남고 계정별로 분리됩니다. 다른 브라우저나 기기로 복사·복구할 수 없으므로 기기를 바꾸거나 브라우저 저장 데이터를 지운 경우 관리자에게 기존 키 폐기와 재등록을 요청해 주세요.
+              </p>
               {device.pinnedWebshellKey && (
                 <p className="text-sm text-ink-2">
                   고정한 웹쉘 공개키 지문: 암호화 <Mono>{shorten(device.pinnedWebshellKey.encryption.fingerprint)}</Mono>, 서명{' '}

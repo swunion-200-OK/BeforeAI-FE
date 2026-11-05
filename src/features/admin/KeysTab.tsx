@@ -26,7 +26,12 @@ const STATUS: Record<SigningKeyStatus, { label: string; className: string }> = {
  * 등록 서명을 만들 수 없는 이유. 서버 규칙: 서명 키는 관리자 본인의 등록된 키여야 하고,
  * 등록된 키가 아직 없으면(첫 관리자) 본인의 대기 키만 그 키 자신으로 서명해 등록할 수 있다.
  */
-function registerBlockedReason(target: AdminSigningKey, adminKey: AdminSigningKey | undefined): string | null {
+function registerBlockedReason(
+  target: AdminSigningKey,
+  adminKey: AdminSigningKey | undefined,
+  needsReenrollment: boolean,
+): string | null {
+  if (needsReenrollment) return '기존 관리자 승인 키를 안전하게 옮기지 못했습니다. 이 키를 폐기한 뒤 새 키를 등록해 주세요'
   if (!adminKey) return '이 기기에 관리자 승인 키가 없습니다. 내 정보에서 키를 만들어 주세요'
   if (adminKey.status === 'REGISTERED' || adminKey.id === target.id) return null
   return adminKey.status === 'PENDING'
@@ -116,6 +121,10 @@ export function KeysTab() {
   const me = useMe()
   const [revoking, setRevoking] = useState<AdminSigningKey | null>(null)
   const keys = useQuery(signingKeysQuery)
+  const localSigningKey = useQuery({
+    queryKey: ['device-signing-key', me.id],
+    queryFn: () => signingService.hasDeviceKey(me.id),
+  })
   // 키 응답에는 userId만 있어 이름은 계정 목록에서 찾는다.
   const users = useQuery(usersQuery)
   // 프리셋을 적용하기 전이면 정책 조회가 404다. 그때 폐기는 키 상태만 바꾼다.
@@ -128,7 +137,7 @@ export function KeysTab() {
   const ownerName = (key: AdminSigningKey) =>
     users.data?.find((user) => user.id === key.userId)?.name ?? `사용자 ${key.userId.slice(0, 8)}`
   const register = useMutation({
-    mutationFn: (key: AdminSigningKey) => adminApi.registerKey(key.id, signingService.signRegisterProof(me.id, key)),
+    mutationFn: async (key: AdminSigningKey) => adminApi.registerKey(key.id, await signingService.signRegisterProof(me.id, key)),
     onSuccess: async (_result, key) => {
       toast.success(`${ownerName(key)}님의 승인 키를 등록했습니다. 이제 승인 서명을 할 수 있습니다`)
       await refresh()
@@ -149,14 +158,17 @@ export function KeysTab() {
     onError: onPolicyError(finishRevoke),
   })
 
-  if (keys.isPending) return <Spinner />
+  if (keys.isPending || localSigningKey.isPending) return <Spinner />
   if (keys.isError) return <ErrorState error={keys.error} onRetry={() => keys.refetch()} />
+  if (localSigningKey.isError) return <ErrorState error={localSigningKey.error} onRetry={() => localSigningKey.refetch()} />
 
   const revokeBlockedReason = (key: AdminSigningKey) => (key.status === 'REGISTERED' ? adminKeyMissingReason(me.id) : null)
   const pending = keys.data.filter((key) => key.status === 'PENDING')
   const others = keys.data.filter((key) => key.status !== 'PENDING')
-  const deviceKeyId = deviceStore.get(me.id).keyId
-  const adminKey = signingService.hasDeviceKey(me.id)
+  const localDevice = deviceStore.get(me.id)
+  const deviceKeyId = localDevice.keyId
+  const needsReenrollment = localDevice.keyMigrationStatus === 'NEEDS_REENROLLMENT'
+  const adminKey = localSigningKey.data === true && !needsReenrollment
     ? keys.data.find((key) => key.id === deviceKeyId && key.userId === me.id)
     : undefined
 
@@ -173,7 +185,7 @@ export function KeysTab() {
             keys={pending}
             ownerName={ownerName}
             onRegister={(key) => register.mutate(key)}
-            blockedReason={(key) => registerBlockedReason(key, adminKey)}
+            blockedReason={(key) => registerBlockedReason(key, adminKey, needsReenrollment)}
             onRevoke={setRevoking}
             revokeBlockedReason={revokeBlockedReason}
             registeringId={register.isPending ? register.variables?.id : undefined}

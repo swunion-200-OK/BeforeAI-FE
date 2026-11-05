@@ -267,6 +267,10 @@ export function ApprovalDetail({
     queryKey: ["me", "signing-keys"],
     queryFn: async () => (await meApi.signingKeys()).items,
   });
+  const deviceKeyQuery = useQuery({
+    queryKey: ["device-signing-key", me.id],
+    queryFn: () => signingService.hasDeviceKey(me.id),
+  });
 
   const [deselected, setDeselected] = useState<ReadonlySet<string>>(new Set());
   const [step, setStep] = useState<SignStep | null>(null);
@@ -334,11 +338,14 @@ export function ApprovalDetail({
     decisionBase.length > 0 && decisionBase.every((t) => t.type === "DOC");
 
   // 서명은 이 기기의 키로 한다. 다른 기기에 등록된 키가 있어도 이 기기의 키가 등록되어 있어야 한다.
-  const deviceKeyId = deviceStore.get(me.id).keyId;
+  const localDevice = deviceStore.get(me.id);
+  const deviceKeyId = localDevice.keyId;
+  const deviceKeyMigrationStatus = localDevice.keyMigrationStatus;
   const deviceKey = keysQuery.data?.find((key) => key.id === deviceKeyId);
-  const keyChecking = keysQuery.isPending;
+  const keyChecking = keysQuery.isPending || deviceKeyQuery.isPending;
   const keyReady =
-    signingService.hasDeviceKey(me.id) &&
+    deviceKeyQuery.data === true &&
+    deviceKeyMigrationStatus !== "NEEDS_REENROLLMENT" &&
     deviceKey?.status === "REGISTERED" &&
     !integrity?.keyMissing;
 
@@ -479,10 +486,11 @@ export function ApprovalDetail({
     integrity.hashOk &&
     integrity.displayOk &&
     !keysQuery.isError &&
+    !deviceKeyQuery.isError &&
     !keyReady,
   );
   const integrityFailed = Boolean(
-    integrity && !integrity.ok && !onlyAwaitingKey,
+    integrity && !integrity.ok && !onlyAwaitingKey && !keyChecking && !keysQuery.isError && !deviceKeyQuery.isError,
   );
 
   let signBlockedReason: string | null = null;
@@ -492,7 +500,7 @@ export function ApprovalDetail({
   else if (external)
     signBlockedReason = "승인과 거부는 내부망에서만 할 수 있습니다.";
   else if (keyChecking) signBlockedReason = "승인 키를 확인하고 있습니다.";
-  else if (keysQuery.isError)
+  else if (keysQuery.isError || deviceKeyQuery.isError)
     signBlockedReason =
       "승인 키 상태를 확인하지 못했습니다. 새로고침한 뒤 다시 시도해 주세요.";
   else if (!keyReady)

@@ -55,7 +55,7 @@ export default function DevToolbar() {
   }
 
   const reset = async () => {
-    devControls.reset()
+    await devControls.reset()
     await client.invalidateQueries()
     toast.success('목 데이터를 초기화했습니다')
   }

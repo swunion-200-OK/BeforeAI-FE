@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken, setTransport } from '../client'
 import { adminApi, editorApi, forbiddenApi, orgApi, projectsApi } from '../endpoints'
@@ -21,11 +22,11 @@ function asUser(userId: string) {
   setAccessToken(devControls.switchUser(userId))
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal('localStorage', new MemoryStorage())
   mockConfig.latencyMs = 0
-  initMock()
-  buildSeed()
+  await initMock()
+  await buildSeed()
   setTransport(mockFetch)
   asUser('u-admin')
 })

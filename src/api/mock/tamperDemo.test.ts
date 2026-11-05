@@ -1,3 +1,4 @@
+import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { setAccessToken, setTransport } from '../client'
 import { approvalsApi, meApi, requestsApi } from '../endpoints'
@@ -37,16 +38,16 @@ const sign = async (requestId: string) => {
   return signAndSubmitApproval({ me: await meApi.get(), context, taskIds: ['t-1'] })
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal('localStorage', new MemoryStorage())
   mockConfig.latencyMs = 0
   mockConfig.execStepMs = 1
   mockConfig.webshellReachable = true
   mockConfig.webshellRetryMs = 5000
   setTransport(mockFetch)
-  initMock()
-  deviceStore.clear()
-  buildSeed()
+  await initMock()
+  await deviceStore.clear()
+  await buildSeed()
   approver()
 })
 

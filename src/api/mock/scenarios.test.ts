@@ -1,4 +1,5 @@
 // @vitest-environment node
+import 'fake-indexeddb/auto'
 import { readUnifiedDiff } from '../../lib/diff'
 import { compareTaskDocument, compareWithCurrent } from '../../lib/taskDocument'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -83,16 +84,16 @@ const reviewedPlan = async (requestId: string) => {
 
 async function registerKeyFor(userId: string) {
   asUser(userId)
-  const { publicKey } = signingService.generateDeviceKey(userId)
+  const { publicKey } = await signingService.generateDeviceKey(userId)
   const key = await meApi.submitSigningKey(publicKey)
   deviceStore.update(userId, { keyId: key.id, pinnedWebshellKey: await meApi.webshellPublicKey() })
   asUser('u-admin')
-  await adminApi.registerKey(key.id, signingService.signRegisterProof('u-admin', key))
+  await adminApi.registerKey(key.id, await signingService.signRegisterProof('u-admin', key))
   asUser(userId)
   return (await meApi.signingKeys()).items.find((item) => item.id === key.id)!
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal('localStorage', new MemoryStorage())
   mockConfig.latencyMs = 0
   mockConfig.analysisMs = 1
@@ -100,9 +101,9 @@ beforeEach(() => {
   mockConfig.webshellRetryMs = 1
   mockConfig.webshellReachable = true
   setTransport(mockFetch)
-  initMock()
-  deviceStore.clear()
-  buildSeed()
+  await initMock()
+  await deviceStore.clear()
+  await buildSeed()
   asUser('u-01')
 })
 
@@ -132,8 +133,8 @@ describe('crypto', () => {
     expect(hashService.computePlanHash(edited, 'prj-auth')).not.toBe(hash)
   })
 
-  it('기기에서 만든 키로 서명하고 검증한다', () => {
-    const { publicKey } = signingService.generateDeviceKey('u-x')
+  it('기기에서 만든 키로 서명하고 검증한다', async () => {
+    const { publicKey } = await signingService.generateDeviceKey('u-x')
     const payload = {
       planHash: 'sha256:a',
       requestId: 'r',
@@ -145,7 +146,7 @@ describe('crypto', () => {
       nonce: 'n',
       network: 'INTERNAL' as const,
     }
-    const signed = signingService.sign('u-x', payload)
+    const signed = await signingService.sign('u-x', payload)
     expect(signingService.verifyApproval(signed, publicKey)).toBe(true)
     expect(signingService.verifyApproval({ ...signed, payload: { ...payload, taskIds: ['t-2'] } }, publicKey)).toBe(false)
   })
@@ -573,7 +574,7 @@ describe('규칙', () => {
   it('승인 키 등록 흐름: 제출 → 대기 → 관리자 등록 → 승인 가능', async () => {
     asUser('u-21')
     expect((await me()).hasRegisteredSigningKey).toBe(false)
-    const { publicKey } = signingService.generateDeviceKey('u-21')
+    const { publicKey } = await signingService.generateDeviceKey('u-21')
     const webshellKey = await meApi.webshellPublicKey()
     const key = await meApi.submitSigningKey(publicKey)
     expect(Object.keys(key).sort()).toEqual(['algorithm', 'createdAt', 'id', 'publicKey', 'status'])
@@ -586,7 +587,7 @@ describe('규칙', () => {
       'NOT_APPROVER',
     )
     asUser('u-admin')
-    const registered = await adminApi.registerKey(key.id, signingService.signRegisterProof('u-admin', key))
+    const registered = await adminApi.registerKey(key.id, await signingService.signRegisterProof('u-admin', key))
     expect(registered).toMatchObject({ keyId: key.id, status: 'REGISTERED', policyVersion: expect.any(Number) })
     asUser('u-21')
     expect((await me()).hasRegisteredSigningKey).toBe(true)
@@ -594,7 +595,7 @@ describe('규칙', () => {
 
   it('승인 키는 폐기되지 않은 것을 사용자당 하나만 받고, 폐기하면 새로 받는다', async () => {
     asUser('u-09')
-    const second = signingService.generateDeviceKey('u-09').publicKey
+    const second = (await signingService.generateDeviceKey('u-09')).publicKey
     await expectError(meApi.submitSigningKey(second), 'VALIDATION_ERROR')
     asUser('u-admin')
     await adminApi.revokeKey('k-09-a')
@@ -620,29 +621,29 @@ describe('규칙', () => {
     await expectError(adminApi.registerKey(target.id, { keyId: 'k-admin-a' }), 'VALIDATION_ERROR')
     // 다른 키에 대한 서명
     const other = { id: 'k-01-a', publicKey: target.publicKey }
-    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', other)), 'FORBIDDEN_ROLE')
+    await expectError(adminApi.registerKey(target.id, await signingService.signRegisterProof('u-admin', other)), 'FORBIDDEN_ROLE')
     // 다른 사람의 키로 서명
-    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-07', target)), 'KEY_NOT_REGISTERED')
-    await adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target))
-    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target)), 'INVALID_STATE')
+    await expectError(adminApi.registerKey(target.id, await signingService.signRegisterProof('u-07', target)), 'KEY_NOT_REGISTERED')
+    await adminApi.registerKey(target.id, await signingService.signRegisterProof('u-admin', target))
+    await expectError(adminApi.registerKey(target.id, await signingService.signRegisterProof('u-admin', target)), 'INVALID_STATE')
   })
 
   it('첫 관리자는 본인의 대기 키를 그 키 자신으로 서명해 등록하고, 그 키로 다른 키는 등록하지 못한다', async () => {
     asUser('u-admin')
     await adminApi.revokeKey('k-admin-a', PROOF)
-    const { publicKey } = signingService.generateDeviceKey('u-admin')
+    const { publicKey } = await signingService.generateDeviceKey('u-admin')
     const own = await meApi.submitSigningKey(publicKey)
     deviceStore.update('u-admin', { keyId: own.id })
     const target = { id: 'k-09-a', publicKey: db().signingKeys.find((k) => k.id === 'k-09-a')!.publicKey }
-    await expectError(adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target)), 'KEY_NOT_REGISTERED')
-    await adminApi.registerKey(own.id, signingService.signRegisterProof('u-admin', own))
+    await expectError(adminApi.registerKey(target.id, await signingService.signRegisterProof('u-admin', target)), 'KEY_NOT_REGISTERED')
+    await adminApi.registerKey(own.id, await signingService.signRegisterProof('u-admin', own))
     expect((await me()).hasRegisteredSigningKey).toBe(true)
-    await adminApi.registerKey(target.id, signingService.signRegisterProof('u-admin', target))
+    await adminApi.registerKey(target.id, await signingService.signRegisterProof('u-admin', target))
   })
 
   it('담당자라도 승인 키가 등록되기 전에는 KEY_NOT_REGISTERED이고, 등록 뒤에는 서명할 수 있다', async () => {
     asUser('u-21')
-    const { publicKey } = signingService.generateDeviceKey('u-21')
+    const { publicKey } = await signingService.generateDeviceKey('u-21')
     const key = await meApi.submitSigningKey(publicKey)
     deviceStore.update('u-21', { keyId: key.id, pinnedWebshellKey: await meApi.webshellPublicKey() })
     const { id } = await requestsApi.create({ projectId: 'prj-deploy', prompt: '스테이징에 배포해줘' })
@@ -650,7 +651,7 @@ describe('규칙', () => {
     await requestsApi.submit(id)
     await expectError(approveAs('u-21', id, ['t-1']), 'KEY_NOT_REGISTERED')
     asUser('u-admin')
-    await adminApi.registerKey(key.id, signingService.signRegisterProof('u-admin', key))
+    await adminApi.registerKey(key.id, await signingService.signRegisterProof('u-admin', key))
     expect(await approveAs('u-21', id, ['t-1'])).toMatchObject({ executionRequested: true, status: 'RUNNING' })
   })
 
@@ -921,7 +922,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     expect(storedRequest('r-main').status).toBe('PENDING_APPROVAL')
   })
 
-  it('서명이 공개키로 검증되지 않거나 키 주인이 승인자와 다르면 SIGNATURE_INVALID다', () => {
+  it('서명이 공개키로 검증되지 않거나 키 주인이 승인자와 다르면 SIGNATURE_INVALID다', async () => {
     const request = storedRequest('r-main')
     const plan = toHashTarget(request.plan!, request.projectId)
     const encryption = WEBSHELL_PUBLIC_KEY.encryption.publicKey
@@ -934,7 +935,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     )
     expect(forged.failed).toContain('SIGNATURE_INVALID')
 
-    const wrongOwner = signingService.sign('u-01', { ...signed.payload, approverId: 'u-07', nonce: 'n-other' })
+    const wrongOwner = await signingService.sign('u-01', { ...signed.payload, approverId: 'u-07', nonce: 'n-other' })
     const owner = verifyExecution(
       { plan, approvals: [{ keyId: record.keyId, envelope: cryptoService.encryptForWebshell(wrongOwner, encryption) }] },
       request,

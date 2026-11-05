@@ -71,7 +71,7 @@ const SEED_USERS: SeedUser[] = [
 
 function seedKeyPair(userId: string) {
   const secret = sha256(encoder.encode(`beforeai-mock-device:${userId}`))
-  return { secret: bytesToBase64(secret), publicKey: bytesToBase64(ed25519.getPublicKey(secret)) }
+  return { secret, publicKey: bytesToBase64(ed25519.getPublicKey(secret)) }
 }
 
 function emptyDb(): MockDb {
@@ -115,7 +115,7 @@ function emptyDb(): MockDb {
   }
 }
 
-function seedPeople() {
+async function seedPeople() {
   const database = db()
   for (const seed of SEED_USERS) {
     const user: StoredUser = {
@@ -138,9 +138,9 @@ function seedPeople() {
     }
     if (!seed.key) continue
     const pair = seedKeyPair(seed.id)
+    await signingService.importDeviceKey(seed.id, pair.secret, pair.publicKey)
     deviceStore.update(seed.id, {
       keyId: seed.key.keyId,
-      secretKey: pair.secret,
       publicKey: pair.publicKey,
       pinnedWebshellKey: WEBSHELL_PUBLIC_KEY,
     })
@@ -364,12 +364,12 @@ export function addRequest(seed: SeedRequest): StoredRequest {
 }
 
 /** 실제 승인 흐름과 똑같이 서명·봉투를 만들어 넣는다. */
-function signFor(request: StoredRequest, userId: string, taskIds: string[], network: Network = 'INTERNAL') {
+async function signFor(request: StoredRequest, userId: string, taskIds: string[], network: Network = 'INTERNAL') {
   const plan = request.plan!
   const user = ref(userId)
   const device = deviceStore.get(userId)
   const at = minutesAgo(Math.max(1, (Date.now() - new Date(request.submittedAt ?? request.createdAt).getTime()) / 60_000 - 1))
-  const signed = signingService.sign(userId, {
+  const signed = await signingService.sign(userId, {
     planHash: plan.planHash as string,
     requestId: request.id,
     planId: plan.id,
@@ -500,7 +500,7 @@ const docTask = (status: TaskStatus, body: string): SeedTask => ({
   previousBody: AUTH_FILES['docs/README.md'],
 })
 
-function seedRequests() {
+async function seedRequests() {
   const README_NEXT = `${AUTH_FILES['docs/README.md']}\n## 장애 대응\n\n세션 저장소 장애 시 인프라팀에 연락합니다.\n`
 
   // 기본 요청 (API 명세서 예시): t-1은 본인 승인 완료, t-2는 담당자 승인 대기
@@ -512,7 +512,7 @@ function seedRequests() {
     ageMinutes: 42,
     tasks: [loginTask('APPROVED'), deployTask('PENDING')],
   })
-  signFor(main, 'u-01', ['t-1'])
+  await signFor(main, 'u-01', ['t-1'])
 
   addRequest({ id: 'r-analyzing', requesterId: 'u-01', prompt: '비밀번호 재설정 메일 문구를 다듬어줘', status: 'ANALYZING', ageMinutes: 1, frozen: true })
 
@@ -613,7 +613,7 @@ function seedRequests() {
       deployTask('APPROVED'),
     ],
   })
-  signFor(verificationFailed, 'u-07', ['t-1'])
+  await signFor(verificationFailed, 'u-07', ['t-1'])
   verificationFailed.failedChecks = ['PLAN_HASH_MISMATCH', 'MISSING_REQUIRED_APPROVER'] satisfies FailedCheck[]
 
   const running = addRequest({
@@ -636,8 +636,8 @@ function seedRequests() {
       deployTask('APPROVED'),
     ],
   })
-  signFor(running, 'u-01', ['t-1'])
-  signFor(running, 'u-07', ['t-long', 't-3'])
+  await signFor(running, 'u-01', ['t-1'])
+  await signFor(running, 'u-07', ['t-long', 't-3'])
   running.execStepMs = 2000
   running.execLine = 2
   addLogs(
@@ -661,8 +661,8 @@ function seedRequests() {
     ageMinutes: 620,
     tasks: [docTask('SUCCEEDED', README_NEXT), testTask('SUCCEEDED')],
   })
-  signFor(completed, 'u-01', ['t-1'])
-  signFor(completed, 'u-07', ['t-2'], 'EXTERNAL')
+  await signFor(completed, 'u-01', ['t-1'])
+  await signFor(completed, 'u-07', ['t-2'], 'EXTERNAL')
   // 시연에서 판 목록을 바로 보여 준다. 로그인 테스트를 더하기 전의 Plan에 도장 하나를 받은 이전 판이다.
   const earlierPlan = {
     ...completed.plan!,
@@ -706,8 +706,8 @@ function seedRequests() {
     ageMinutes: 340,
     tasks: [loginTask('SUCCEEDED'), deployTask('FAILED')],
   })
-  signFor(partial, 'u-07', ['t-1'], 'EXTERNAL')
-  signFor(partial, 'u-07', ['t-2'])
+  await signFor(partial, 'u-07', ['t-1'], 'EXTERNAL')
+  await signFor(partial, 'u-07', ['t-2'])
   addLogs(
     partial.id,
     [
@@ -731,8 +731,8 @@ function seedRequests() {
     ageMinutes: 480,
     tasks: [loginTask('SUCCEEDED'), deployTask('SKIPPED')],
   })
-  signFor(killed, 'u-01', ['t-1'])
-  signFor(killed, 'u-07', ['t-2'])
+  await signFor(killed, 'u-01', ['t-1'])
+  await signFor(killed, 'u-07', ['t-2'])
   killed.kill = { by: '홍길동', reason: '잘못된 브랜치에 배포 중', at: minutesAgo(470) }
   addLogs(
     killed.id,
@@ -775,7 +775,7 @@ function seedRequests() {
     ageMinutes: 1000,
     tasks: [{ ...deployTask('FAILED'), relatedDepartments: ['d-infra'] }],
   })
-  signFor(failed, 'u-mgr-in', ['t-1'])
+  await signFor(failed, 'u-mgr-in', ['t-1'])
   addLogs(
     failed.id,
     [
@@ -799,7 +799,7 @@ function seedRequests() {
   const rollingBack = addRequest({ id: 'r-rolling-back', requesterId: 'u-01', prompt: '인증 API 가이드 오탈자를 고쳐줘', status: 'ROLLING_BACK', ageMinutes: 60, kind: 'ROLLBACK', frozen: true, tasks: [rollbackTask('RUNNING')] })
   const rolledBack = addRequest({ id: 'r-rolled-back', requesterId: 'u-01', prompt: '인증 API 가이드에 예시를 추가해줘', status: 'ROLLED_BACK', ageMinutes: 2000, kind: 'ROLLBACK', tasks: [rollbackTask('ROLLED_BACK')] })
   const rollbackFailed = addRequest({ id: 'r-rollback-failed', requesterId: 'u-01', prompt: '인증 API 가이드 구조를 바꿔줘', status: 'ROLLBACK_FAILED', ageMinutes: 2600, kind: 'ROLLBACK', tasks: [rollbackTask('FAILED')] })
-  for (const rollback of [rollingBack, rolledBack, rollbackFailed]) signFor(rollback, 'u-07', ['t-1'])
+  for (const rollback of [rollingBack, rolledBack, rollbackFailed]) await signFor(rollback, 'u-07', ['t-1'])
 
   // 김담당도 본인 요청이 있어야 "내 대시보드"가 비지 않는다.
   addRequest({ id: 'r-kim-review', requesterId: 'u-07', prompt: '세션 만료 안내 문구를 다듬어줘', status: 'REVIEWING', ageMinutes: 35, tasks: [testTask('PENDING')] })
@@ -811,7 +811,7 @@ function seedRequests() {
     ageMinutes: 300,
     tasks: [testTask('SUCCEEDED')],
   })
-  signFor(kimDone, 'u-07', ['t-1'])
+  await signFor(kimDone, 'u-07', ['t-1'])
   addLogs(
     kimDone.id,
     [
@@ -958,11 +958,11 @@ function seedStepEvents() {
   }
 }
 
-export function buildSeed() {
+export async function buildSeed() {
   setDb(emptyDb())
-  seedPeople()
+  await seedPeople()
   seedProjects()
-  seedRequests()
+  await seedRequests()
   seedStepEvents()
   seedAudit()
   // 실행 중인 시드는 검증을 통과해 전용 세션이 열린 상태다.

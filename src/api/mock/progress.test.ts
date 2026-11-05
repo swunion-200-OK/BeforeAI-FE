@@ -1,4 +1,5 @@
 // @vitest-environment node
+import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ed25519 } from '@noble/curves/ed25519.js'
 import { deviceStore } from '../../crypto/deviceStore'
@@ -80,7 +81,7 @@ const stepEvent = (requestId: string, overrides: Partial<WebshellEvent> = {}): W
   ...overrides,
 })
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal('localStorage', new MemoryStorage())
   mockConfig.latencyMs = 0
   mockConfig.analysisMs = 1
@@ -89,9 +90,9 @@ beforeEach(() => {
   mockConfig.webshellReachable = true
   progressConfig.heartbeatMs = 30_000
   setTransport(mockFetch)
-  initMock()
-  deviceStore.clear()
-  buildSeed()
+  await initMock()
+  await deviceStore.clear()
+  await buildSeed()
   asUser('u-01')
 })
 
@@ -447,7 +448,7 @@ describe('버전과 스트림 (명세 4.9)', () => {
     const before = await requestsApi.progress('r-main')
     stored('r-main').plan!.tasks[0].status = 'RUNNING'
     expect((await requestsApi.progress('r-main')).version).toBe(before.version + 1)
-    buildSeed()
+    await buildSeed()
     await reseeded.ended
     asUser('u-01')
     expect((await requestsApi.progress('r-main')).version).toBe(1)
@@ -459,7 +460,7 @@ describe('버전과 스트림 (명세 4.9)', () => {
     await requestsApi.progress('r-main')
     const stream = listen('r-main')
     await nextTick()
-    devControls.reset()
+    await devControls.reset()
     await expect(stream.ended).resolves.toBeUndefined()
   })
 })

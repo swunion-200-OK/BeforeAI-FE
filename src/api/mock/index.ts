@@ -24,19 +24,24 @@ const API_PREFIX = '/api/v1'
 const EXTERNAL_IDLE_LIMIT_MS = 30 * 60 * 1000
 
 let ready = false
+let initialization: Promise<void> | null = null
 
 export function initMock() {
-  if (ready) return
-  const persisted: MockDb | null = loadPersisted()
-  if (persisted) {
-    setDb(persisted)
-    resumeTimers()
-  } else {
-    buildSeed()
-    resumeTimers()
-    persist()
-  }
-  ready = true
+  if (ready) return Promise.resolve()
+  if (initialization) return initialization
+  initialization = (async () => {
+    const persisted: MockDb | null = loadPersisted()
+    if (persisted) {
+      setDb(persisted)
+      resumeTimers()
+    } else {
+      await buildSeed()
+      resumeTimers()
+      persist()
+    }
+    ready = true
+  })()
+  return initialization
 }
 
 /** 비밀번호를 바꿔야 하는 토큰으로 부를 수 있는 API. 로그아웃은 목에서 익명 라우트라 여기 없어도 된다. */
@@ -53,7 +58,7 @@ function errorResponse(error: HttpError, network: Network) {
 }
 
 export async function mockFetch(input: string, init: RequestInit = {}): Promise<Response> {
-  initMock()
+  await initMock()
   const url = new URL(input, 'http://mock.local')
   const path = url.pathname.startsWith(API_PREFIX) ? url.pathname.slice(API_PREFIX.length) : url.pathname
   const method = (init.method ?? 'GET').toUpperCase()
@@ -116,7 +121,7 @@ export async function mockFetch(input: string, init: RequestInit = {}): Promise<
 /** 개발용 전환 툴바가 쓰는 제어 함수. 실제 API에는 없는 기능이다. */
 export const devControls = {
   state() {
-    initMock()
+    if (!ready) return { network: 'INTERNAL' as Network, currentUserId: null, users: [], slackOutbox: [] as SlackMessage[] }
     const database = db()
     return {
       network: database.network,
@@ -138,11 +143,11 @@ export const devControls = {
     return issueToken(userId)
   },
   /** 시드로 되돌린다. 지금 사용자와 망은 그대로 둔다. */
-  reset() {
+  async reset() {
     const before = db()
     const { network, session } = before
-    deviceStore.clear()
-    buildSeed()
+    await deviceStore.clear()
+    await buildSeed()
     const database = db()
     database.network = network
     database.session = session

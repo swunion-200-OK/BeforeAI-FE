@@ -91,12 +91,12 @@ export async function signAndSubmitApproval({
   }
 
   const device = deviceStore.get(me.id)
-  if (!device.secretKey || !device.keyId || !device.pinnedWebshellKey) {
+  if (!device.keyId || !device.pinnedWebshellKey) {
     throw new Error('이 기기에 승인 키가 없습니다. 내 정보에서 승인 키를 등록해 주세요')
   }
 
   await onStep?.('sign')
-  const signed = signingService.sign(me.id, {
+  const signed = await signingService.sign(me.id, {
     planHash: integrity.computedHash,
     requestId: context.requestId,
     planId: context.plan.id,

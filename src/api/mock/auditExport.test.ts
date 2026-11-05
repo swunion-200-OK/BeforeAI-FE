@@ -1,4 +1,5 @@
 // @vitest-environment node
+import 'fake-indexeddb/auto'
 import { unzipSync } from 'fflate'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUDIT_ACTION_LABEL } from '../../lib/labels'
@@ -130,14 +131,14 @@ async function listAll(filters: AuditExportFilters = {}) {
   return items
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.stubGlobal('localStorage', new MemoryStorage())
   mockConfig.latencyMs = 0
   mockConfig.auditExportMs = 1
   mockConfig.auditExportLimit = 100000
   setTransport(mockFetch)
-  initMock()
-  buildSeed()
+  await initMock()
+  await buildSeed()
   asUser('u-admin')
 })
 
@@ -382,7 +383,7 @@ describe('상태와 만료', () => {
   it('초기화하면 이전 타이머는 알림을 보내지 않는다', async () => {
     mockConfig.auditExportMs = 10
     await auditExportApi.create({ format: 'CSV', filters: {} })
-    buildSeed()
+    await buildSeed()
     await new Promise((resolve) => setTimeout(resolve, 40))
     expect(db().auditExports).toHaveLength(0)
     expect(db().slackOutbox).toHaveLength(0)

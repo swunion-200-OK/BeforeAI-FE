@@ -9,11 +9,26 @@ import { toast } from './components/toast'
 import './index.css'
 
 async function bootstrap() {
+  const { signingService } = await import('./crypto/signingService')
+  try {
+    await signingService.initialize()
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '알 수 없는 저장소 오류입니다.'
+    createRoot(document.getElementById('root')!).render(
+      <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-3 p-6 text-ink">
+        <h1 className="text-xl font-semibold">승인 키 저장소를 준비하지 못했습니다</h1>
+        <p role="alert" className="text-sm text-ink-2">{message}</p>
+        <p className="text-sm text-ink-2">기존 개인키를 안전하게 옮기지 못한 상태입니다. 저장 공간을 확인한 뒤 새로고침해 주세요. 문제가 계속되면 브라우저 저장 데이터를 임의로 공유하지 말고 관리자에게 문의해 주세요.</p>
+      </main>,
+    )
+    return
+  }
+
   // 실제 백엔드를 쓰면(VITE_API_BASE_URL) 목 코드는 번들에 불러오지 않는다.
   // 환경 변수를 직접 검사해야 빌드할 때 이 import가 지워져 목 파일이 dist에 생기지 않는다.
   if (!import.meta.env.VITE_API_BASE_URL) {
     const { mockFetch, initMock } = await import('./api/mock')
-    initMock()
+    await initMock()
     setTransport(mockFetch)
   }
 
