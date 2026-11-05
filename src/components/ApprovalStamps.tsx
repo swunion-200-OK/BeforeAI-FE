@@ -4,22 +4,18 @@ import { NETWORK_LABEL, RULE_LABEL } from '../lib/labels'
 
 /**
  * 결재란. 이 앱을 대표하는 요소다.
- * 승인 규칙마다 칸을 하나 두고, 서명이 모이면 군청 인주 도장이 찍힌다.
+ * 승인 규칙마다 칸을 하나 두고, 서명이 모이면 인주색 도장이 찍힌다. 인주색은 도장에만 쓴다.
  */
 function Seal({ name, animate }: { name: string; animate?: boolean }) {
   return (
     <span
-      className={`inline-flex size-16 -rotate-6 items-center justify-center rounded-full border-2 border-seal text-seal outline-1 outline-offset-2 outline-seal/60 ${
+      className={`inline-flex size-16 -rotate-6 items-center justify-center rounded-full border-[2.5px] border-stamp text-stamp ${
         animate ? 'animate-stamp-late' : ''
       }`}
     >
       <span className="text-sm leading-tight font-bold tracking-tight">{name}</span>
     </span>
   )
-}
-
-function EmptySeal() {
-  return <span className="inline-flex size-16 rounded-full border-2 border-dashed border-rule-strong" aria-hidden />
 }
 
 function candidatesText(requirement: RequirementStatus): string {
@@ -52,7 +48,7 @@ export function ApprovalStamps({
   justStampedBy?: string
 }) {
   return (
-    <div className="flex w-full overflow-hidden rounded border border-rule-strong">
+    <div className="flex w-full overflow-hidden rounded-md border border-rule-strong">
       {status.requirements.map((requirement, index) => {
         const record = requirement.approvedBy[0]
         return (
@@ -63,33 +59,30 @@ export function ApprovalStamps({
             <div className="border-b border-rule-strong bg-sheet-alt px-1.5 py-1.5 text-center text-xs font-medium text-ink-2">
               {RULE_LABEL[requirement.rule]}
             </div>
-            <div className="flex flex-1 flex-col items-center gap-1.5 px-1.5 py-3 text-center">
-              {record ? (
-                <Seal name={record.name} animate={justStampedBy === record.userId} />
-              ) : (
-                <EmptySeal />
-              )}
-              <p className="text-xs leading-snug break-keep text-ink-3">
-                {record ? (
-                  <>
-                    {record.self ? '본인 승인' : formatDateTime(record.at)}
-                    {/* 평소에는 내부망이므로 외부망에서 서명한 경우만 적는다. 전체 기록은 감사 로그에 있다. */}
-                    {record.network === 'EXTERNAL' && (
-                      <>
-                        <br />
-                        {NETWORK_LABEL.EXTERNAL}
-                      </>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    대기
-                    <br />
-                    {candidatesText(requirement)}
-                  </>
-                )}
-              </p>
+            {/* 서류의 결재란처럼 도장이 없으면 칸을 비워 둔다 */}
+            <div className="flex h-[5.25rem] items-center justify-center">
+              {record && <Seal name={record.name} animate={justStampedBy === record.userId} />}
             </div>
+            <p className="flex-1 border-t border-rule px-1.5 py-1.5 text-center text-xs leading-snug break-keep text-ink-3">
+              {record ? (
+                <>
+                  {record.self ? '본인 승인' : formatDateTime(record.at)}
+                  {/* 평소에는 내부망이므로 외부망에서 서명한 경우만 적는다. 전체 기록은 감사 로그에 있다. */}
+                  {record.network === 'EXTERNAL' && (
+                    <>
+                      <br />
+                      {NETWORK_LABEL.EXTERNAL}
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  대기
+                  <br />
+                  {candidatesText(requirement)}
+                </>
+              )}
+            </p>
           </div>
         )
       })}

@@ -76,7 +76,7 @@ export function SubmitBar({ request }: { request: RequestDetail }) {
   return (
     <aside
       aria-label="제출 안내"
-      className="sticky bottom-4 z-10 my-4 flex items-center justify-between gap-6 rounded-xl border border-rule bg-sheet px-5 py-3.5 shadow-lg"
+      className="sticky bottom-0 z-10 mt-4 flex items-center justify-between gap-6 border-t border-rule-strong bg-sheet py-4"
     >
       {keyMissing ? (
         <p className="min-w-0 text-sm text-medium">

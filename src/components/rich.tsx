@@ -6,21 +6,6 @@ import type { RequestTaskSummary } from '../api/types'
 
 // ── 사람 ──────────────────────────────────────────────────
 
-const AVATAR_COLORS = [
-  'bg-[#dfe7ff] text-[#23389f]',
-  'bg-[#d8f3f5] text-[#08616a]',
-  'bg-[#f1ebff] text-[#4f2aa8]',
-  'bg-[#ffefd6] text-[#8f4800]',
-  'bg-[#dcf6ea] text-[#0b6245]',
-  'bg-[#fde6ee] text-[#a2214f]',
-]
-
-function hash(text: string) {
-  let value = 0
-  for (const char of text) value = (value * 31 + char.charCodeAt(0)) >>> 0
-  return value
-}
-
 function initials(name: string) {
   return name.slice(0, 1)
 }
@@ -30,9 +15,7 @@ export function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md'
   return (
     <span
       aria-hidden
-      className={`inline-flex shrink-0 items-center justify-center rounded-full font-semibold ${dimension} ${
-        AVATAR_COLORS[hash(name) % AVATAR_COLORS.length]
-      }`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-full border border-rule bg-sheet-alt font-semibold text-ink-2 ${dimension}`}
     >
       {initials(name)}
     </span>
@@ -80,7 +63,7 @@ export function SegmentedTabs<T extends string>({
   label: string
 }) {
   return (
-    <div role="tablist" aria-label={label} className="inline-flex flex-wrap gap-1 rounded-lg bg-[#e7ebf3] p-1">
+    <div role="tablist" aria-label={label} className="inline-flex flex-wrap gap-x-1 border-b border-rule">
       {items.map(({ id, label: text, count, icon: Icon }) => {
         const active = id === value
         return (
@@ -90,16 +73,14 @@ export function SegmentedTabs<T extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(id)}
-            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[0.875rem] font-medium whitespace-nowrap ${
-              active ? 'bg-sheet text-ink shadow-card' : 'text-ink-2 hover:text-ink'
+            className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-2.5 py-1.5 text-[0.875rem] whitespace-nowrap transition-colors hover:bg-sheet-alt ${
+              active ? 'border-seal font-semibold text-ink' : 'border-transparent font-medium text-ink-2 hover:text-ink'
             }`}
           >
             {Icon && <Icon size={14} aria-hidden />}
             {text}
             {count !== undefined && (
-              <span className={`rounded px-1 text-xs tabular-nums ${active ? 'bg-seal-soft text-seal-dark' : 'text-ink-3'}`}>
-                {count}
-              </span>
+              <span className="text-xs font-normal text-ink-3 tabular-nums">{count}</span>
             )}
           </button>
         )

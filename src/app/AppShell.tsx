@@ -12,14 +12,12 @@ import {
   Send,
   Settings,
   ShieldBan,
-  Stamp,
   UserRound,
   type LucideIcon,
 } from 'lucide-react'
 import { Link, NavLink, Outlet, useLocation, useMatches, useNavigate } from 'react-router'
 import { INTERNAL_ONLY_MESSAGE } from '../api/errors'
 import { NetworkBadge } from '../components/badges'
-import { Avatar } from '../components/rich'
 import { Button } from '../components/ui'
 import { menuFor, type MenuKey } from '../lib/access'
 import { ROLE_LABEL } from '../lib/labels'
@@ -52,15 +50,12 @@ function Sidebar() {
   const pendingCount = new Set(pending.data?.map((item) => item.requestId)).size
   const isOwner = projects.data?.some((p) => p.owners.some((o) => o.id === me.id)) ?? false
   const groups = menuFor(me.role, { canApprove: pendingCount > 0 || isOwner })
-  const base = 'flex h-10 items-center gap-3 rounded-lg px-3 text-base'
+  const base = 'flex h-10 items-center gap-2.5 rounded-md px-2.5 text-base'
 
   return (
-    <aside className="flex w-[15rem] shrink-0 flex-col bg-nav text-nav-ink">
-      <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
-        <span className="inline-flex size-8 items-center justify-center rounded-lg bg-seal text-white">
-          <Stamp size={17} aria-hidden />
-        </span>
-        <span className="font-bold tracking-tight text-white">AI 작업 승인</span>
+    <aside className="flex w-[15rem] shrink-0 flex-col border-r border-rule bg-nav text-nav-ink">
+      <div className="flex h-14 shrink-0 items-center px-5">
+        <span className="text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink">AI 작업 승인</span>
       </div>
 
       <nav aria-label="주 메뉴" className="quiet-scroll flex-1 overflow-y-auto px-2.5 pb-3">
@@ -77,9 +72,9 @@ function Sidebar() {
                     aria-label={`${item.label}: ${INTERNAL_ONLY_MESSAGE}`}
                     title={INTERNAL_ONLY_MESSAGE}
                     tabIndex={0}
-                    className={`${base} cursor-not-allowed text-nav-dim/60`}
+                    className={`${base} cursor-not-allowed text-ink-3/70`}
                   >
-                    <Icon size={18} aria-hidden className="shrink-0" />
+                    <Icon size={17} strokeWidth={1.75} aria-hidden className="shrink-0" />
                     <span className="truncate">{item.label}</span>
                   </span>
                 )
@@ -90,10 +85,10 @@ function Sidebar() {
                   to={item.to}
                   end={item.key === 'requests'}
                   className={({ isActive }) =>
-                    `${base} ${isActive ? 'bg-nav-2 font-medium text-white' : 'hover:bg-nav-2/60 hover:text-white'}`
+                    `${base} ${isActive ? 'bg-nav-2 font-semibold text-ink' : 'hover:bg-nav-2/60 hover:text-ink'}`
                   }
                 >
-                  <Icon size={18} aria-hidden className="shrink-0" />
+                  <Icon size={17} strokeWidth={1.75} aria-hidden className="shrink-0" />
                   <span className="flex-1 truncate">{item.label}</span>
                   {item.key === 'approvals' && pendingCount > 0 && (
                     <span className="rounded-full bg-seal px-1.5 text-xs font-semibold text-white tabular-nums">
@@ -107,11 +102,10 @@ function Sidebar() {
         ))}
       </nav>
 
-      <div className="flex items-center gap-2 border-t border-white/10 p-3">
-        <Avatar name={me.name} />
+      <div className="flex items-center gap-2 border-t border-rule py-3 pr-3 pl-5">
         <div className="min-w-0 flex-1 leading-tight">
-          <p className="truncate text-sm font-medium text-white">{me.name}</p>
-          <p className="truncate text-xs text-nav-dim">
+          <p className="truncate text-sm font-medium text-ink">{me.name}</p>
+          <p className="truncate text-xs text-ink-3">
             {ROLE_LABEL[me.role]}
             {me.departmentId ? `, ${departmentName(me.departmentId)}` : ''}
           </p>
@@ -120,7 +114,7 @@ function Sidebar() {
           type="button"
           aria-label="로그아웃"
           title="로그아웃"
-          className="rounded-md p-1.5 text-nav-dim hover:bg-nav-2 hover:text-white"
+          className="rounded-md p-1.5 text-ink-3 hover:bg-nav-2 hover:text-ink"
           onClick={async () => {
             await signOut()
             navigate('/login', { replace: true })
@@ -139,31 +133,34 @@ interface RouteHandle {
   back?: { to: string; label: string }
 }
 
-function TopBar() {
+function TopBar({ fullBleed }: { fullBleed: boolean }) {
   const network = useNetwork()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  // 파란 버튼은 화면의 할 일 하나에만 쓴다. 이미 작업 요청 화면이면 이 버튼은 필요 없다.
-  const composing = pathname === '/requests/new'
+  // 사이드바의 "작업 요청"과 겹치므로 목록을 보다가 새로 시작하는 두 화면에만 둔다.
+  const showCompose = pathname === '/dashboard' || pathname === '/requests'
   const back = useMatches()
     .map((match) => (match.handle as RouteHandle | undefined)?.back)
     .find(Boolean)
+  const external = network === 'EXTERNAL'
+  // 보여 줄 것이 없으면 선을 긋지 않는다. 메뉴를 옮겨 다녀도 제목 높이가 그대로이도록 자리는 남긴다.
+  if (!back && !external && !showCompose) return fullBleed ? null : <div className="h-14 shrink-0" />
   return (
     <header className="flex h-14 shrink-0 items-center justify-end gap-3 border-b border-rule bg-sheet px-5">
       {back && (
-        <Link to={back.to} className="mr-auto inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm font-medium text-ink-2 hover:bg-paper hover:text-ink">
+        <Link to={back.to} className="mr-auto inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-ink-2 hover:bg-sheet-alt hover:text-ink">
           <ArrowLeft size={17} aria-hidden />
           {back.label}
         </Link>
       )}
       {/* 접속 위치는 서버가 판단한다. 평소에는 표시하지 않고, 쓸 수 있는 기능이 줄어드는 외부망일 때만 알린다. */}
-      {network === 'EXTERNAL' && (
+      {external && (
         <>
           <span className="text-sm text-external">승인과 조회 위주로 쓸 수 있습니다</span>
           <NetworkBadge network={network} />
         </>
       )}
-      {!composing && (
+      {showCompose && (
         <Button internalOnly onClick={() => navigate('/requests/new')}>
           <Plus size={16} aria-hidden />새 작업 요청
         </Button>
@@ -182,7 +179,7 @@ export function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         {/* 기능이 제한되는 외부망임을 화면 어디서나 알아보게 하는 띠 */}
         {network === 'EXTERNAL' && <div className="band-external h-1 shrink-0" role="presentation" />}
-        <TopBar />
+        <TopBar fullBleed={fullBleed} />
         {fullBleed ? (
           <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />

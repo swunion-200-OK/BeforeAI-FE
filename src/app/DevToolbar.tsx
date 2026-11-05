@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, MessageSquare, PlayCircle, RotateCcw, ShieldAlert, Wrench, X } from 'lucide-react'
+import { ChevronRight, Wrench, X } from 'lucide-react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { networkStore } from '../api/client'
@@ -35,6 +35,8 @@ export default function DevToolbar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const network = useNetwork()
+  // 로그인 화면에서 접힌 버튼은 결재 문서를 가리지 않게 오른쪽 아래에 둔다. 펼친 패널은 시연 계정 목록을 가리면 안 되므로 왼쪽에 연다.
+  const buttonDock = pathname === '/login' ? 'right-2.5 bottom-2.5' : 'bottom-[4.25rem] left-2.5'
 
   // 로그인 전에도 배지가 맞도록 목 서버의 망 값을 바로 알린다.
   useEffect(() => {
@@ -98,29 +100,25 @@ export default function DevToolbar() {
     return (
       <aside
         aria-label="시연 가이드"
-        className="quiet-scroll fixed top-0 bottom-0 left-0 z-40 w-[15rem] overflow-y-auto bg-nav-2 p-3 text-xs text-white shadow-raised"
+        className="quiet-scroll fixed top-0 bottom-0 left-0 z-40 w-[15rem] overflow-y-auto border-r border-rule bg-sheet p-3 text-xs text-ink"
       >
         <div className="mb-3 flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-sm font-semibold">
-            <PlayCircle size={15} aria-hidden />
-            시연 가이드
-          </span>
-          <button type="button" onClick={() => setGuideOpen(false)} aria-label="시연 가이드 닫기" className="text-white/70 hover:text-white">
+          <span className="text-sm font-semibold">시연 가이드</span>
+          <button type="button" onClick={() => setGuideOpen(false)} aria-label="시연 가이드 닫기" className="text-ink-3 hover:text-ink">
             <X size={16} />
           </button>
         </div>
         <button
           type="button"
           onClick={reset}
-          className="mb-4 flex w-full items-center justify-center gap-1 rounded bg-white/10 py-1.5 hover:bg-white/20"
+          className="mb-4 w-full rounded-md border border-rule-strong py-1.5 font-medium hover:bg-sheet-alt"
         >
-          <RotateCcw size={13} aria-hidden />
           처음 상태로 초기화
         </button>
 
         {DEMO_SCENARIOS.map((group) => (
           <section key={group.title} className="mb-4">
-            <h2 className="mb-1.5 font-semibold text-white">{group.title}</h2>
+            <h2 className="mb-1.5 font-semibold">{group.title}</h2>
             <ol className="flex flex-col gap-1">
               {group.steps.map((step, index) => {
                 const key = `${group.title}-${index}`
@@ -130,12 +128,12 @@ export default function DevToolbar() {
                       type="button"
                       onClick={() => runStep(key, step)}
                       aria-current={activeStep === key ? 'step' : undefined}
-                      className={`w-full rounded p-1.5 text-left ${
-                        activeStep === key ? 'bg-seal text-white' : 'bg-white/5 hover:bg-white/15'
+                      className={`w-full rounded-md p-1.5 text-left ${
+                        activeStep === key ? 'bg-seal-soft font-medium text-seal-dark' : 'hover:bg-sheet-alt'
                       }`}
                     >
                       <span className="block">{step.label}</span>
-                      <span className={`mt-0.5 block ${activeStep === key ? 'text-white/80' : 'text-white/55'}`}>
+                      <span className="mt-0.5 block font-normal text-ink-3">
                         {userName(step.userId)}
                         {step.network === 'EXTERNAL' && `, ${NETWORK_LABEL.EXTERNAL}에서`}
                       </span>
@@ -148,14 +146,14 @@ export default function DevToolbar() {
         ))}
 
         <section>
-          <h2 className="mb-1.5 font-semibold text-white">상태별 화면</h2>
+          <h2 className="mb-1.5 font-semibold">상태별 화면</h2>
           <div className="flex flex-wrap gap-1">
             {DEMO_STATUSES.map((item) => (
               <button
                 key={item.status}
                 type="button"
                 onClick={() => goTo(`status-${item.status}`, item.userId, 'INTERNAL', item.path)}
-                className="rounded hover:ring-2 hover:ring-white/60"
+                className="rounded-md border border-rule px-1.5 py-0.5 hover:bg-sheet-alt"
               >
                 <RequestStatusBadge status={item.status} />
               </button>
@@ -171,11 +169,11 @@ export default function DevToolbar() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-[4.25rem] left-2.5 z-40 flex w-[13.75rem] items-center gap-1.5 rounded-lg bg-nav-2 px-2.5 py-1.5 text-xs font-medium text-nav-ink shadow-raised ring-1 ring-white/15 hover:text-white"
+        className={`fixed ${buttonDock} z-40 flex w-[13.75rem] items-center gap-1.5 rounded-md border border-rule-strong bg-sheet px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-sheet-alt hover:text-ink`}
       >
         <Wrench size={14} aria-hidden />
         개발 도구
-        {network === 'EXTERNAL' && <span className="ml-auto text-nav-dim">{NETWORK_LABEL.EXTERNAL}</span>}
+        {network === 'EXTERNAL' && <span className="ml-auto text-ink-3">{NETWORK_LABEL.EXTERNAL}</span>}
       </button>
     )
   }
@@ -183,14 +181,14 @@ export default function DevToolbar() {
   return (
     <aside
       aria-label="개발용 전환 툴바"
-      className="fixed bottom-[4.25rem] left-2.5 z-40 w-[13.75rem] rounded-lg bg-nav-2 p-3 text-xs text-white shadow-raised ring-1 ring-white/15"
+      className={`fixed bottom-[4.25rem] left-2.5 z-40 w-[13.75rem] rounded-xl border border-rule bg-sheet p-3 text-xs text-ink shadow-raised`}
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 font-semibold">
           <Wrench size={14} aria-hidden />
           개발 도구
         </span>
-        <button type="button" onClick={() => setOpen(false)} aria-label="개발 도구 접기" className="text-white/70 hover:text-white">
+        <button type="button" onClick={() => setOpen(false)} aria-label="개발 도구 접기" className="text-ink-3 hover:text-ink">
           <X size={15} />
         </button>
       </div>
@@ -198,9 +196,8 @@ export default function DevToolbar() {
       <button
         type="button"
         onClick={() => setGuideOpen(true)}
-        className="mb-2.5 flex w-full items-center gap-1.5 rounded bg-seal px-2 py-1.5 font-medium hover:bg-seal-dark"
+        className="mb-1.5 flex w-full items-center gap-1.5 rounded-md bg-seal px-2 py-1.5 font-medium text-white hover:bg-seal-dark"
       >
-        <PlayCircle size={14} aria-hidden />
         시연 가이드 열기
         <ChevronRight size={14} className="ml-auto" aria-hidden />
       </button>
@@ -208,21 +205,20 @@ export default function DevToolbar() {
       <button
         type="button"
         onClick={() => goTo('tamper', 'u-07', 'INTERNAL', TAMPER_DEMO_PATH)}
-        className="mb-2.5 flex w-full items-center gap-1.5 rounded bg-white/10 px-2 py-1.5 font-medium hover:bg-white/20"
+        className="mb-2.5 flex w-full items-center gap-1.5 rounded-md border border-rule-strong px-2 py-1.5 font-medium hover:bg-sheet-alt"
       >
-        <ShieldAlert size={14} aria-hidden />
         변조 시연 열기
         <ChevronRight size={14} className="ml-auto" aria-hidden />
       </button>
 
-      <label className="mb-1 block text-white/70" htmlFor="dev-user">
+      <label className="mb-1 block text-ink-3" htmlFor="dev-user">
         로그인 사용자
       </label>
       <select
         id="dev-user"
         value={me?.id ?? ''}
         onChange={(event) => switchUser(event.target.value)}
-        className="mb-2.5 w-full rounded bg-white/10 px-2 py-1.5 text-white [&>option]:text-ink"
+        className="mb-2.5 w-full rounded-md border border-rule-input bg-sheet px-2 py-1.5 text-ink"
       >
         {!me && <option value="">로그아웃 상태</option>}
         {state.users.map((user) => (
@@ -237,51 +233,49 @@ export default function DevToolbar() {
           type="button"
           onClick={() => setSlackOpen((v) => !v)}
           aria-expanded={slackOpen}
-          className="flex flex-1 items-center justify-center gap-1 rounded bg-white/10 py-1.5 hover:bg-white/20"
+          className="flex-1 rounded-md border border-rule-strong py-1.5 hover:bg-sheet-alt"
         >
-          <MessageSquare size={13} aria-hidden />
           Slack 알림 {state.slackOutbox.length}
         </button>
         <button
           type="button"
           onClick={reset}
-          className="flex flex-1 items-center justify-center gap-1 rounded bg-white/10 py-1.5 hover:bg-white/20"
+          className="flex-1 rounded-md border border-rule-strong py-1.5 hover:bg-sheet-alt"
         >
-          <RotateCcw size={13} aria-hidden />
           데이터 초기화
         </button>
       </div>
 
       {/* 실제 서비스에서는 서버가 접속 IP로 판단하므로 이런 설정이 없다. 목 서버에서 외부망 동작을 보기 위한 전환이다. */}
-      <div className="mt-2.5 border-t border-white/15 pt-2.5">
-        <p className="mb-1 text-white/70">접속 환경 (시연용)</p>
-        <div className="grid grid-cols-2 gap-1 rounded bg-white/10 p-0.5" role="group" aria-label="접속 환경">
+      <div className="mt-2.5 border-t border-rule pt-2.5">
+        <p className="mb-1 text-ink-3">접속 환경 (시연용)</p>
+        <div className="grid grid-cols-2 gap-0.5 rounded-md border border-rule-strong p-0.5" role="group" aria-label="접속 환경">
           {(['INTERNAL', 'EXTERNAL'] as const).map((value) => (
             <button
               key={value}
               type="button"
               aria-pressed={network === value}
               onClick={() => switchNetwork(value)}
-              className={`rounded py-1 font-medium ${network === value ? 'bg-white text-ink' : 'text-white/80 hover:text-white'}`}
+              className={`rounded py-1 font-medium ${network === value ? 'bg-seal-soft font-semibold text-seal-dark' : 'text-ink-2 hover:bg-sheet-alt'}`}
             >
               {NETWORK_LABEL[value]}
             </button>
           ))}
         </div>
-        <p className="mt-1 text-white/55">실제로는 서버가 접속 위치로 자동 판단합니다</p>
+        <p className="mt-1 text-ink-3">실제로는 서버가 접속 위치로 자동 판단합니다</p>
       </div>
 
       {slackOpen && (
         <ul className="mt-2 max-h-52 space-y-1 overflow-y-auto">
-          {state.slackOutbox.length === 0 && <li className="py-2 text-center text-white/60">보낸 알림이 없습니다</li>}
+          {state.slackOutbox.length === 0 && <li className="py-2 text-center text-ink-3">보낸 알림이 없습니다</li>}
           {state.slackOutbox.map((message) => (
             <li key={message.id}>
               <button
                 type="button"
                 onClick={() => navigate(message.link)}
-                className="w-full rounded bg-white/5 p-1.5 text-left hover:bg-white/15"
+                className="w-full rounded-md p-1.5 text-left hover:bg-sheet-alt"
               >
-                <span className="text-white/60">
+                <span className="text-ink-3">
                   {message.toName}에게, {formatDateTime(message.at)}
                 </span>
                 <br />

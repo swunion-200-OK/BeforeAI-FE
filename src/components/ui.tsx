@@ -1,4 +1,4 @@
-import { CircleAlert, Inbox, Info, Loader2, ShieldAlert, TriangleAlert, X } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 import {
   useEffect,
   useId,
@@ -19,9 +19,9 @@ import { refreshToastHost } from './toast'
 const BUTTON_VARIANT = {
   primary: 'bg-seal text-white hover:bg-seal-dark active:bg-seal-dark disabled:bg-rule disabled:text-ink-3',
   secondary: 'border border-rule-strong bg-sheet text-ink hover:bg-sheet-alt disabled:text-ink-3 disabled:bg-sheet-alt',
-  danger: 'bg-high text-white hover:brightness-90 disabled:bg-rule disabled:text-ink-3',
+  danger: 'bg-high text-white hover:bg-[#a40e26] disabled:bg-rule disabled:text-ink-3',
   'danger-outline': 'border border-high bg-sheet text-high hover:bg-high-soft disabled:border-rule-strong disabled:text-ink-3',
-  ghost: 'text-ink-2 hover:bg-paper disabled:text-ink-3',
+  ghost: 'text-ink-2 hover:bg-sheet-alt hover:text-ink disabled:text-ink-3',
 } as const
 
 const BUTTON_SIZE = {
@@ -59,7 +59,7 @@ export function Button({
     <button
       type={type}
       disabled={disabled || loading || blockedByNetwork}
-      className={`inline-flex shrink-0 items-center justify-center rounded-lg font-medium whitespace-nowrap transition-colors ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center rounded-md font-medium whitespace-nowrap transition-colors ${BUTTON_VARIANT[variant]} ${BUTTON_SIZE[size]} ${className}`}
       {...rest}
     >
       {loading && <Loader2 size={15} className="animate-spin" aria-hidden />}
@@ -120,7 +120,7 @@ export function Tooltip({ text, children }: { text: string; children: ReactNode 
 // ── 입력 ───────────────────────────────────────────────────
 
 const INPUT_CLASS =
-  'w-full rounded-lg border border-rule-strong bg-sheet px-3 py-2 text-sm text-ink transition-shadow placeholder:text-ink-3 focus:border-seal focus:ring-3 focus:ring-seal/15 focus:outline-none disabled:bg-sheet-alt disabled:text-ink-3'
+  'w-full rounded-md border border-rule-input bg-sheet px-3 py-2 text-sm text-ink placeholder:text-ink-3 focus:border-seal focus:outline-2 focus:-outline-offset-1 focus:outline-seal disabled:border-rule disabled:bg-sheet-alt disabled:text-ink-3'
 
 export function Field({
   label,
@@ -160,11 +160,12 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
 
 // ── 안내 ───────────────────────────────────────────────────
 
+/** 왼쪽 선 하나로 알린다. 면을 칠하지 않고, 곧은 선이라 문서의 난외 표시처럼 보인다. */
 const BANNER_TONE = {
-  info: { box: 'border-seal/30 bg-seal-soft text-seal-dark', Icon: Info },
-  warning: { box: 'border-medium/40 bg-medium-soft text-medium', Icon: TriangleAlert },
-  danger: { box: 'border-high/50 bg-high-soft text-high', Icon: ShieldAlert },
-  neutral: { box: 'border-rule bg-sheet-alt text-ink-2', Icon: Info },
+  info: { rule: 'border-seal', title: 'text-ink' },
+  warning: { rule: 'border-medium', title: 'text-medium' },
+  danger: { rule: 'border-high', title: 'text-high' },
+  neutral: { rule: 'border-rule-strong', title: 'text-ink' },
 } as const
 
 export function Banner({
@@ -178,12 +179,11 @@ export function Banner({
   children?: ReactNode
   action?: ReactNode
 }) {
-  const { box, Icon } = BANNER_TONE[tone]
+  const { rule, title: titleColor } = BANNER_TONE[tone]
   return (
-    <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${box}`} role={tone === 'danger' ? 'alert' : undefined}>
-      <Icon size={18} className="mt-0.5 shrink-0" aria-hidden />
+    <div className={`flex items-start gap-3 border-l-[3px] py-1 pl-3.5 text-sm text-ink ${rule}`} role={tone === 'danger' ? 'alert' : undefined}>
       <div className="min-w-0 flex-1">
-        {title && <p className="font-semibold">{title}</p>}
+        {title && <p className={`font-semibold ${titleColor}`}>{title}</p>}
         {children && <div className={title ? 'mt-0.5' : ''}>{children}</div>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
@@ -214,8 +214,7 @@ export function Spinner({ label }: { label?: string }) {
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center gap-3 py-12 text-center">
-      <CircleAlert size={24} className="text-high" aria-hidden />
-      <p className="text-sm text-ink-2">{error instanceof Error ? error.message : '불러오지 못했습니다'}</p>
+      <p className="text-base text-high">{error instanceof Error ? error.message : '불러오지 못했습니다'}</p>
       {onRetry && <Button onClick={onRetry}>다시 불러오기</Button>}
     </div>
   )
@@ -224,9 +223,6 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
 export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
-      <span className="mb-1 inline-flex size-12 items-center justify-center rounded-full bg-paper text-ink-3">
-        <Inbox size={22} aria-hidden />
-      </span>
       <p className="text-lg font-semibold text-ink">{title}</p>
       {children && <p className="max-w-md text-base text-ink-2">{children}</p>}
       {action && <div className="mt-2">{action}</div>}
@@ -250,7 +246,7 @@ export function PageHeader({
   return (
     <header className="mb-6 flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-[1.75rem] leading-tight font-bold tracking-tight">{title}</h1>
+        <h1 className="text-[1.875rem] leading-tight font-semibold tracking-[-0.02em]">{title}</h1>
         {description && <p className="mt-1.5 max-w-[80ch] text-base text-ink-2">{description}</p>}
         {meta && <div className="mt-2.5 flex flex-wrap items-center gap-2 text-sm text-ink-2">{meta}</div>}
       </div>
@@ -259,32 +255,26 @@ export function PageHeader({
   )
 }
 
-/** 흰 서류 한 장. 안쪽 여백을 직접 정하고 싶으면 flush를 준다. */
+/** 선으로 두른 서류 한 장. 안쪽 여백을 직접 정하고 싶으면 flush를 준다. */
 export function Sheet({
   title,
-  icon,
   actions,
   children,
   flush,
   className = '',
 }: {
   title?: ReactNode
-  /** 제목 앞 아이콘 */
-  icon?: ReactNode
   actions?: ReactNode
   children: ReactNode
   flush?: boolean
   className?: string
 }) {
   return (
-    <section className={`rounded-xl border border-rule bg-sheet shadow-card ${className}`}>
+    <section className={`rounded-xl border border-rule bg-sheet ${className}`}>
       {(title || actions) && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rule px-4 py-3">
           {title && (
-            <h2 className="flex items-center gap-2 text-base font-semibold">
-              {icon && <span className="text-ink-3">{icon}</span>}
-              {title}
-            </h2>
+            <h2 className="text-base font-semibold">{title}</h2>
           )}
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
@@ -313,8 +303,8 @@ export function Tabs<T extends string>({
           aria-selected={tab.id === value}
           disabled={tab.disabled}
           onClick={() => onChange(tab.id)}
-          className={`-mb-px border-b-2 px-3.5 py-2.5 text-sm font-medium ${
-            tab.id === value ? 'border-seal text-seal' : 'border-transparent text-ink-2 hover:text-ink'
+          className={`-mb-px border-b-2 px-3.5 py-2.5 text-sm ${
+            tab.id === value ? 'border-seal font-semibold text-ink' : 'border-transparent font-medium text-ink-2 hover:text-ink'
           }`}
         >
           {tab.label}
@@ -355,13 +345,13 @@ export function Modal({
     <dialog
       ref={ref}
       onClose={onClose}
-      className={`m-auto w-[calc(100%-2rem)] rounded-2xl bg-sheet p-0 text-ink shadow-xl ${wide ? 'max-w-3xl' : 'max-w-[30rem]'}`}
+      className={`m-auto w-[calc(100%-2rem)] rounded-xl bg-sheet p-0 text-ink shadow-raised ${wide ? 'max-w-3xl' : 'max-w-[30rem]'}`}
     >
       {open && (
         <>
           <div className="flex items-center justify-between border-b border-rule px-5 py-4">
-            <h2 className="text-lg">{title}</h2>
-            <button type="button" onClick={onClose} aria-label="닫기" className="-mr-1 rounded-lg p-1.5 text-ink-3 hover:bg-paper hover:text-ink">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <button type="button" onClick={onClose} aria-label="닫기" className="-mr-1 rounded-md p-1.5 text-ink-3 hover:bg-sheet-alt hover:text-ink">
               <X size={20} />
             </button>
           </div>
@@ -495,13 +485,13 @@ export function Drawer({
     <dialog
       ref={ref}
       onClose={onClose}
-      className="ml-auto h-dvh max-h-none w-full max-w-lg bg-sheet p-0 text-ink shadow-xl"
+      className="ml-auto h-dvh max-h-none w-full max-w-lg bg-sheet p-0 text-ink shadow-raised"
     >
       {open && (
         <div className="flex h-full flex-col">
           <div className="flex items-center justify-between border-b border-rule px-5 py-4">
-            <h2 className="text-lg">{title}</h2>
-            <button type="button" onClick={onClose} aria-label="닫기" className="-mr-1 rounded-lg p-1.5 text-ink-3 hover:bg-paper hover:text-ink">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            <button type="button" onClick={onClose} aria-label="닫기" className="-mr-1 rounded-md p-1.5 text-ink-3 hover:bg-sheet-alt hover:text-ink">
               <X size={20} />
             </button>
           </div>

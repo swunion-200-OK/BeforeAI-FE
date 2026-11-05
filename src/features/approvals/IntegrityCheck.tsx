@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, X } from 'lucide-react'
 import { Banner, Mono } from '../../components/ui'
 import type { IntegrityResult } from './approvalFlow'
 
@@ -6,7 +6,10 @@ function CheckRow({ ok, label }: { ok: boolean; label: string }) {
   return (
     <li className={`flex items-center justify-between gap-2 text-sm ${ok ? 'text-ink' : 'font-medium text-high'}`}>
       <span>{label}</span>
-      <span className={ok ? 'font-medium text-low' : ''}>{ok ? '✅ 확인' : '❌ 실패'}</span>
+      <span className={`inline-flex items-center gap-1 ${ok ? 'font-medium text-low' : ''}`}>
+        {ok ? <Check size={14} aria-hidden /> : <X size={14} aria-hidden />}
+        {ok ? '확인' : '실패'}
+      </span>
     </li>
   )
 }
@@ -15,7 +18,7 @@ function CheckDetails({ result, receivedHash }: { result: IntegrityResult; recei
   const hashClass = result.hashOk ? 'text-xs' : 'text-xs text-high'
   return (
     <>
-      <ul className={`flex flex-col gap-1 rounded-lg px-2.5 py-2 ${result.ok ? 'bg-low-soft/60' : 'bg-high-soft'}`}>
+      <ul className="flex flex-col gap-1">
         <CheckRow ok={result.hashOk} label="Plan 해시 일치" />
         <CheckRow ok={result.displayOk} label="화면 내용 일치" />
       </ul>
@@ -53,9 +56,10 @@ export function IntegrityCheck({
   if (result.ok) {
     return (
       <details data-integrity-check className="group">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-base font-medium text-low [&::-webkit-details-marker]:hidden">
-          Plan 무결성 확인됨
-          <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden">
+          <Check size={16} className="shrink-0 text-low" aria-hidden />
+          <span className="flex-1">Plan 무결성 확인됨</span>
+          <ChevronDown size={14} className="shrink-0 text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
         </summary>
         <div className="mt-2.5 flex flex-col gap-2.5">
           <CheckDetails result={result} receivedHash={receivedHash} />

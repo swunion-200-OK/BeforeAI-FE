@@ -19,7 +19,7 @@ import {
 } from "../../components/ApprovalStamps";
 import { RequestStatusBadge } from "../../components/badges";
 import { KeyValues } from "../../components/rich";
-import { TaskCard } from "../../components/TaskCard";
+import { TaskCard, TaskRows } from "../../components/TaskCard";
 import { toast } from "../../components/toast";
 import {
   Banner,
@@ -181,7 +181,7 @@ function ResultSeal({ label }: { label: string }) {
   return (
     <span
       aria-hidden
-      className="animate-stamp inline-flex size-[4.25rem] shrink-0 -rotate-6 items-center justify-center rounded-full border-[3px] border-seal text-seal outline-1 outline-offset-2 outline-seal/60"
+      className="animate-stamp inline-flex size-[4.25rem] shrink-0 -rotate-6 items-center justify-center rounded-full border-[3px] border-stamp text-stamp"
     >
       <span className="text-lg font-bold tracking-tight">{label}</span>
     </span>
@@ -579,10 +579,10 @@ export function ApprovalDetail({
     <>
       {/* 가운데: 무엇이 바뀌는지 */}
       <div className="quiet-scroll min-w-0 flex-1 overflow-y-auto bg-paper">
-        <div className="mx-auto flex max-w-[65rem] flex-col gap-4 px-7 py-7">
-          <header className="mb-1">
+        <div className="mx-auto flex max-w-[65rem] flex-col gap-5 px-7 py-7">
+          <header>
             <div className="flex items-start justify-between gap-4">
-              <h2 className="text-[1.5rem] leading-snug font-bold tracking-tight whitespace-pre-wrap">
+              <h2 className="text-[1.625rem] leading-snug font-semibold tracking-[-0.02em] whitespace-pre-wrap">
                 {request.prompt}
               </h2>
               <Link
@@ -607,54 +607,58 @@ export function ApprovalDetail({
             defaultOpen={progressDefaultOpen}
           />
 
-          {tasks.map((task) => {
-            const canApprove = approvable.includes(task.id);
-            const isBlocked = blocked.includes(task.id);
-            return (
-              <TaskCard
-                key={task.id}
-                task={task}
-                requestId={requestId}
-                defaultOpen={task.risk === "HIGH" || integrityFailed}
-                highlighted={request.changedTaskIds.includes(task.id)}
-                leading={
-                  !context ? undefined : task.risk !== "FORBIDDEN" &&
-                    task.status === "PENDING" ? (
-                    <input
-                      type="checkbox"
-                      className="size-4 accent-seal disabled:cursor-not-allowed"
-                      aria-label={`${task.title} 승인 대상으로 선택`}
-                      checked={canApprove && !deselected.has(task.id)}
-                      disabled={!canApprove}
-                      title={
-                        isBlocked
-                          ? "내부망 승인 필요"
-                          : canApprove
-                            ? undefined
-                            : "지금 내가 승인할 수 없는 작업입니다"
-                      }
-                      onChange={() => toggle(task.id)}
-                    />
-                  ) : (
-                    // 체크할 수 없는 카드도 제목 줄을 맞춘다. 진행 상태는 카드의 상태 배지가 보여 준다.
-                    <span className="block size-4" aria-hidden />
-                  )
-                }
-                footer={
-                  task.risk === "FORBIDDEN"
-                    ? undefined
-                    : taskNote(
-                        task,
-                        canApprove,
-                        isBlocked,
-                        request.approvalStatus.find(
-                          (s) => s.taskId === task.id,
-                        ),
+          {tasks.length > 0 && (
+            <TaskRows>
+              {tasks.map((task) => {
+                const canApprove = approvable.includes(task.id);
+                const isBlocked = blocked.includes(task.id);
+                return (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    requestId={requestId}
+                    defaultOpen={task.risk === "HIGH" || integrityFailed}
+                    highlighted={request.changedTaskIds.includes(task.id)}
+                    leading={
+                      !context ? undefined : task.risk !== "FORBIDDEN" &&
+                        task.status === "PENDING" ? (
+                        <input
+                          type="checkbox"
+                          className="size-4 accent-seal disabled:cursor-not-allowed"
+                          aria-label={`${task.title} 승인 대상으로 선택`}
+                          checked={canApprove && !deselected.has(task.id)}
+                          disabled={!canApprove}
+                          title={
+                            isBlocked
+                              ? "내부망 승인 필요"
+                              : canApprove
+                                ? undefined
+                                : "지금 내가 승인할 수 없는 작업입니다"
+                          }
+                          onChange={() => toggle(task.id)}
+                        />
+                      ) : (
+                        // 체크할 수 없는 카드도 제목 줄을 맞춘다. 진행 상태는 카드의 상태 배지가 보여 준다.
+                        <span className="block size-4" aria-hidden />
                       )
-                }
-              />
-            );
-          })}
+                    }
+                    footer={
+                      task.risk === "FORBIDDEN"
+                        ? undefined
+                        : taskNote(
+                            task,
+                            canApprove,
+                            isBlocked,
+                            request.approvalStatus.find(
+                              (s) => s.taskId === task.id,
+                            ),
+                          )
+                    }
+                  />
+                );
+              })}
+            </TaskRows>
+          )}
         </div>
       </div>
 
@@ -673,7 +677,7 @@ export function ApprovalDetail({
           )}
           {request.approvalStatus.length > 0 && (
             <section>
-              <h2 className="mb-3 text-base font-bold">결재란</h2>
+              <h2 className="mb-3 text-base font-semibold">결재란</h2>
               <StampSheet
                 statuses={request.approvalStatus}
                 tasks={tasks}
@@ -708,12 +712,12 @@ export function ApprovalDetail({
               </Banner>
             )}
             {result && !staleFailure && !verificationFailed && (
-              <div className="flex items-center gap-3.5 rounded-lg bg-seal-soft p-3.5">
+              <div className="flex items-center gap-3.5">
                 <ResultSeal label={result.doc ? "적용" : "승인"} />
-                <div className="min-w-0 text-sm break-keep text-seal-dark">
+                <div className="min-w-0 text-sm break-keep text-ink-2">
                   {executionRequested ? (
                     <>
-                      <p className="text-base font-semibold">
+                      <p className="text-base font-semibold text-ink">
                         필요한 승인이 모두 모여 실행을 요청했습니다
                       </p>
                       <Link
@@ -725,7 +729,7 @@ export function ApprovalDetail({
                     </>
                   ) : (
                     <>
-                      <p className="text-base font-semibold">
+                      <p className="text-base font-semibold text-ink">
                         {result.doc
                           ? "적용으로 처리했습니다"
                           : "승인 서명을 제출했습니다"}
@@ -750,7 +754,7 @@ export function ApprovalDetail({
             {nextRequestId && decisionDone && (
               <Link
                 to={`/approvals/${nextRequestId}`}
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-lg border border-seal px-4 text-base font-medium text-seal hover:bg-seal-soft"
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-rule-strong px-4 text-base font-medium text-ink hover:bg-sheet-alt"
               >
                 다음 승인 대기 열기
                 {otherCount > 0 && (

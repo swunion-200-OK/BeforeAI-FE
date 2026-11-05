@@ -15,7 +15,6 @@ import type {
 } from '../api/types'
 
 export const RISK_LABEL: Record<Risk, string> = { LOW: '낮음', MEDIUM: '중간', HIGH: '높음', FORBIDDEN: '금지' }
-export const RISK_EMOJI: Record<Risk, string> = { LOW: '🟢', MEDIUM: '🟠', HIGH: '🔴', FORBIDDEN: '🔒' }
 
 export const TASK_TYPE_LABEL: Record<TaskType, string> = {
   DOC: '문서',

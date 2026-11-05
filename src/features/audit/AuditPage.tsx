@@ -114,10 +114,10 @@ export default function AuditPage() {
                 type="button"
                 aria-pressed={active}
                 onClick={() => setParams(toggleQuickFilter(filter.id, params), { replace: true })}
-                className={`h-8 rounded-full border px-3 text-sm font-medium whitespace-nowrap ${
+                className={`h-9 rounded-md border px-3 text-sm font-medium whitespace-nowrap ${
                   active
                     ? 'border-seal bg-seal-soft text-seal-dark'
-                    : 'border-rule-strong bg-sheet text-ink-2 hover:border-seal/60 hover:text-ink'
+                    : 'border-rule-strong bg-sheet text-ink-2 hover:bg-sheet-alt hover:text-ink'
                 }`}
               >
                 {filter.label}

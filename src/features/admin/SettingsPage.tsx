@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { FolderPlus, KeyRound, MessageSquare, OctagonX, Scale, ShieldBan, UsersRound } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router'
 import { PageHeader } from '../../components/ui'
 import { ForbiddenAdminPanel } from '../forbidden/ForbiddenAdminPanel'
@@ -12,13 +11,13 @@ import { ProjectsTab } from './ProjectsTab'
 import { SlackTab } from './SlackTab'
 
 const TABS = [
-  { id: 'accounts', label: '계정·권한', icon: UsersRound, Panel: AccountsTab },
-  { id: 'policy', label: '정책·승인 기준표', icon: Scale, Panel: PolicyTab },
-  { id: 'forbidden', label: '금지 작업', icon: ShieldBan, Panel: ForbiddenAdminPanel },
-  { id: 'keys', label: '승인 키', icon: KeyRound, Panel: KeysTab },
-  { id: 'projects', label: '프로젝트', icon: FolderPlus, Panel: ProjectsTab },
-  { id: 'slack', label: 'Slack', icon: MessageSquare, Panel: SlackTab },
-  { id: 'emergency', label: '전사 일괄 중단', icon: OctagonX, Panel: KillAllTab },
+  { id: 'accounts', label: '계정·권한', Panel: AccountsTab },
+  { id: 'policy', label: '정책·승인 기준표', Panel: PolicyTab },
+  { id: 'forbidden', label: '금지 작업', Panel: ForbiddenAdminPanel },
+  { id: 'keys', label: '승인 키', Panel: KeysTab },
+  { id: 'projects', label: '프로젝트', Panel: ProjectsTab },
+  { id: 'slack', label: 'Slack', Panel: SlackTab },
+  { id: 'emergency', label: '전사 일괄 중단', Panel: KillAllTab },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -37,7 +36,7 @@ function TabNav({ current, onSelect }: { current: TabId; onSelect: (id: TabId) =
   const badges = useTabBadges()
   return (
     <div role="tablist" aria-orientation="vertical" aria-label="설정 항목" className="sticky top-4 flex flex-col gap-0.5">
-      {TABS.map(({ id, label, icon: Icon }) => {
+      {TABS.map(({ id, label }) => {
         const active = id === current
         const badge = badges[id]
         const danger = id === 'emergency'
@@ -48,22 +47,21 @@ function TabNav({ current, onSelect }: { current: TabId; onSelect: (id: TabId) =
             role="tab"
             aria-selected={active}
             onClick={() => onSelect(id)}
-            className={`flex h-11 items-center gap-2.5 rounded-lg px-3 text-left text-sm ${danger ? 'mt-3' : ''} ${
+            className={`flex h-10 items-center gap-2.5 rounded-md px-3 text-left text-[0.9375rem] ${danger ? 'mt-3' : ''} ${
               active
                 ? danger
-                  ? 'bg-high-soft font-semibold text-high'
-                  : 'bg-seal-soft font-semibold text-seal-dark'
+                  ? 'bg-sheet-alt font-semibold text-high shadow-[inset_3px_0_0_var(--color-high)]'
+                  : 'bg-sheet-alt font-semibold text-ink shadow-[inset_3px_0_0_var(--color-seal)]'
                 : danger
-                  ? 'text-high hover:bg-high-soft/60'
-                  : 'text-ink-2 hover:bg-sheet hover:text-ink'
+                  ? 'text-high hover:bg-sheet-alt'
+                  : 'text-ink-2 hover:bg-sheet-alt hover:text-ink'
             }`}
           >
-            <Icon size={17} aria-hidden className="shrink-0" />
             <span className="min-w-0 flex-1 truncate">{label}</span>
             {badge && badge.count > 0 && (
               <span
                 title={`${badge.label} ${badge.count}건`}
-                className="rounded-full bg-medium-soft px-1.5 text-xs font-semibold text-medium tabular-nums"
+                className="text-xs font-semibold text-medium tabular-nums"
               >
                 <span className="sr-only">{badge.label} </span>
                 {badge.count}

@@ -124,7 +124,7 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
                   <label
                     key={user.id}
                     className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-sm ${
-                      checked ? 'border-seal bg-seal-soft/40' : 'border-rule hover:bg-sheet-alt'
+                      checked ? 'border-seal bg-seal-soft' : 'border-rule hover:bg-sheet-alt'
                     }`}
                   >
                     <input

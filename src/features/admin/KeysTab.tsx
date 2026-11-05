@@ -124,7 +124,6 @@ export function KeysTab() {
         <Sheet
           title={`등록 대기 ${pending.length}건`}
           flush
-          className="ring-2 ring-medium/25"
           actions={<span className="text-sm text-ink-2">등록하면 웹쉘 정책에 반영되어 이 키로 승인할 수 있습니다.</span>}
         >
           <KeyTable

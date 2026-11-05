@@ -28,10 +28,10 @@ function QueueItem({ group, selected }: { group: QueueGroup; selected: boolean }
         to={`/approvals/${group.requestId}`}
         aria-current={selected ? 'true' : undefined}
         title={group.tasks.map((task) => task.taskTitle).join(', ')}
-        className={`block rounded-lg px-3 py-3 ${selected ? 'bg-seal-soft ring-1 ring-seal/40' : 'hover:bg-sheet-alt'}`}
+        className={`block px-5 py-3 ${selected ? 'bg-seal-soft shadow-[inset_3px_0_0_var(--color-seal)]' : 'hover:bg-sheet-alt'}`}
       >
         <div className="flex items-start gap-2">
-          <span className="line-clamp-2 min-w-0 flex-1 text-base font-semibold text-ink">
+          <span className={`line-clamp-2 min-w-0 flex-1 text-base text-ink ${selected ? 'font-semibold' : 'font-medium'}`}>
             {top.taskTitle}
             {others > 0 && ` 외 ${others}건`}
           </span>
@@ -66,7 +66,7 @@ export function ApprovalQueue({ selectedId }: { selectedId?: string }) {
   return (
     <div className="flex w-[18rem] shrink-0 flex-col border-r border-rule bg-sheet">
       <div className="flex flex-col gap-3 px-5 pt-5 pb-3">
-        <h1 className="text-xl font-bold tracking-tight">승인 대기</h1>
+        <h1 className="text-xl font-semibold">승인 대기</h1>
         {groups.length > 0 && (
           <div>
             <SegmentedTabs
@@ -83,7 +83,7 @@ export function ApprovalQueue({ selectedId }: { selectedId?: string }) {
         )}
       </div>
 
-      <div className="quiet-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="quiet-scroll min-h-0 flex-1 overflow-y-auto pb-2">
         {pending.isPending && <Spinner />}
         {pending.isError && <ErrorState error={pending.error} onRetry={() => pending.refetch()} />}
         {pending.isSuccess && visible.length === 0 && (
@@ -91,7 +91,7 @@ export function ApprovalQueue({ selectedId }: { selectedId?: string }) {
             {groups.length === 0 ? '기다리는 승인이 없습니다.' : '이 조건에 맞는 요청이 없습니다.'}
           </p>
         )}
-        <ul aria-label="승인 대기 요청" className="flex flex-col gap-0.5">
+        <ul aria-label="승인 대기 요청" className="divide-y divide-rule border-y border-rule">
           {visible.map((group) => (
             <QueueItem key={group.requestId} group={group} selected={group.requestId === selectedId} />
           ))}

@@ -39,20 +39,20 @@ function Stat({
   alert?: boolean
   onSelect: () => void
 }) {
-  const number = value === 0 ? 'text-ink-3' : alert ? 'text-high' : selected ? 'text-seal' : 'text-ink'
+  const number = value === 0 ? 'text-ink-3' : alert ? 'text-high' : 'text-ink'
   return (
     <button
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
-      className={`rounded-xl border px-5 py-4 text-left shadow-card transition-colors ${
-        selected ? 'border-seal bg-seal-soft/60 ring-1 ring-seal' : 'border-rule bg-sheet hover:border-seal/50'
+      className={`-mb-px border-b-2 px-4 pt-3 pb-3.5 text-left transition-colors hover:bg-sheet-alt ${
+        selected ? 'border-seal' : 'border-transparent'
       }`}
     >
-      <span className={`block text-sm ${selected ? 'font-medium text-seal-dark' : 'text-ink-2'}`}>{label}</span>
-      <span className={`mt-1 block text-[2.25rem] leading-tight font-bold tracking-tight tabular-nums ${number}`}>
+      <span className={`block text-sm ${selected ? 'font-semibold text-ink' : 'text-ink-2'}`}>{label}</span>
+      <span className={`mt-0.5 block text-[2.25rem] leading-tight font-semibold tracking-[-0.02em] tabular-nums ${number}`}>
         {value}
-        <span className="ml-1 text-base font-medium text-ink-3">건</span>
+        <span className="ml-1 text-base font-normal tracking-normal text-ink-3">건</span>
       </span>
     </button>
   )
@@ -117,7 +117,7 @@ export default function DashboardPage() {
       {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
       {data && (
         <div className="flex flex-col gap-6">
-          <div role="group" aria-label="아래 목록 고르기" className="grid grid-cols-4 gap-4">
+          <div role="group" aria-label="아래 목록 고르기" className="grid grid-cols-4 border-b border-rule">
             <Stat label="내 승인 대기" value={myPending} selected={view === 'todo'} onSelect={() => select('todo')} />
             <Stat label="실행 중" value={count('RUNNING')} selected={view === 'running'} onSelect={() => select('running')} />
             <Stat

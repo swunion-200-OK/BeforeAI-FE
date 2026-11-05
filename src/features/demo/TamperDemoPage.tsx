@@ -60,10 +60,10 @@ const ATTACKS: Array<{ id: TamperAttack; label: string; run: (requestId: string)
 ]
 
 const TONE: Record<OutcomeTone, { box: string; label: string }> = {
-  caught: { box: 'bg-low-soft text-low', label: '막혔습니다' },
-  waiting: { box: 'bg-medium-soft text-medium', label: '걸어 두었습니다' },
-  missed: { box: 'bg-high-soft text-high', label: '막지 못했습니다' },
-  unverified: { box: 'bg-forbidden-soft text-forbidden', label: '검증되지 않았습니다' },
+  caught: { box: 'border-low text-low', label: '막혔습니다' },
+  waiting: { box: 'border-medium text-medium', label: '걸어 두었습니다' },
+  missed: { box: 'border-high text-high', label: '막지 못했습니다' },
+  unverified: { box: 'border-forbidden text-forbidden', label: '검증되지 않았습니다' },
 }
 
 function OutcomeNote({ outcome }: { outcome: TamperOutcome | null }) {
@@ -72,8 +72,8 @@ function OutcomeNote({ outcome }: { outcome: TamperOutcome | null }) {
   }
   const tone = TONE[outcome.tone]
   return (
-    <div role="status" data-tone={outcome.tone} className={`mt-2 rounded-lg px-4 py-3 ${tone.box}`}>
-      <p className="text-base font-bold">{tone.label}</p>
+    <div role="status" data-tone={outcome.tone} className={`mt-2.5 border-l-[3px] py-0.5 pl-4 ${tone.box}`}>
+      <p className="text-[1.375rem] leading-snug font-semibold">{tone.label}</p>
       <p className="mt-1 text-base break-keep text-ink">{outcome.sentence}</p>
       {outcome.codes?.map((code) => (
         <Mono key={code} className="mt-1.5 block text-sm">
@@ -125,13 +125,13 @@ function AttackerPanel({
     <section aria-label="공격자 패널" className="quiet-scroll flex w-[22rem] shrink-0 flex-col overflow-y-auto border-r border-rule bg-sheet">
       <header className="border-t-4 border-high px-6 pt-6 pb-5">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-bold text-high">공격자</p>
+          <p className="text-sm font-semibold text-high">공격자</p>
           <Link to="/" className="inline-flex items-center gap-1 text-sm font-medium text-ink-2 hover:text-ink hover:underline">
             <ArrowLeft size={15} aria-hidden />
             시연 나가기
           </Link>
         </div>
-        <h1 className="mt-1 text-[1.625rem] leading-snug font-bold tracking-tight break-keep">웹 서비스가 뚫렸다고 가정합니다</h1>
+        <h1 className="mt-1 text-[1.625rem] leading-snug font-semibold tracking-[-0.02em] break-keep">웹 서비스가 뚫렸다고 가정합니다</h1>
       </header>
       <ol className="flex flex-col gap-3 px-6">
         {ATTACKS.map((item, index) => {
@@ -143,15 +143,15 @@ function AttackerPanel({
                 disabled={!untouched || busy}
                 aria-pressed={active}
                 onClick={() => refresh(() => item.run(requestId))}
-                className={`flex w-full items-start gap-3 rounded-lg border-2 px-4 py-3.5 text-left text-[1.0625rem] leading-snug font-semibold break-keep transition-colors ${
+                className={`flex w-full items-start gap-3 rounded-md border px-4 py-3.5 text-left text-[1.0625rem] leading-snug font-semibold break-keep transition-colors ${
                   active
-                    ? 'border-high text-ink'
+                    ? 'border-high text-ink ring-1 ring-high'
                     : untouched
-                      ? 'border-rule-strong text-ink hover:border-high hover:bg-high-soft'
+                      ? 'border-rule-strong text-ink hover:border-high hover:bg-sheet-alt'
                       : 'cursor-not-allowed border-rule text-ink-3'
                 }`}
               >
-                <span aria-hidden className="tabular-nums">
+                <span aria-hidden className="text-ink-3 tabular-nums">
                   {index + 1}
                 </span>
                 <span>{item.label}</span>

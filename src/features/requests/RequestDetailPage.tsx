@@ -2,7 +2,7 @@ import { useParams } from 'react-router'
 import { useMe } from '../../app/AuthProvider'
 import type { RequestDetail, RequestStatus, TaskStatus } from '../../api/types'
 import { RequestStatusBadge } from '../../components/badges'
-import { TaskCard } from '../../components/TaskCard'
+import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useProjects, useRequest } from '../../lib/queries'
 import { ProgressSection } from '../progress/ProgressTree'
@@ -22,33 +22,34 @@ function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPla
   if (tasks.length === 0) return null
   return (
     <section aria-label="작업 목록" className="flex flex-col gap-3">
-      <h2 className="text-base font-semibold">작업 {tasks.length}개</h2>
-      {tasks.map((task) => {
-        const approval = approvalToShow(request, task)
-        const spotlight = (request.status === 'RUNNING' && task.status === 'RUNNING') || (request.status === 'PARTIALLY_COMPLETED' && task.status === 'FAILED')
-        const card = (
-          <TaskCard
-            key={task.id}
-            task={task}
-            requestId={request.id}
-            highlighted={request.status === 'REAPPROVAL_REQUIRED' && request.changedTaskIds.includes(task.id)}
-            showStatus={!(approval && SAID_BY_APPROVAL_LINE.includes(task.status))}
-            actions={
-              canEditPlan && task.status !== 'SUCCEEDED' ? (
-                <TaskEditButtons task={task} request={request} voidsApprovals />
-              ) : undefined
-            }
-            footer={approval && <TaskApprovalLine status={approval} />}
-          />
-        )
-        if (!spotlight) return card
-        const ring = task.status === 'FAILED' ? 'ring-high' : 'ring-seal'
-        return (
-          <div key={task.id} className={`rounded-xl ring-2 ring-offset-2 ring-offset-paper ${ring}`}>
-            {card}
-          </div>
-        )
-      })}
+      <h2 className="text-lg font-semibold">작업 {tasks.length}개</h2>
+      <TaskRows>
+        {tasks.map((task) => {
+          const approval = approvalToShow(request, task)
+          return (
+            <TaskCard
+              key={task.id}
+              task={task}
+              requestId={request.id}
+              highlighted={request.status === 'REAPPROVAL_REQUIRED' && request.changedTaskIds.includes(task.id)}
+              spotlight={
+                request.status === 'RUNNING' && task.status === 'RUNNING'
+                  ? 'running'
+                  : request.status === 'PARTIALLY_COMPLETED' && task.status === 'FAILED'
+                    ? 'failed'
+                    : undefined
+              }
+              showStatus={!(approval && SAID_BY_APPROVAL_LINE.includes(task.status))}
+              actions={
+                canEditPlan && task.status !== 'SUCCEEDED' ? (
+                  <TaskEditButtons task={task} request={request} voidsApprovals />
+                ) : undefined
+              }
+              footer={approval && <TaskApprovalLine status={approval} />}
+            />
+          )
+        })}
+      </TaskRows>
     </section>
   )
 }
@@ -76,7 +77,7 @@ export default function RequestDetailPage() {
   const hasRun = request.events.some((event) => event.status === 'RUNNING' || event.status === 'ROLLING_BACK')
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-6 [&>header]:mb-0">
       <PageHeader
         title={request.prompt}
         meta={
@@ -89,7 +90,7 @@ export default function RequestDetailPage() {
       <RequestTimeline request={request} />
       <RequestStatusBanner request={request} isRequester={isRequester} canKill={canKill} />
       <ProgressSection key={request.id} requestId={request.id} defaultOpen />
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-6">
         <TaskList request={request} canEditPlan={canEditPlan} />
         {/* 실행 중에는 로그가 가장 궁금하므로 작업 위로 올린다. 같은 자리의 요소라 끝나도 다시 불러오지 않는다. */}
         {hasRun && (

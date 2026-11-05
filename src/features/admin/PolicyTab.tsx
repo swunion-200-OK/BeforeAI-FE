@@ -76,7 +76,7 @@ function PresetCard({
   return (
     <label
       className={`flex cursor-pointer flex-col gap-1.5 rounded-lg border p-4 transition-colors ${
-        selected ? 'border-seal bg-seal-soft/40 ring-1 ring-seal' : 'border-rule hover:border-rule-strong'
+        selected ? 'border-seal ring-1 ring-seal' : 'border-rule hover:border-rule-strong'
       }`}
     >
       <span className="mb-1 flex items-center gap-2">
