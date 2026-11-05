@@ -1,58 +1,97 @@
 import type { ReactNode } from 'react'
 import { useNetwork } from '../../lib/queries'
 
-/** 왼쪽 판의 장식이다. 실제 승인 데이터나 절차와 아무 관련이 없다. */
-const APPROVAL_LINE = [
-  { role: '요청', seal: '요청', tilt: '-rotate-6', lands: false },
-  { role: '담당자', seal: '승인', tilt: 'rotate-3', lands: false },
-  { role: '관리자', seal: '승인', tilt: '-rotate-[8deg]', lands: true },
+/** 왼쪽 문서는 장식이다. 실제 승인 데이터나 절차와 아무 관련이 없다. */
+const DOCUMENT_FIELDS = [
+  { label: '문서번호', value: '개발-2026-0412' },
+  { label: '기안일자', value: '2026-11-03' },
+  { label: '기안부서', value: '개발본부 백엔드팀' },
 ]
 
-/** 옆에서 본 도장. 찍는 면이 자국 크기와 맞도록 아래가 살짝 넓다. 움직임은 index.css의 login-tool이 맡는다. */
-function StampTool() {
+/** 사람 손으로 찍은 것처럼 칸마다 각도, 위치, 진하기가 조금씩 다르다. */
+const APPROVAL_LINE = [
+  { step: '기안', name: '홍길동', seed: 3, tilt: -7, shiftX: -2, shiftY: 1, ink: 1 },
+  { step: '검토', name: '김담당', seed: 11, tilt: 5, shiftX: 3, shiftY: -2, ink: 0.72 },
+  { step: '승인', name: '최팀장', seed: 23, tilt: -3, shiftX: 1, shiftY: 2, ink: 0.94 },
+]
+
+const FORM_RULE = 'border-[#55524a]'
+const FORM_LABEL = 'bg-[#efebe0] font-medium'
+
+/** 이름 도장. 이름을 세로로 새기고, 인주가 고르게 묻지 않은 모양을 필터로 낸다. */
+function NameSeal({ name, seed, tilt, shiftX, shiftY, ink }: (typeof APPROVAL_LINE)[number]) {
+  const filterId = `name-seal-ink-${seed}`
   return (
     <svg
-      viewBox="0 0 72 92"
-      width="72"
-      height="92"
-      className="login-tool pointer-events-none absolute bottom-0 left-1/2 z-10 -ml-9 max-w-none"
+      viewBox="0 0 44 44"
+      className="size-[2.75rem] mix-blend-multiply"
+      style={{ opacity: ink, transform: `translate(${shiftX}px, ${shiftY}px) rotate(${tilt}deg)` }}
     >
-      <path d="M12 16C12 7 23 2 36 2s24 5 24 14v54c0 6 6 8 10 12v6H2v-6c4-4 10-6 10-12Z" fill="#6b3d24" />
-      <path d="M46 3.5C54 5.5 60 10 60 16v54c0 6 6 8 10 12v6H46Z" fill="#54301c" />
-      <rect x="19" y="16" width="4" height="48" rx="2" fill="#8f5f40" />
-      <rect x="2" y="88" width="68" height="4" fill="#c8321e" />
+      <defs>
+        <filter id={filterId} x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed={seed} result="edge" />
+          <feDisplacementMap in="SourceGraphic" in2="edge" scale="1.1" result="rough" />
+          <feTurbulence type="fractalNoise" baseFrequency="0.09" numOctaves="3" seed={seed + 1} />
+          <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  4 0 0 0 -0.75" result="patches" />
+          <feComposite in="rough" in2="patches" operator="in" result="uneven" />
+          <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="1" seed={seed + 2} />
+          <feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  9 0 0 0 -2.4" result="speckle" />
+          <feComposite in="uneven" in2="speckle" operator="in" />
+        </filter>
+      </defs>
+      <g filter={`url(#${filterId})`} fill="#c8321e">
+        <circle cx="22" cy="22" r="20" fill="none" stroke="#c8321e" strokeWidth="1.9" />
+        {[...name].map((char, index) => (
+          <text key={index} x="22" y={14.6 + index * 10.6} textAnchor="middle" fontSize="10.6" fontWeight="600">
+            {char}
+          </text>
+        ))}
+      </g>
     </svg>
   )
 }
 
-/** 어두운 판 위에 놓인 승인 문서 한 장. 아래쪽은 판 밖으로 나가 잘린다. 낮은 창에서는 제목과 겹치지 않게 숨긴다. */
-function ApprovalPaper() {
+/** 어두운 판 위에 놓인 결재 문서 한 장. 아래쪽은 판 밖으로 나가 잘린다. 낮은 창에서는 제목과 겹치지 않게 숨긴다. */
+function ApprovalDocument() {
   return (
     <div
       aria-hidden
-      className="login-paper -mb-12 w-full max-w-[34rem] shrink-0 -rotate-2 bg-sheet px-7 pt-6 pb-44 text-ink shadow-[0_24px_60px_rgb(0_0_0/0.45)] [@media(max-height:620px)]:hidden"
+      className="-mb-12 w-full max-w-[34rem] shrink-0 bg-[#f8f6ef] px-7 pt-6 text-xs text-[#26241f] shadow-[1px_1px_1px_rgb(0_0_0/0.35),8px_16px_36px_rgb(0_0_0/0.45)] [@media(max-height:620px)]:hidden"
     >
-      <p className="text-sm font-medium text-ink-3">작업 승인 문서</p>
-      <p className="mt-0.5 mb-4 text-2xl font-bold tracking-[-0.02em]">스테이징 배포</p>
-      <div className="flex border border-ink-3">
-        {APPROVAL_LINE.map(({ role, seal, tilt, lands }) => (
-          <div key={role} className="min-w-0 flex-1 border-r border-ink-3 last:border-r-0">
-            <div className="border-b border-ink-3 py-1.5 text-center text-sm font-semibold text-ink-2">{role}</div>
-            <div className="flex h-[6.5rem] items-center justify-center">
-              <span className="relative inline-flex">
-                <span
-                  className={`inline-flex size-[4.5rem] items-center justify-center rounded-full border-[3px] border-stamp text-stamp ${tilt} ${
-                    lands ? 'login-mark' : ''
-                  }`}
-                >
-                  <span className="text-lg font-bold tracking-tight">{seal}</span>
-                </span>
-                {lands && <StampTool />}
-              </span>
+      <p className="mb-4 text-center text-lg font-semibold tracking-[0.6em] indent-[0.6em]">업무기안</p>
+
+      <div className="flex items-stretch justify-between gap-3">
+        <dl className={`grid min-w-0 flex-1 grid-cols-[4.25rem_minmax(0,1fr)] grid-rows-3 border ${FORM_RULE}`}>
+          {DOCUMENT_FIELDS.map(({ label, value }, index) => (
+            <div key={label} className={`col-span-2 grid grid-cols-subgrid ${index > 0 ? `border-t ${FORM_RULE}` : ''}`}>
+              <dt className={`flex items-center justify-center border-r ${FORM_RULE} ${FORM_LABEL}`}>{label}</dt>
+              <dd className="flex items-center truncate px-2 tabular-nums">{value}</dd>
             </div>
+          ))}
+        </dl>
+
+        <div className={`flex shrink-0 border ${FORM_RULE}`}>
+          <div className={`flex w-6 flex-col items-center justify-center gap-2 border-r ${FORM_RULE} ${FORM_LABEL}`}>
+            <span>결</span>
+            <span>재</span>
           </div>
-        ))}
+          {APPROVAL_LINE.map((seal) => (
+            <div key={seal.step} className={`w-[3.75rem] border-r last:border-r-0 ${FORM_RULE}`}>
+              <div className={`border-b py-1 text-center ${FORM_RULE} ${FORM_LABEL}`}>{seal.step}</div>
+              <div className="flex h-[3.625rem] items-center justify-center">
+                <NameSeal {...seal} />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
+
+      <div className={`mt-3 grid grid-cols-[4.25rem_minmax(0,1fr)] border ${FORM_RULE}`}>
+        <div className={`flex items-center justify-center border-r py-1.5 ${FORM_RULE} ${FORM_LABEL}`}>제목</div>
+        <div className="truncate px-2 py-1.5 font-medium">auth-service 스테이징 배포 승인 요청</div>
+      </div>
+      {/* 본문 칸은 판 밖으로 이어져 잘린다 */}
+      <div className={`h-40 border-x ${FORM_RULE}`} />
     </div>
   )
 }
@@ -68,7 +107,7 @@ function BrandPanel() {
           승인받고 실행합니다
         </h2>
       </div>
-      <ApprovalPaper />
+      <ApprovalDocument />
     </aside>
   )
 }
