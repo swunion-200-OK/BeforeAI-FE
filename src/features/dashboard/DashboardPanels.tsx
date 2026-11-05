@@ -9,8 +9,7 @@ import { formatElapsed } from '../../lib/format'
 import { useIsExternal, usePendingApprovals, useProjects } from '../../lib/queries'
 import { KillAllDialog } from '../admin/KillAllDialog'
 import { groupByRequest, riskiestTask } from '../approvals/queueGroups'
-import { pathFor } from '../requests/requestPaths'
-import { ATTENTION_STATUSES } from './statusGroups'
+import { STATUS_GROUPS as REQUEST_GROUPS, pathFor } from '../requests/requestPaths'
 
 /** 숫자 칸은 이 화면 안에서 내용만 바꾼다. 전체 목록으로 가는 길은 여기에 둔다. */
 function ToList({ to }: { to: string }) {
@@ -157,11 +156,8 @@ export function KillAllAction({ visible }: { visible: boolean }) {
 
 const RISK_ORDER: Risk[] = ['FORBIDDEN', 'HIGH', 'MEDIUM', 'LOW']
 
-const STATUS_GROUPS: Array<{ label: string; statuses: RequestStatus[] }> = [
-  { label: '확인 필요', statuses: ATTENTION_STATUSES },
-  { label: '진행 중', statuses: ['ANALYZING', 'REVIEWING', 'PENDING_APPROVAL', 'RUNNING', 'ROLLING_BACK'] },
-  { label: '끝남', statuses: ['COMPLETED', 'ROLLED_BACK', 'KILLED', 'REJECTED', 'CANCELED'] },
-]
+/** 목록 탭과 같은 묶음이다. 확인할 것을 먼저 보여 준다. */
+const STATUS_GROUPS = [...REQUEST_GROUPS].sort((a, b) => Number(b.id === 'attention') - Number(a.id === 'attention'))
 
 const DEPARTMENT_MEASURES: Array<{ key: 'requests' | 'pendingApprovals' | 'running'; label: string }> = [
   { key: 'requests', label: '요청' },
@@ -202,7 +198,7 @@ function StatusCounts({
   return (
     <section>
       <h3 className={SUBTITLE}>상태별 건수</h3>
-      <div className="grid grid-cols-[repeat(3,minmax(0,11rem))] gap-x-10">
+      <div className="grid grid-cols-[repeat(4,minmax(0,11rem))] gap-x-10">
         {groups.map((group) => (
           <div key={group.label} className="min-w-0">
             <h4 className="mb-1.5 text-[0.875rem] text-ink-3">{group.label}</h4>
@@ -229,7 +225,7 @@ function StatusCounts({
 function DepartmentCompare({ departments }: { departments: DepartmentStat[] }) {
   return (
     <section>
-      <h3 className={SUBTITLE}>부서별 비교</h3>
+      <h3 className={SUBTITLE}>부서별 비교 <span className="font-normal text-ink-3">(프로젝트 소속 부서 기준)</span></h3>
       <table className="w-full text-sm">
         <thead>
           <tr className="text-[0.875rem] text-ink-3">
@@ -291,7 +287,7 @@ export function DashboardDetails({
           </div>
         )}
         {statusCounts && groups.length > 0 && (
-          <div className="min-w-[28rem] flex-1">
+          <div className="min-w-[38rem] flex-1">
             <StatusCounts groups={groups} counts={statusCounts} statusTo={statusTo} />
           </div>
         )}

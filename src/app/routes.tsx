@@ -4,6 +4,7 @@ import { AppShell } from './AppShell'
 import { Root } from './Root'
 import { RouteError } from './RouteError'
 import { HomeRedirect, RequireAuth, RequireInternal, RequireRole } from './guards'
+import NotFoundPage from './NotFoundPage'
 
 const LoginPage = lazy(() => import('../features/auth/LoginPage'))
 const MePage = lazy(() => import('../features/me/MePage'))
@@ -78,6 +79,7 @@ export const router = createBrowserRouter([
                   },
                   // /requests/new보다 뒤에 둔다
                   { path: '/requests/:requestId', element: <RequestDetailPage />, handle: { back: { to: '/requests', label: '내 요청' } } },
+                  { path: '*', element: <NotFoundPage /> },
                 ],
               },
             ],

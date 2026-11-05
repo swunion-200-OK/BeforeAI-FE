@@ -15,6 +15,7 @@ import type {
   TaskStatus,
   TaskType,
 } from '../api/types'
+import { josa } from './josa'
 
 /** 서버가 표에 없는 새 값을 보내면 빈칸 대신 그 값을 그대로 보여 준다. */
 export function labelOf<T extends string>(table: Record<T, string>, value: T): string {
@@ -66,7 +67,12 @@ export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
 
 /** 금지 사유. 서버 작업에는 사유가 없어(TaskResponse), 서버가 FORBIDDEN으로 정하는 기준인 부서 금지 규칙에 걸렸다는 사실만 쓴다. */
 export function forbiddenReasonText(task: Pick<Task, 'type' | 'target' | 'forbiddenReason'>): string {
-  return task.forbiddenReason ?? `${labelOf(TASK_TYPE_LABEL, task.type)} 대상 ${task.target}이(가) 부서 금지 규칙에 걸렸습니다.`
+  return task.forbiddenReason ?? `${labelOf(TASK_TYPE_LABEL, task.type)} 대상 ${josa(task.target, '이', '가')} 부서 금지 규칙에 걸렸습니다.`
+}
+
+/** 금지 작업이 섞인 요청이 끝났을 때 함께 쓰는 말. 끝났다는 말만 있으면 금지 작업도 실행된 것처럼 보인다. */
+export function forbiddenExcludedText(count: number): string {
+  return `금지 작업 ${count}개는 실행하지 않았습니다`
 }
 
 export const ROLE_LABEL: Record<Role, string> = { ADMIN: '관리자', DEPT_MANAGER: '부서 관리자', EMPLOYEE: '직원' }

@@ -31,7 +31,8 @@ import { formatDateTime, formatElapsed } from '../../lib/format'
 import { REQUEST_STATUS_LABEL, RULE_LABEL, TASK_STATUS_LABEL, TASK_TYPE_LABEL, forbiddenReasonText, labelOf } from '../../lib/labels'
 import { findProgressNode } from '../../lib/progressTree'
 import { useRequest } from '../../lib/queries'
-import { GATE_ID, gateView, pathIds, pendingRule, progressNow, type GateView, type PathMode, type ProgressNow } from './progressStatus'
+import { INTERRUPTED_WORD, isInterruptedTask } from '../../lib/settledTask'
+import { GATE_ID, countForbidden, gateView, isTreeClipped, pathIds, pendingRule, progressNow, type GateView, type PathMode, type ProgressNow } from './progressStatus'
 import { useGateReplay } from './useGateReplay'
 import { useProgressTree } from './useProgressTree'
 import { WebshellGate } from './WebshellGate'
@@ -78,7 +79,8 @@ const TONE_STYLE: Record<Tone, { edge: string; ink: string; glyph: string; shape
 }
 
 const APPROVAL_WORD: Record<ApprovalNodeStatus, string> = { PENDING: '승인 대기', APPROVED: '승인' }
-const STEP_WORD: Record<StepStatus, string> = { RUNNING: '실행 중', SUCCEEDED: '성공', FAILED: '실패', SKIPPED: '건너뜀' }
+/** 실행 단계의 SKIPPED는 실행 중에 멈췄다는 뜻이다. 시작하지 않은 작업에는 단계가 없다. */
+const STEP_WORD: Record<StepStatus, string> = { RUNNING: '실행 중', SUCCEEDED: '성공', FAILED: '실패', SKIPPED: '중단됨' }
 
 const SELECTED = 'border-seal ring-2 ring-seal'
 /** 승인 대기 노드가 기다리는 규칙을 찾을 지금 Plan */
@@ -216,7 +218,7 @@ const TaskNode = memo(function TaskNode({
       className={`${NODE} block w-full py-2.5 pr-3 pl-4 ${frameOf(tone, selected, quiet, false)}`}
     >
       <NodeEdge tone={tone} />
-      <StatusLine tone={tone} word={labelOf(TASK_STATUS_LABEL, node.status)} />
+      <StatusLine tone={tone} word={isInterruptedTask(node) ? INTERRUPTED_WORD : labelOf(TASK_STATUS_LABEL, node.status)} />
       <span className="mt-1 block leading-snug font-semibold">{node.label}</span>
       <span className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
         {TASK_TYPE_LABEL[node.taskType]}
@@ -542,6 +544,17 @@ function Diagram({
   zoom: number
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
+  const scrollerRef = useRef<HTMLDivElement>(null)
+  const [clipped, setClipped] = useState(false)
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    const host = hostRef.current
+    if (!scroller || !host || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => setClipped(isTreeClipped(scroller)))
+    observer.observe(scroller)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [])
   // 관문이 닫히는 장면이 끝나기 전에는 선을 자르지 않는다.
   const gateClosed = gate?.phase === 'failed' && gateLit === null
   const links = useMemo(() => linksOf(root, expanded, gateClosed), [root, expanded, gateClosed])
@@ -553,7 +566,9 @@ function Diagram({
   const pathConnectors = connectors.filter(onPath)
   const pulse = path.mode && PULSE_CLASS[path.mode]
   return (
-    <div className="flow-canvas quiet-scroll overflow-x-auto rounded-xl border border-rule">
+    <>
+    {clipped && zoom === 1 && <p className="text-sm font-medium text-ink-2">트리가 칸보다 넓습니다. 옆으로 밀어 나머지를 보거나 크게 보기를 눌러 주세요.</p>}
+    <div ref={scrollerRef} className="flow-canvas quiet-scroll overflow-x-auto rounded-xl border border-rule">
       <div ref={hostRef} className="relative w-max min-w-full p-7">
         <svg aria-hidden className="pointer-events-none absolute inset-0 size-full fill-none">
           <defs>
@@ -616,6 +631,7 @@ function Diagram({
         </div>
       </div>
     </div>
+    </>
   )
 }
 
@@ -661,7 +677,7 @@ function TaskGrid({
       ))}
       {gate && (
         <div style={{ gridColumn: '1 / -1', gridRow: 3 }} className="my-2">
-          <WebshellGate gate={gate} lit={gateLit} />
+          <WebshellGate gate={gate} lit={gateLit} forbiddenExcluded={countForbidden(tasks)} />
         </div>
       )}
     </div>

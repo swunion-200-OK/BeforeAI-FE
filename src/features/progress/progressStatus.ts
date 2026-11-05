@@ -16,7 +16,8 @@ import type {
   RequestStatus,
 } from '../../api/types'
 import { isAnalysisOverdue } from '../../lib/analysisWait'
-import { FAILED_CHECK_LABEL, RULE_LABEL } from '../../lib/labels'
+import { josa } from '../../lib/josa'
+import { FAILED_CHECK_LABEL, RULE_LABEL, forbiddenExcludedText } from '../../lib/labels'
 import { allApprovedNowText } from '../requests/statusBannerText'
 
 // ── 웹쉘 검증 관문 ─────────────────────────────────────────
@@ -122,11 +123,19 @@ export interface ProgressNow {
   mode: PathMode | null
 }
 
-/** 받침에 맞는 조사. 한글로 끝나지 않으면 둘 다 쓴다. */
-function josa(word: string, withFinal: string, withoutFinal: string): string {
-  const code = word.charCodeAt(word.length - 1)
-  if (code < 0xac00 || code > 0xd7a3) return `${word}${withFinal}(${withoutFinal})`
-  return `${word}${(code - 0xac00) % 28 ? withFinal : withoutFinal}`
+/** 금지 작업은 해시 대상에서 빠져 실행되지 않는다. 관문의 금지 작업 검사도 실행 대상을 본다. */
+export function countForbidden(tasks: Array<Pick<ProgressTaskNode, 'risk' | 'status'>>): number {
+  return tasks.filter((task) => task.risk === 'FORBIDDEN' || task.status === 'BLOCKED').length
+}
+
+/** 금지 작업 칸의 낱말. 판정은 그대로 두고, 무엇을 기준으로 통과했는지만 말한다. */
+export function forbiddenCheckWord(excluded: number): string {
+  return `통과 (금지 ${excluded}개 제외)`
+}
+
+/** 트리가 칸보다 넓어 일부가 가려졌는지. 소수점 차이는 무시한다. */
+export function isTreeClipped({ scrollWidth, clientWidth }: { scrollWidth: number; clientWidth: number }): boolean {
+  return scrollWidth - clientWidth > 1
 }
 
 const title = (task: ProgressTaskNode) => task.label.replace(/^\d+\.\s*/, '')
@@ -269,12 +278,19 @@ export function progressNow(
     }
     case 'COMPLETED': {
       const done = tasks.filter((task) => task.status === 'SUCCEEDED').length
+      const excluded = countForbidden(tasks)
+      if (excluded > 0) {
+        const finished = done > 0 ? `실행 대상 작업 ${done}개를 끝냈습니다` : '요청이 끝났습니다'
+        return { text: `${finished}. ${forbiddenExcludedText(excluded)}`, leaves: [], mode: null }
+      }
       return { text: done > 0 ? `작업 ${done}개를 모두 끝냈습니다` : '요청이 끝났습니다', leaves: [], mode: null }
     }
     case 'PARTIALLY_COMPLETED': {
       const done = tasks.filter((task) => task.status === 'SUCCEEDED').length
+      const excluded = countForbidden(tasks)
+      const forbiddenNote = excluded > 0 ? `. ${forbiddenExcludedText(excluded)}` : ''
       return {
-        text: firstFailed ? `${josa(title(firstFailed), '이', '가')} 실패했습니다. 앞선 작업 ${done}개는 끝났습니다` : '일부 작업만 끝났습니다',
+        text: `${firstFailed ? `${josa(title(firstFailed), '이', '가')} 실패했습니다. 앞선 작업 ${done}개는 끝났습니다` : '일부 작업만 끝났습니다'}${forbiddenNote}`,
         leaves: failedLeaves(root),
         mode: 'failed',
       }

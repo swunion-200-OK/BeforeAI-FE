@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router'
 import type { RequestDetail, RequestStatus, TaskApprovalStatus } from '../../api/types'
 import { approvalSummary } from '../../components/ApprovalStamps'
 import { useAnalysisOverdue } from '../../lib/analysisWait'
+import { forbiddenExcludedText } from '../../lib/labels'
+import { countForbidden } from '../progress/progressStatus'
+import { useInterruptedTasks } from '../progress/useInterruptedTasks'
 import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { Banner, Button, Mono, ReasonModal } from '../../components/ui'
 import { allApprovalsCollected, approvalToShow } from './requestPaths'
@@ -116,7 +119,11 @@ export function RequestStatusBanner({
   const action = <NextActions request={request} isRequester={isRequester} canKill={canKill} />
   const changedCount = request.changedTaskIds?.length ?? 0
   const removedTitles = request.removedTaskTitles ?? []
-  const skippedTasks = (request.currentPlan?.tasks ?? []).filter((task) => task.status === 'SKIPPED')
+  const interruptedIds = useInterruptedTasks(request.id, request.status)
+  const allSkipped = (request.currentPlan?.tasks ?? []).filter((task) => task.status === 'SKIPPED')
+  const interruptedTasks = allSkipped.filter((task) => interruptedIds.has(task.id))
+  const skippedTasks = allSkipped.filter((task) => !interruptedIds.has(task.id))
+  const forbiddenCount = countForbidden(request.currentPlan?.tasks ?? [])
   const failedChecks = request.failedChecks ?? []
 
   switch (request.status) {
@@ -197,9 +204,13 @@ export function RequestStatusBanner({
         // 중단한 사람과 사유는 서버 상세에 없다. 실행하지 않은 작업은 작업 상태로 안다.
         <Banner tone="danger" title={request.kill ? `${request.kill.by} 님이 킬 스위치로 중단했습니다` : '킬 스위치로 중단되었습니다'}>
           {request.kill && <p>{request.kill.reason}</p>}
+          {interruptedTasks.length > 0 && <p className="mt-1">실행 중 멈춘 작업: {interruptedTasks.map((task) => task.title).join(', ')}</p>}
           {skippedTasks.length > 0 && <p className="mt-1">실행하지 않은 작업: {skippedTasks.map((task) => task.title).join(', ')}</p>}
         </Banner>
       )
+    case 'COMPLETED':
+      // 평범하게 끝났으면 그리지 않는다. 금지 작업이 섞였으면 빠졌다는 사실이 보여야 한다.
+      return forbiddenCount > 0 ? <Banner tone="neutral" title={forbiddenExcludedText(forbiddenCount)} /> : null
     case 'PARTIALLY_COMPLETED':
       return (
         <Banner tone="warning" title="일부 작업만 성공했습니다" action={action}>

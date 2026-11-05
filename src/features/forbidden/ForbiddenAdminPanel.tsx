@@ -18,7 +18,7 @@ import {
   Sheet,
   Spinner,
 } from '../../components/ui'
-import { UNSIGNED_POLICY_NOTICE, adminKeyMissingReason, policyAdminProof } from '../../crypto/adminProof'
+import { unsignedPolicyNotice, adminKeyMissingReason, policyAdminProof } from '../../crypto/adminProof'
 import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames, useDepartments, useRefreshAll } from '../../lib/queries'
 import { AdminKeyNotice } from '../admin/AdminKeyNotice'
@@ -92,7 +92,7 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
           )}
         </Field>
         <ForbiddenFields value={input} onChange={setInput} />
-        <p className="text-sm text-ink-3">{UNSIGNED_POLICY_NOTICE}</p>
+        {unsignedPolicyNotice() && <p className="text-sm text-ink-3">{unsignedPolicyNotice()}</p>}
       </div>
     </Modal>
   )
@@ -200,7 +200,7 @@ function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
             <p>
               {departmentName(confirming.departmentId)}의 <Mono>{confirming.target}</Mono> 작업을 금지합니다.
             </p>
-            <p className="mt-2">확정하면 서비스 정책과 웹쉘 정책에 함께 반영됩니다. {UNSIGNED_POLICY_NOTICE}</p>
+            <p className="mt-2">확정하면 서비스 정책과 웹쉘 정책에 함께 반영됩니다. {unsignedPolicyNotice()}</p>
           </>
         )}
       </ConfirmModal>

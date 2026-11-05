@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { UNSIGNED_POLICY_NOTICE, UNSIGNED_POLICY_SIGNATURE, adminKeyMissingReason, policyAdminProof, revokeAdminProof } from './adminProof'
+import { UNSIGNED_POLICY_SIGNATURE, adminKeyMissingReason, policyAdminProof, revokeAdminProof, unsignedPolicyNotice } from './adminProof'
 import { deviceStore } from './deviceStore'
 
 beforeEach(() => {
@@ -25,9 +25,13 @@ describe('키가 없을 때의 사전 안내', () => {
     expect(adminKeyMissingReason('admin')).toBeNull()
   })
 
-  it('안내문이 실제 동작과 맞다: 키는 필요하고 서명은 아니다', () => {
-    expect(UNSIGNED_POLICY_NOTICE).toContain('키 ID')
-    expect(UNSIGNED_POLICY_NOTICE).toContain('실제 서명은 붙지 않습니다')
+  it('실서버 안내문이 실제 동작과 맞다: 키는 필요하고 서명은 아니다', () => {
+    expect(unsignedPolicyNotice(false)).toContain('키 ID')
+    expect(unsignedPolicyNotice(false)).toContain('실제 서명은 붙지 않습니다')
+  })
+
+  it('목 시연에서는 안내문을 뺀다', () => {
+    expect(unsignedPolicyNotice(true)).toBe('')
   })
 })
 

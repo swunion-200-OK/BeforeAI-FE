@@ -4,10 +4,12 @@ import { adminApi } from '../../api/endpoints'
 import { toast } from '../../components/toast'
 import { Banner, Button, Field, Modal, TextArea, TextInput } from '../../components/ui'
 import { formatElapsed } from '../../lib/format'
+import { particle } from '../../lib/josa'
 import { useRefreshAll } from '../../lib/queries'
 import { runningRequestsQuery } from './adminQueries'
 
 const CONFIRM_PHRASE = '일괄 중단'
+const CONFIRM_QUOTED = `"${CONFIRM_PHRASE}"${particle(CONFIRM_PHRASE, '을', '를')}`
 
 /**
  * 전사 일괄 중단의 강한 확인 창 (CORE-11).
@@ -39,7 +41,7 @@ export function KillAllDialog({ open, onClose }: { open: boolean; onClose: () =>
     items.length === 0
       ? '실행 중인 요청이 없습니다'
       : !reason.trim() || phrase !== CONFIRM_PHRASE
-        ? `사유를 적고 "${CONFIRM_PHRASE}"를 입력해 주세요`
+        ? `사유를 적고 ${CONFIRM_QUOTED} 입력해 주세요`
         : null
 
   return (
@@ -81,7 +83,7 @@ export function KillAllDialog({ open, onClose }: { open: boolean; onClose: () =>
         <Field label="중단 사유" hint="누가 왜 멈췄는지 감사 로그에 남습니다">
           {(id) => <TextArea id={id} rows={2} value={reason} onChange={(event) => setReason(event.target.value)} />}
         </Field>
-        <Field label={`확인을 위해 "${CONFIRM_PHRASE}"를 입력하세요`}>
+        <Field label={`확인을 위해 ${CONFIRM_QUOTED} 입력하세요`}>
           {(id) => <TextInput id={id} value={phrase} autoComplete="off" onChange={(event) => setPhrase(event.target.value)} />}
         </Field>
       </div>

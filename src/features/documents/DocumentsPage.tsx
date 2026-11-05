@@ -22,6 +22,7 @@ import {
 import { makeUnifiedDiff } from '../../lib/diff'
 import { diffStats } from '../../lib/explain'
 import { formatDateTime } from '../../lib/format'
+import { withRo } from '../../lib/josa'
 import { REQUEST_STATUS_LABEL, labelOf } from '../../lib/labels'
 import { usePendingApprovals, useProjects, useRefreshAll, useRequest } from '../../lib/queries'
 import { ROLLBACK_ALLOWED, isDocumentsLoading, rollbackBlockedReason as blockedReasonOf, rollbackTaskIds } from './documentsView'
@@ -72,7 +73,7 @@ function VersionView({
     <>
       {stats && (
         <p className="mb-2 flex items-center gap-1.5 text-[0.875rem] text-ink-3 tabular-nums">
-          v{version - 1}에서 v{version}으로
+          v{version - 1}에서 {withRo(`v${version}`)}
           <span className="font-medium text-low">+{stats.added}</span>
           <span className="font-medium text-high">−{stats.removed}</span>
         </p>
@@ -234,7 +235,7 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
 
       <ConfirmModal
         open={confirming}
-        title={`v${selected}으로 롤백할까요?`}
+        title={`${withRo(`v${selected}`)} 롤백할까요?`}
         confirmLabel="롤백 Plan 만들기"
         loading={rollback.isPending}
         onConfirm={() => rollback.mutate()}

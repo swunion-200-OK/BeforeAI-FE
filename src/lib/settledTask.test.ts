@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProgressRequestNode, RequestStatus } from '../api/types'
-import { settleProgressRoot, shownTaskStatus } from './settledTask'
+import { interruptedTaskIds, isInterruptedTask, settleProgressRoot, shownTaskStatus } from './settledTask'
 
 const tree = (status: RequestStatus): ProgressRequestNode => ({
   id: 'request:r',
@@ -30,6 +30,40 @@ const tree = (status: RequestStatus): ProgressRequestNode => ({
       ],
     },
   ],
+})
+
+describe('킬 스위치로 멈춘 작업', () => {
+  const step = (status: 'RUNNING' | 'SKIPPED' | 'SUCCEEDED') => ({ id: `step:${status}`, type: 'STEP' as const, label: '단계', status })
+  const task = (id: string, status: 'SKIPPED' | 'SUCCEEDED', children: ReturnType<typeof step>[]) => ({
+    id: `task:${id}`,
+    type: 'TASK' as const,
+    label: id,
+    taskType: 'DEPLOY' as const,
+    risk: 'HIGH' as const,
+    status,
+    dependsOn: [],
+    children,
+  })
+  const killed: ProgressRequestNode = {
+    id: 'request:r',
+    type: 'REQUEST',
+    label: '요청',
+    status: 'KILLED',
+    children: [{ id: 'plan:p', type: 'PLAN', label: 'Plan v1', status: 'CURRENT', children: [task('done', 'SUCCEEDED', [step('SUCCEEDED')]), task('halfway', 'SKIPPED', [step('SKIPPED')]), task('later', 'SKIPPED', [])] }],
+  }
+
+  it('실행 단계가 있으면 멈춘 작업이고, 시작 전 작업은 그대로다', () => {
+    expect(isInterruptedTask(task('halfway', 'SKIPPED', [step('SKIPPED')]))).toBe(true)
+    expect(isInterruptedTask(task('later', 'SKIPPED', []))).toBe(false)
+    expect(isInterruptedTask(task('done', 'SUCCEEDED', [step('SUCCEEDED')]))).toBe(false)
+    expect([...interruptedTaskIds(killed)]).toEqual(['halfway'])
+  })
+
+  it('서버가 RUNNING으로 남긴 단계도 중단된 요청에서는 실행 중이 아니다', () => {
+    const root = { ...killed, children: [{ id: 'plan:p', type: 'PLAN' as const, label: 'Plan v1', status: 'CURRENT' as const, children: [task('halfway', 'SKIPPED', [step('RUNNING')])] }] }
+    const plan = settleProgressRoot(root).children[0] as { children: Array<{ children: Array<{ status: string }> }> }
+    expect(plan.children[0].children[0].status).toBe('SKIPPED')
+  })
 })
 
 describe('끝난 요청의 작업', () => {

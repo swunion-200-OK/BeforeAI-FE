@@ -9,6 +9,7 @@ import { useProjects, useRequest } from '../../lib/queries'
 import { ApprovalDocumentSection } from '../approvals/ApprovalDocumentSection'
 import { taskNumber } from '../../lib/taskLabel'
 import { ProgressSection } from '../progress/ProgressTree'
+import { useInterruptedTasks } from '../progress/useInterruptedTasks'
 import { MoreDetails, RunLog, TaskApprovalLine } from './RequestDetailSections'
 import { approvalToShow } from './requestPaths'
 import { RequestMeta, TaskEditButtons } from './RequestParts'
@@ -25,6 +26,7 @@ const RAN: RequestStatus[] = ['RUNNING', 'ROLLING_BACK', 'KILLED', 'COMPLETED', 
 function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPlan: boolean }) {
   const statuses = useApprovalStatuses(request)
   const tasks = request.currentPlan?.tasks ?? []
+  const interrupted = useInterruptedTasks(request.id, request.status)
   if (tasks.length === 0) return null
   return (
     <section aria-label="작업 목록" className="flex flex-col gap-3">
@@ -40,6 +42,7 @@ function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPla
               requestId={request.id}
               requestStatus={request.status}
               planKind={request.currentPlan?.kind}
+              interrupted={interrupted.has(task.id)}
               highlighted={request.status === 'REAPPROVAL_REQUIRED' && request.changedTaskIds?.includes(task.id)}
               spotlight={
                 request.status === 'RUNNING' && task.status === 'RUNNING'

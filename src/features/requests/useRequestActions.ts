@@ -106,7 +106,7 @@ export function useKillRequest(requestId: string, onDone?: () => void) {
   return useMutation({
     mutationFn: (reason: string) => requestsApi.kill(requestId, reason),
     onSuccess: async (result) => {
-      const skipped = result.skippedTaskIds.length ? ` 작업 ${result.skippedTaskIds.length}건은 실행하지 않았습니다.` : ''
+      const skipped = result.skippedTaskIds.length ? ` 끝나지 않은 작업 ${result.skippedTaskIds.length}건은 더 실행하지 않습니다.` : ''
       toast.success(`실행을 중단했습니다.${skipped}`)
       await refresh()
       onDone?.()

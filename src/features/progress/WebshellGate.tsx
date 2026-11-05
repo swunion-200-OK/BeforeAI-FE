@@ -1,7 +1,7 @@
 import { CircleX, Clock, Minus, ShieldCheck, ShieldX, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { StatusGlyph } from '../../components/badges'
-import { GATE_ID, type GateCheckState, type GatePhase, type GateView } from './progressStatus'
+import { GATE_ID, forbiddenCheckWord, type GateCheckState, type GatePhase, type GateView } from './progressStatus'
 
 /** 실패 칸은 빨간 바탕이라 속이 찬 모양 대신 흰 선 모양을 쓴다 */
 const CHECK_STYLE: Record<GateCheckState, { cell: string; state: string; word: string; glyph: ReactNode }> = {
@@ -23,7 +23,7 @@ const FRAME: Record<GatePhase, { frame: string; head: string; word: string; Icon
  * 승인과 실행 단계 사이의 관문 (API 명세 5.1의 검증 순서). lit이 있으면 검사를 켜는 중이다.
  * 트리에서 면을 채우는 곳은 닫힌 관문뿐이다. 발표 화면 뒤쪽에서도 닫힌 것이 보여야 한다.
  */
-export function WebshellGate({ gate, lit }: { gate: GateView; lit: number | null }) {
+export function WebshellGate({ gate, lit, forbiddenExcluded = 0 }: { gate: GateView; lit: number | null; forbiddenExcluded?: number }) {
   const replaying = lit !== null
   const allPassed = gate.checks.every((check) => check.state === 'passed')
   const frame = replaying
@@ -58,7 +58,7 @@ export function WebshellGate({ gate, lit }: { gate: GateView; lit: number | null
               </p>
               <p className={`mt-0.5 flex items-center gap-1 text-xs ${stateClass}`}>
                 {glyph}
-                {word}
+                {check.key === 'forbidden' && state === 'passed' && forbiddenExcluded > 0 ? forbiddenCheckWord(forbiddenExcluded) : word}
               </p>
             </li>
           )

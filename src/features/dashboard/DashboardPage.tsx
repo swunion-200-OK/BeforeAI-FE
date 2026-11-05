@@ -4,9 +4,10 @@ import { dashboardApi, requestsApi } from '../../api/endpoints'
 import type { DashboardScope, RequestStatus, Role } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
-import { useDepartmentNames, usePendingApprovals } from '../../lib/queries'
+import { useDepartmentNames, useIsExternal, usePendingApprovals } from '../../lib/queries'
 import { groupByRequest } from '../approvals/queueGroups'
 import { DashboardDetails, KillAllAction, REQUEST_LIMIT, RequestsPanel, TodoPanel } from './DashboardPanels'
+import { dashboardHeadline } from './dashboardText'
 import { ATTENTION_STATUSES } from './statusGroups'
 import { dashboardToShow, killAllVisible } from './unknownDashboard'
 
@@ -64,6 +65,7 @@ export default function DashboardPage() {
   const me = useMe()
   const [params, setParams] = useSearchParams()
   const departmentName = useDepartmentNames()
+  const external = useIsExternal()
   const pending = usePendingApprovals()
   const scope = SCOPE_BY_ROLE[me.role]
   const query = useQuery({
@@ -117,12 +119,7 @@ export default function DashboardPage() {
   })
 
   const scopeName = { COMPANY: '회사 전체', DEPARTMENT: departmentName(me.departmentId), ME: '내 요청' }[scope]
-  const headline =
-    myPending > 0
-      ? `승인할 요청 ${myPending}건이 있습니다.`
-      : attentionTotal > 0
-        ? `확인이 필요한 요청 ${attentionTotal}건이 있습니다.`
-        : `${scopeName} 현황입니다.`
+  const headline = dashboardHeadline({ myPending, external, attentionTotal, scopeName })
 
   return (
     <>

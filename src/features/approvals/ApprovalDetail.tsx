@@ -39,6 +39,8 @@ import { formatDateTime } from "../../lib/format";
 import { isRequestEnded } from "../../lib/settledTask";
 import { taskNumber } from "../../lib/taskLabel";
 import { executionDeferredText } from "../requests/statusBannerText";
+import { useInterruptedTasks } from "../progress/useInterruptedTasks";
+import { closedDecisionText, isDecisionClosed } from "./decisionPanel";
 import { REQUEST_STATUS_LABEL, SOURCE_LABEL } from "../../lib/labels";
 import {
   useDepartmentNames,
@@ -405,6 +407,8 @@ export function ApprovalDetail({
     },
   });
 
+  const interrupted = useInterruptedTasks(requestId, requestQuery.data?.status);
+
   if (requestQuery.isPending) {
     return (
       <div className="min-w-0 flex-1">
@@ -671,6 +675,7 @@ export function ApprovalDetail({
                     requestId={requestId}
                     requestStatus={request.status}
                     planKind={context?.plan.kind ?? request.currentPlan?.kind}
+                    interrupted={interrupted.has(task.id)}
                     defaultOpen={task.risk === "HIGH" || task.type === "DOC" || integrityFailed}
                     highlighted={request.changedTaskIds?.includes(task.id)}
                     leading={
@@ -848,7 +853,12 @@ export function ApprovalDetail({
               </Link>
             )}
 
-            {!decisionDone && (
+            {!decisionDone && !result && isDecisionClosed(request.status) && (
+              <p className="text-base font-semibold text-ink">
+                {closedDecisionText(request.status, tasks)}
+              </p>
+            )}
+            {!decisionDone && !isDecisionClosed(request.status) && (
               <>
                 {signBlockedReason && !result && (
                   <p className="text-sm text-ink-2">{signBlockedReason}</p>

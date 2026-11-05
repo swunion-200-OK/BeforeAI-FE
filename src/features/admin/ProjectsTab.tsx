@@ -62,6 +62,8 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       footer={
         <>
+          {/* 잠긴 버튼의 이유가 툴팁에만 있으면 왜 안 눌리는지 모른다. */}
+          {blockedReason && <p className="mr-auto self-center text-sm text-ink-3">{blockedReason}</p>}
           <Button onClick={onClose}>닫기</Button>
           <Button
             type="submit"

@@ -6,7 +6,7 @@ import type { AdminSigningKey, SigningKeyStatus } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { toast } from '../../components/toast'
 import { Button, ConfirmModal, EmptyState, ErrorState, Mono, Sheet, Spinner } from '../../components/ui'
-import { UNSIGNED_POLICY_NOTICE, adminKeyMissingReason, revokeAdminProof } from '../../crypto/adminProof'
+import { unsignedPolicyNotice, adminKeyMissingReason, revokeAdminProof } from '../../crypto/adminProof'
 import { deviceStore } from '../../crypto/deviceStore'
 import { signingService } from '../../crypto/signingService'
 import { formatDateTime } from '../../lib/format'
@@ -200,7 +200,7 @@ export function KeysTab() {
       >
         {revoking && ownerName(revoking)}님의 키 <Mono>{revoking?.id ?? ''}</Mono>를 폐기합니다.{' '}
         {revokeConfirmText(revoking?.status, policyState)}
-        {revoking?.status === 'REGISTERED' && ` ${UNSIGNED_POLICY_NOTICE}`}
+        {revoking?.status === 'REGISTERED' && ` ${unsignedPolicyNotice()}`}
       </ConfirmModal>
     </div>
   )

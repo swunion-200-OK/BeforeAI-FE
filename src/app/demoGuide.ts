@@ -38,7 +38,7 @@ export const DEMO_SCENARIOS: DemoGroup[] = [
         path: () => `/requests/new?prompt=${encodeURIComponent(SCENARIO_PROMPT)}`,
       },
       {
-        label: '외부망에서 열면 배포 작업이 막혀 있습니다',
+        label: '외부망에서 열면 내용만 볼 수 있고 승인과 거부는 막혀 있습니다',
         userId: KIM,
         network: 'EXTERNAL',
         path: (id) => `/approvals/${id}`,
@@ -105,7 +105,7 @@ export const DEMO_SCENARIOS: DemoGroup[] = [
   {
     title: '그 밖의 흐름',
     steps: [
-      { label: '외부망에서 코드 작업만 승인', userId: KIM, network: 'EXTERNAL', path: fixed('/approvals/r-external') },
+      { label: '외부망에서는 코드 작업도 승인할 수 없음을 확인', userId: KIM, network: 'EXTERNAL', path: fixed('/approvals/r-external') },
       { label: 'AI 완성 문서를 적용 / 미적용', userId: KIM, network: 'INTERNAL', path: fixed('/approvals/r-doc') },
       { label: '문서 버전과 롤백', userId: HONG, network: 'INTERNAL', path: fixed('/documents/doc-readme') },
       { label: '실행 중 요청과 킬 스위치', userId: HONG, network: 'INTERNAL', path: fixed('/requests/r-running') },

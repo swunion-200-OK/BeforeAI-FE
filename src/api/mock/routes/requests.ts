@@ -24,6 +24,7 @@ import { paginate, route, type Ctx, type Route } from '../router'
 import {
   HttpError,
   db,
+  requireProject,
   requireRequest,
   subscribeLogs,
   type StoredRequest,
@@ -148,7 +149,8 @@ function buildDashboard(ctx: Ctx): Dashboard {
   }
   if (scope === 'COMPANY') {
     result.byDepartment = database.departments.map((department) => {
-      const requests = selected.filter((r) => inDepartment(r, department.id))
+      // 요청자 부서까지 세면 다른 부서 프로젝트에 낸 요청이 두 번 잡혀 합이 전체보다 커진다. 프로젝트 소속 부서 하나로 센다.
+      const requests = selected.filter((r) => requireProject(r.projectId).departmentId === department.id)
       return {
         departmentId: department.id,
         name: department.name,
