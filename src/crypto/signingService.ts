@@ -13,7 +13,7 @@ const ED25519_PKCS8_PREFIX = new Uint8Array([
 type RegisterTarget = Pick<SigningKey, 'id' | 'publicKey'>
 
 /** 승인 키 등록의 서명 대상. 백엔드 SigningKeyAdminService와 글자까지 같아야 한다. */
-function registerProofMessage(target: RegisterTarget): Uint8Array {
+function registerProofMessage(target: RegisterTarget): Uint8Array<ArrayBuffer> {
   return encoder.encode(`beforeai:register-signing-key:${target.id}:${target.publicKey}`)
 }
 
@@ -23,7 +23,7 @@ function subtleCrypto(): SubtleCrypto {
   return subtle
 }
 
-function concatenate(left: Uint8Array, right: Uint8Array): Uint8Array {
+function concatenate(left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> {
   const result = new Uint8Array(left.length + right.length)
   result.set(left)
   result.set(right, left.length)

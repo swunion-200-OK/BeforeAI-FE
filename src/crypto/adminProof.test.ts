@@ -34,7 +34,7 @@ describe('키가 없을 때의 사전 안내', () => {
 
 describe('키 폐기 관리자 서명', () => {
   it('등록된 키는 정책 변경과 같은 자리 표시 값을 보낸다', () => {
-    deviceStore.update('admin', { keyId: 'key-1', secretKey: 'c2VjcmV0' })
+    deviceStore.update('admin', { keyId: 'key-1' })
     expect(revokeAdminProof('REGISTERED', 'admin')).toEqual({ keyId: 'key-1', signature: UNSIGNED_POLICY_SIGNATURE })
   })
 
