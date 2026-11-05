@@ -71,6 +71,21 @@ export function useRetryFailed(request: RequestDetail) {
   })
 }
 
+/** 승인이 다 모였는데 웹쉘 연결 실패로 멈춘 요청의 실행을 다시 요청한다. 서명은 서버에 보관되어 있다. */
+export function useStartExecution(requestId: string) {
+  const refresh = useRefreshAll()
+  return useMutation({
+    mutationFn: () => requestsApi.startExecution(requestId),
+    onSuccess: async () => {
+      toast.success('실행을 다시 요청했습니다')
+      await refresh()
+    },
+    onError: async () => {
+      await refresh()
+    },
+  })
+}
+
 export function usePatchPlan(requestId: string) {
   const refresh = useRefreshAll()
   return useMutation({
