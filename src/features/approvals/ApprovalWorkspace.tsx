@@ -1,4 +1,6 @@
+import { ArrowLeft } from 'lucide-react'
 import { useMemo } from 'react'
+import { Link } from 'react-router'
 import { EmptyState } from '../../components/ui'
 import { usePendingApprovals } from '../../lib/queries'
 import { ApprovalDetail } from './ApprovalDetail'
@@ -25,15 +27,25 @@ export function ApprovalWorkspace({ requestId }: { requestId?: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0">
-      <ApprovalQueue selectedId={requestId} />
+    <div className="flex h-full min-h-0 flex-col xl:flex-row">
+      <div className={requestId ? 'hidden xl:flex' : 'flex'}>
+        <ApprovalQueue selectedId={requestId} />
+      </div>
       {requestId ? (
-        // 다른 요청으로 옮겨 가면 선택·서명 진행 상태를 새로 시작한다.
-        <ApprovalDetail key={requestId} requestId={requestId} nextRequestId={nextRequestId}
-          otherCount={groups.filter((g) => g.requestId !== requestId).length}
-        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="shrink-0 border-b border-rule bg-sheet px-4 py-2 xl:hidden">
+            <Link to="/approvals?queue=1" className="inline-flex min-h-10 items-center gap-2 rounded-md pr-2 text-sm font-medium text-ink-2 hover:text-ink">
+              <ArrowLeft size={17} aria-hidden />
+              승인 대기 목록
+            </Link>
+          </div>
+          {/* 다른 요청으로 옮겨 가면 선택·서명 진행 상태를 새로 시작한다. */}
+          <ApprovalDetail key={requestId} requestId={requestId} nextRequestId={nextRequestId}
+            otherCount={groups.filter((g) => g.requestId !== requestId).length}
+          />
+        </div>
       ) : (
-        <div className="min-w-0 flex-1 bg-paper" />
+        <div className="hidden min-w-0 flex-1 bg-paper xl:block" />
       )}
     </div>
   )

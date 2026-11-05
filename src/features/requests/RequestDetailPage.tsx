@@ -14,6 +14,16 @@ import { RequestTimeline } from './RequestTimeline'
 
 const PLAN_EDITABLE: RequestStatus[] = ['PENDING_APPROVAL', 'PARTIALLY_COMPLETED']
 const LIVE: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
+const HAS_EXECUTION_LOGS: RequestStatus[] = [
+  'RUNNING',
+  'KILLED',
+  'COMPLETED',
+  'PARTIALLY_COMPLETED',
+  'FAILED',
+  'ROLLING_BACK',
+  'ROLLED_BACK',
+  'ROLLBACK_FAILED',
+]
 /** 승인 현황 줄이 같은 말을 하므로 배지를 함께 그리지 않는 작업 상태 */
 const SAID_BY_APPROVAL_LINE: TaskStatus[] = ['PENDING', 'APPROVED']
 
@@ -74,7 +84,10 @@ export default function RequestDetailPage() {
   const canKill = request.status === 'RUNNING' && (me.role === 'ADMIN' || managesProject || isRequester || hasSigned)
   const canEditPlan = isRequester && PLAN_EDITABLE.includes(request.status)
   const live = LIVE.includes(request.status)
-  const hasRun = request.events.some((event) => event.status === 'RUNNING' || event.status === 'ROLLING_BACK')
+  // events는 현재 API 계약에 항상 있는 필드가 아니므로 실행 상태에서도 로그 이력을 연다.
+  const hasRun =
+    HAS_EXECUTION_LOGS.includes(request.status) ||
+    request.events.some((event) => event.status === 'RUNNING' || event.status === 'ROLLING_BACK')
 
   return (
     <div className="flex flex-col gap-6 [&>header]:mb-0">

@@ -64,7 +64,7 @@ export function ApprovalQueue({ selectedId }: { selectedId?: string }) {
   const visible = groups.filter(FILTERS[filter].match)
 
   return (
-    <div className="flex w-[18rem] shrink-0 flex-col border-r border-rule bg-sheet">
+    <div className="flex w-full min-w-0 flex-col border-r border-rule bg-sheet xl:w-[18rem] xl:shrink-0">
       <div className="flex flex-col gap-3 px-5 pt-5 pb-3">
         <h1 className="text-xl font-semibold">승인 대기</h1>
         {groups.length > 0 && (
