@@ -35,7 +35,9 @@ PR #18에서 HPKE 구현, 목록 커서 수집, 요청·대시보드 집계 보�
 
 ## 검증 기록
 
-- 원격 `main` 최신 커밋을 병합한 브랜치에서 `npm run build`: 통과 (대형 코드 청크 경고)
+- `npm run build`: 통과 (대형 코드 청크 경고)
 - `npm run lint`: 통과 (저장소 기존 경고)
-- 867px 미리보기에서 승인 상세, 승인 버튼, 목록 복귀 경로 확인
-- 테스트는 실행하지 않았습니다.
+- `npm test -- src/crypto/logSignature.test.ts`: 통과 (2개)
+- `npm test -- src/api/contract.test.ts`: 통과 (84개)
+- Playwright 수동 확인: 375×667 및 667×375에서 승인 상세와 결정 버튼을 확인하고, `r-high-code`에서 `r-external`로 이동할 때 스크롤이 초기화되는지 확인했습니다.
+- Playwright 수동 확인: `VITE_API_BASE_URL=/api/v1`과 가로챈 API 응답으로 부서 관리자 프로젝트 화면을 확인했습니다. 담당자 변경 미지원 문구가 표시되고 `/admin/users` 요청은 발생하지 않았습니다. 실제 백엔드 연결 테스트는 아닙니다.
