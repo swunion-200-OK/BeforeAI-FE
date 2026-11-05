@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { USE_MOCK } from '../../api/client'
 import { projectsApi } from '../../api/endpoints'
 import type { ChangeRequestStatus, Project, ProjectSpec, SpecChangeRequest } from '../../api/types'
 import { SegmentedTabs } from '../../components/rich'
@@ -39,7 +40,8 @@ export function ChangeRequestModal({
     mutationFn: () => projectsApi.createChangeRequest(projectId, { content: content.trim(), reason: reason.trim() }),
     onSuccess: async () => {
       await refreshAll()
-      toast.success('수정 요청을 보냈습니다. 담당 부서 팀장에게 Slack으로 알립니다')
+      // 배포된 서버에는 Slack 알림이 없다.
+      toast.success(USE_MOCK ? '수정 요청을 보냈습니다. 담당 부서 팀장에게 Slack으로 알립니다' : '수정 요청을 보냈습니다')
       setContent('')
       setReason('')
       onClose()
