@@ -14,7 +14,12 @@ export const FILTER_KEYS = [
 export type FilterKey = (typeof FILTER_KEYS)[number]
 
 export function countFilters(params: URLSearchParams): number {
-  return FILTER_KEYS.filter((key) => params.get(key)).length
+  // 내보내기와 목록에 실제로 적용되는 조건만 센다. 날짜가 아닌 값은 적용되지 않는다.
+  return FILTER_KEYS.filter((key) => {
+    const value = params.get(key)
+    if (!value) return false
+    return key === 'from' || key === 'to' ? Boolean(dayBoundary(value, '00:00:00')) : true
+  }).length
 }
 
 /** 날짜 입력은 사용자의 현지 날짜다. 서버에는 그날의 시작과 끝을 ISO로 보낸다. */

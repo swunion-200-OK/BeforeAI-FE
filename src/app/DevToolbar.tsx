@@ -35,6 +35,8 @@ export default function DevToolbar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const network = useNetwork()
+  // 로그인 화면에서 접힌 버튼은 결재 문서를 가리지 않게 오른쪽 아래에 둔다. 펼친 패널은 시연 계정 목록을 가리면 안 되므로 왼쪽에 연다.
+  const buttonDock = pathname === '/login' ? 'right-2.5 bottom-2.5' : 'bottom-[4.25rem] left-2.5'
 
   // 로그인 전에도 배지가 맞도록 목 서버의 망 값을 바로 알린다.
   useEffect(() => {
@@ -167,7 +169,7 @@ export default function DevToolbar() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-[4.25rem] left-2.5 z-40 flex w-[13.75rem] items-center gap-1.5 rounded-md border border-rule-strong bg-sheet px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-sheet-alt hover:text-ink"
+        className={`fixed ${buttonDock} z-40 flex w-[13.75rem] items-center gap-1.5 rounded-md border border-rule-strong bg-sheet px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:bg-sheet-alt hover:text-ink`}
       >
         <Wrench size={14} aria-hidden />
         개발 도구
@@ -179,7 +181,7 @@ export default function DevToolbar() {
   return (
     <aside
       aria-label="개발용 전환 툴바"
-      className="fixed bottom-[4.25rem] left-2.5 z-40 w-[13.75rem] rounded-xl border border-rule bg-sheet p-3 text-xs text-ink shadow-raised"
+      className={`fixed bottom-[4.25rem] left-2.5 z-40 w-[13.75rem] rounded-xl border border-rule bg-sheet p-3 text-xs text-ink shadow-raised`}
     >
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 font-semibold">

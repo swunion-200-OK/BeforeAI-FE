@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router'
 import type { RequestDetail, RequestStatus } from '../../api/types'
 import { approvalSummary } from '../../components/ApprovalStamps'
 import { Banner, Button, Mono, ReasonModal } from '../../components/ui'
-import { FAILED_CHECK_LABEL } from '../../lib/labels'
 import { approvalToShow } from './requestPaths'
 import { AnalysisFailedPanel, CancelRequestButton } from './RequestParts'
 import { useKillRequest, useRetryFailed, useSubmitRequest } from './useRequestActions'
@@ -156,24 +155,19 @@ export function RequestStatusBanner({
       )
     case 'VERIFICATION_FAILED':
       return (
-        <Banner tone="danger" title="웹쉘이 승인 서명 검증에 실패해 실행하지 않았습니다" action={action}>
-          <p>위변조 가능성이 있어 관리자와 부서 관리자에게 경보를 보냈습니다. 다시 제출하면 승인 서명을 새로 받습니다.</p>
-          <ul className="mt-2 flex flex-col gap-1">
+        // 무엇이 실패했는지는 바로 아래 트리의 검증 관문이 쉬운 말로 보여 준다. 배너는 다음 할 일과 기록용 코드만 둔다.
+        <Banner tone="danger" title="위변조 가능성이 있어 관리자와 부서 관리자에게 경보를 보냈습니다" action={action}>
+          <p>다시 제출하면 승인 서명을 새로 받습니다.</p>
+          <p className="mt-1 flex flex-wrap gap-x-3">
             {request.failedChecks.map((check) => (
-              <li key={check} className="flex flex-wrap items-baseline gap-x-2">
-                <Mono className="font-medium">{check}</Mono>
-                <span>{FAILED_CHECK_LABEL[check]}</span>
-              </li>
+              <Mono key={check}>{check}</Mono>
             ))}
-          </ul>
+          </p>
         </Banner>
       )
     case 'RUNNING':
-      return (
-        <Banner tone="info" title="공용 서버에서 실행 중입니다" action={action}>
-          진행 상황은 실행 로그에서 실시간으로 볼 수 있습니다.
-        </Banner>
-      )
+      // 진행 상황은 바로 아래 트리가 보여 준다. 배너는 멈추는 방법만 알린다.
+      return canKill ? <Banner tone="info" title="실행을 멈춰야 하면 킬 스위치로 중단할 수 있습니다" action={action} /> : null
     case 'ROLLING_BACK':
       return <Banner tone="info" title="문서를 이전 버전으로 되돌리는 중입니다" />
     case 'REJECTED':
