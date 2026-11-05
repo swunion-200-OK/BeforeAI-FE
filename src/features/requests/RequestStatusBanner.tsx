@@ -102,7 +102,8 @@ function NextActions({ request, isRequester, canKill }: { request: RequestDetail
       </Button>,
     )
   }
-  if (status === 'PARTIALLY_COMPLETED' && isRequester) {
+  // 목은 부분 완료만 재시도를 받는다. 실제 서버는 전체 실패도 받는다.
+  if ((status === 'PARTIALLY_COMPLETED' || (!USE_MOCK && status === 'FAILED')) && isRequester) {
     actions.push(
       <Button key="retry" variant="primary" internalOnly loading={retry.isPending} onClick={() => retry.mutate()}>
         실패 작업 재시도
@@ -242,8 +243,8 @@ export function RequestStatusBanner({
       )
     case 'FAILED':
       return (
-        <Banner tone="danger" title="성공한 작업 없이 실행이 끝났습니다">
-          실행 로그에서 원인을 확인한 뒤 새로 요청해 주세요.
+        <Banner tone="danger" title="성공한 작업 없이 실행이 끝났습니다" action={action}>
+          {USE_MOCK ? '실행 로그에서 원인을 확인한 뒤 새로 요청해 주세요.' : '실행 로그에서 원인을 확인한 뒤 재시도해 주세요. 새 승인 서명이 필요합니다.'}
         </Banner>
       )
     case 'ROLLBACK_FAILED':
