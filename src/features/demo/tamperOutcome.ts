@@ -56,7 +56,7 @@ const contextMissing: TamperOutcome = {
 function webshellVerdict(request: Request, expected: FailedCheck, caught: string, passed: string): TamperOutcome | null {
   if (PASSED_WEBSHELL.includes(request.status)) return missed(request, passed)
   if (request.status !== 'VERIFICATION_FAILED') return null
-  if (request.failedChecks.includes(expected)) return { tone: 'caught', sentence: caught, codes: request.failedChecks }
+  if (request.failedChecks?.includes(expected)) return { tone: 'caught', sentence: caught, codes: request.failedChecks }
   // 다른 이유로 먼저 멈췄으면 이 공격을 찾아냈는지 알 수 없다. 막았다고도 놓쳤다고도 하지 않는다.
   return {
     tone: 'unverified',

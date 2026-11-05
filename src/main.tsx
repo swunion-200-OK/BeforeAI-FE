@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router'
 import { isTransientError, setTransport } from './api/client'
 import { ApiError, errorMessage } from './api/errors'
+import { isMissingOnServer } from './api/missingOnServer'
 import { toast } from './components/toast'
 import './index.css'
 
@@ -21,6 +22,8 @@ async function bootstrap() {
       queries: {
         // 서버가 코드로 답한 오류는 다시 보내도 같다. 쓰기 요청은 여기서 다시 보내지 않는다 (react-query 기본값).
         retry: (count, error) => count < 2 && (!(error instanceof ApiError) || isTransientError(error)),
+        // 서버에 없는 API는 창을 오갈 때마다 다시 물어볼 이유가 없다.
+        refetchOnWindowFocus: (query) => !isMissingOnServer(query.state.error),
       },
     },
     queryCache: new QueryCache({

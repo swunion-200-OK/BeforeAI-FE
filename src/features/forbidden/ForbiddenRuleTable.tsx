@@ -1,14 +1,13 @@
 import type { ReactNode } from 'react'
 import type { ForbiddenRule } from '../../api/types'
 import { EmptyState, Mono } from '../../components/ui'
-import { formatDateTime } from '../../lib/format'
 import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames } from '../../lib/queries'
 
 export const RELEASE_PENDING_NOTICE = '웹쉘 서버 콘솔에서 관리자 재확인 후 실제 해제됩니다'
 
 function RuleStatus({ rule }: { rule: ForbiddenRule }) {
-  if (rule.status === 'ACTIVE') return <span className="whitespace-nowrap text-ink-2">적용 중</span>
+  if (rule.status === 'CONFIRMED') return <span className="whitespace-nowrap text-ink-2">적용 중</span>
   return (
     <div>
       <span className="font-medium whitespace-nowrap text-medium">해제 대기</span>
@@ -52,9 +51,7 @@ export function ForbiddenRuleTable({
               <td>
                 <Mono className="whitespace-nowrap">{rule.target}</Mono>
               </td>
-              <td className="min-w-40" title={`${formatDateTime(rule.createdAt)} 확정`}>
-                {rule.reason}
-              </td>
+              <td className="min-w-40">{rule.reason}</td>
               <td>
                 <RuleStatus rule={rule} />
               </td>

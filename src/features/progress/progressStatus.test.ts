@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import type { FailedCheck, ProgressRequestNode, ProgressTaskNode, RequestEvent, RequestStatus } from '../../api/types'
-import { GATE_ID, gateView, pathIds, progressNow } from './progressStatus'
+import type { ApproverRule, FailedCheck, Plan, ProgressRequestNode, ProgressTaskNode, RequestEvent, RequestStatus } from '../../api/types'
+import { GATE_ID, gateView, pathIds, pendingRule, progressNow } from './progressStatus'
 
 const at = '2026-11-05T01:00:00.000Z'
 const event = (status: RequestStatus): RequestEvent => ({ status, at, by: null })
@@ -113,13 +113,23 @@ describe('명세에 없는 필드가 빠져도', () => {
     expect(textOf(pendingNode)).toBe('스테이징 배포가 승인을 기다립니다')
   })
 
-  it('후보가 ID 문자열이어도 빈 이름을 쓰지 않는다', () => {
+  const planOf = (rule: ApproverRule) => ({ tasks: [{ id: 't1', requiredApprovers: [{ rule, count: 1 }] }] }) as Pick<Plan, 'tasks'>
+  const pendingOf = { ...pendingNode, id: 'task:스테이징 배포/approval:pending:t1:0' }
+  const textWith = (rule: ApproverRule) =>
+    progressNow(tree('PENDING_APPROVAL', [task('스테이징 배포', 'PENDING', [pendingOf])]), { currentPlan: planOf(rule) as Plan }).text
+
+  it('후보는 ID로만 오므로 이름을 지어내지 않는다', () => {
     expect(textOf({ ...pendingNode, candidates: ['7e5a', '9f0d'] })).toBe('스테이징 배포가 승인을 기다립니다')
-    expect(textOf({ ...pendingNode, candidates: ['7e5a'], rule: 'PROJECT_OWNER' })).toBe('스테이징 배포가 프로젝트 담당자의 승인을 기다립니다')
+  })
+
+  it('규칙은 대기 노드 ID의 순번으로 요청 상세의 requiredApprovers에서 찾는다', () => {
+    expect(textWith('PROJECT_OWNER')).toBe('스테이징 배포가 프로젝트 담당자의 승인을 기다립니다')
+    expect(pendingRule(pendingOf, planOf('DEPT_MANAGER'))).toBe('DEPT_MANAGER')
+    expect(pendingRule({ ...pendingNode, id: 'approval:a1' }, planOf('DEPT_MANAGER'))).toBeUndefined()
   })
 
   it('누구나 규칙일 때만 누구나라고 한다', () => {
-    expect(textOf({ ...pendingNode, rule: 'ANYONE', candidates: [] })).toBe('스테이징 배포가 승인을 기다립니다 (누구나 승인 가능)')
+    expect(textWith('ANYONE')).toBe('스테이징 배포가 승인을 기다립니다 (누구나 승인 가능)')
   })
 
   it('승인 노드가 없는 대기 작업을 승인이 모였다고 하지 않는다', () => {
@@ -138,30 +148,29 @@ describe('명세에 없는 필드가 빠져도', () => {
 })
 
 describe('지금 문장과 경로', () => {
-  const pending = { id: 'approval:a', type: 'APPROVAL' as const, status: 'PENDING' as const, rule: 'PROJECT_OWNER' as const }
+  const pending = { id: 'approval:pending:t1:0', type: 'APPROVAL' as const, status: 'PENDING' as const, candidates: ['u-07'] }
+  const owner = { tasks: [{ id: 't1', requiredApprovers: [{ rule: 'PROJECT_OWNER', count: 1 }] }] } as Plan
 
-  it('승인 대기: 작업과 후보와 실제 시각을 쓴다', () => {
-    const root = tree('PENDING_APPROVAL', [
-      task('스테이징 배포', 'PENDING', [{ ...pending, candidates: [{ id: 'u-07', name: '김담당' }] }]),
-    ])
-    const now = progressNow(root, request)
-    expect(now.text).toBe('스테이징 배포가 김담당의 승인을 기다립니다')
+  it('승인 대기: 작업과 규칙과 실제 시각을 쓴다', () => {
+    const root = tree('PENDING_APPROVAL', [task('스테이징 배포', 'PENDING', [pending])])
+    const now = progressNow(root, { ...request, currentPlan: owner })
+    expect(now.text).toBe('스테이징 배포가 프로젝트 담당자의 승인을 기다립니다')
     expect(now.since).toBe(at)
     expect(now.mode).toBe('wait')
-    expect([...pathIds(root, now.leaves)]).toEqual(['request:r', 'approval:a', 'plan:p', 'task:스테이징 배포'])
+    expect([...pathIds(root, now.leaves)]).toEqual(['request:r', 'approval:pending:t1:0', 'plan:p', 'task:스테이징 배포'])
   })
 
   it('받침이 있으면 "이"를 쓰고, 시각이 없으면 경과 시간을 말하지 않는다', () => {
-    const root = tree('PENDING_APPROVAL', [task('메시지 변경', 'PENDING', [{ ...pending, candidates: [{ id: 'a', name: '김담당' }, { id: 'b', name: '이담당' }] }])])
-    const now = progressNow(root, undefined)
-    expect(now.text).toBe('메시지 변경이 김담당 또는 이담당의 승인을 기다립니다')
+    const root = tree('PENDING_APPROVAL', [task('메시지 변경', 'PENDING', [pending])])
+    const now = progressNow(root, { currentPlan: owner })
+    expect(now.text).toBe('메시지 변경이 프로젝트 담당자의 승인을 기다립니다')
     expect(now.since).toBeUndefined()
   })
 
   it('여러 작업이 기다리면 경로도 여러 개다', () => {
     const root = tree('PENDING_APPROVAL', [
-      task('가', 'PENDING', [{ ...pending, id: 'approval:1', rule: 'ANYONE', candidates: [] }]),
-      task('나', 'PENDING', [{ ...pending, id: 'approval:2', candidates: [{ id: 'a', name: '김담당' }] }]),
+      task('가', 'PENDING', [{ ...pending, id: 'approval:1' }]),
+      task('나', 'PENDING', [{ ...pending, id: 'approval:2' }]),
     ])
     const now = progressNow(root, request)
     expect(now.text).toBe('작업 2개가 승인을 기다립니다: 가, 나')
@@ -190,6 +199,14 @@ describe('지금 문장과 경로', () => {
     const ids = pathIds(root, now.leaves)
     expect(ids.has('task:배포')).toBe(true)
     expect(ids.has('task:금지')).toBe(false)
+  })
+
+  it('분석이 1분을 넘기면 분석하고 있다고 말하지 않는다', () => {
+    const root = tree('ANALYZING', [])
+    expect(progressNow(root, { updatedAt: new Date().toISOString() }).text).toBe('AI가 요청을 분석하고 있습니다')
+    const stuck = progressNow(root, { updatedAt: new Date(Date.now() - 61_000).toISOString() })
+    expect(stuck.text).toBe('분석이 평소보다 오래 걸리고 있습니다')
+    expect(stuck.since).toBeDefined()
   })
 
   it('끝난 요청에는 경로가 없다', () => {

@@ -1,6 +1,6 @@
 /** 승인 서명 흐름 (명세 2.4, 4.3~4.5). 승인 상세와 제출 직후 본인 승인이 같은 코드를 쓴다. */
 import { approvalsApi, requestsApi } from '../../api/endpoints'
-import { errorMessage } from '../../api/errors'
+import { ApiError, errorMessage } from '../../api/errors'
 import type { ApprovalContext, ApprovalEnvelope, Me, SubmitApprovalResponse, SubmitResponse, Task } from '../../api/types'
 import { cryptoService } from '../../crypto/cryptoService'
 import { deviceStore } from '../../crypto/deviceStore'
@@ -41,6 +41,19 @@ export const SIGN_STEPS: Array<{ id: SignStep; label: string }> = [
   { id: 'submit', label: '제출' },
 ]
 
+/**
+ * 제출 버튼 하나로 서명까지 끝내도 되는 작업. 사람이 따로 본 적 없는 서명을 만들지 않도록 좁게 잡는다.
+ * 서버의 selfApprovableTaskIds는 후보이면 위험도와 상관없이 담으므로(RequestPlanService.selfApprovableTaskIds) 그대로 쓰지 않는다.
+ * 문서는 완성본을 보고 적용 여부를 정해야 해서 뺀다 (기능 명세서 5.4).
+ */
+export function isSelfApprovable(task: Task): boolean {
+  return (
+    task.type !== 'DOC' &&
+    (task.risk === 'LOW' || task.risk === 'MEDIUM') &&
+    task.requiredApprovers.every((requirement) => requirement.rule === 'ANYONE')
+  )
+}
+
 export class IntegrityError extends Error {
   constructor() {
     super('Plan 무결성 확인 실패')
@@ -68,6 +81,13 @@ export async function signAndSubmitApproval({
   await onStep?.('hash')
   const integrity = verifyIntegrity(context, me.id, shownProjectId)
   if (!integrity.ok) throw new IntegrityError()
+  // 해시 대상에 없는 작업(금지 작업 등)은 서명에 담지 않는다.
+  const signable = new Set(context.hashTarget.tasks.map((task) => task.id))
+  if (taskIds.length === 0 || taskIds.some((id) => !signable.has(id))) throw new IntegrityError()
+  // 서버의 승인 API는 내부망 전용이다 (ApprovalController). 어차피 거절될 서명을 만들지 않고 여기서 멈춘다.
+  if (context.network === 'EXTERNAL') {
+    throw new ApiError(403, 'INTERNAL_NETWORK_ONLY', '승인 서명은 내부망에서만 제출할 수 있습니다')
+  }
 
   const device = deviceStore.get(me.id)
   if (!device.secretKey || !device.keyId || !device.pinnedWebshellKey) {
@@ -90,7 +110,7 @@ export async function signAndSubmitApproval({
   await onStep?.('encrypt')
   let envelope: ApprovalEnvelope
   try {
-    envelope = cryptoService.encryptForWebshell(signed, device.pinnedWebshellKey.encryptionKey)
+    envelope = cryptoService.encryptForWebshell(signed, device.pinnedWebshellKey.encryption.publicKey)
   } catch (error) {
     // 웹쉘이 열 수 없는 봉투를 보내지 않도록 제출 전에 멈춘다.
     throw new Error(`승인을 암호화하지 못해 제출하지 않았습니다. ${errorMessage(error)}`, { cause: error })
@@ -135,7 +155,7 @@ function matchesReviewed(context: ApprovalContext, reviewed: ReviewedPlan | null
 
 /**
  * 제출(1차 확인). 본인 승인이 허용된 작업은 응답을 받은 뒤 바로 승인까지 끝낸다.
- * 재시도·재제출처럼 이미 받은 SubmitResponse가 있으면 submitted로 넘긴다.
+ * 이미 받은 SubmitResponse가 있으면 submitted로 넘긴다.
  */
 export async function submitWithSelfApproval(
   me: Pick<Me, 'id' | 'network'>,
@@ -154,7 +174,8 @@ export async function submitWithSelfApproval(
   if (submit.selfApprovableTaskIds.length === 0) return outcome
   try {
     const context = await approvalsApi.context(requestId)
-    const taskIds = submit.selfApprovableTaskIds.filter((id) => context.approvableTaskIds.includes(id))
+    const allowed = new Set(context.plan.tasks.filter((task) => task.status === 'PENDING' && isSelfApprovable(task)).map((task) => task.id))
+    const taskIds = submit.selfApprovableTaskIds.filter((id) => context.approvableTaskIds.includes(id) && allowed.has(id))
     if (taskIds.length === 0) return outcome
     if (!matchesReviewed(context, reviewed)) {
       outcome.selfApprovalError = '검토한 Plan과 서명할 내용이 달라 서명하지 않았습니다'

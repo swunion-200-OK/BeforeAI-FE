@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ApiError, errorMessage } from '../../api/errors'
+import { isMissingOnServer } from '../../api/missingOnServer'
 import { projectsApi } from '../../api/endpoints'
 import type { Project, User } from '../../api/types'
 import { UserChip } from '../../components/rich'
@@ -27,7 +28,7 @@ function OwnersEditor({ project, users, onClose }: { project: Project; users: Us
       toast.success('담당자를 저장했습니다')
     },
     onError: (error) => {
-      if (error instanceof ApiError && error.code === 'OWNER_MINIMUM') setServerError(error.message)
+      if (isMissingOnServer(error) || (error instanceof ApiError && error.code === 'OWNER_MINIMUM')) setServerError(errorMessage(error))
       else toast.error(errorMessage(error))
     },
   })

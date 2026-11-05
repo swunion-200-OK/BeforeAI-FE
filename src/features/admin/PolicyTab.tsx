@@ -2,14 +2,17 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { ChevronDown } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { adminApi, orgApi } from '../../api/endpoints'
-import type { ApprovalMatrixRow, ApproverRule, PolicyPreset, Risk } from '../../api/types'
+import { ApiError } from '../../api/errors'
+import type { ApprovalMatrixRule, ApproverRule, PolicyPreset, Risk, TaskType } from '../../api/types'
+import { useMe } from '../../app/AuthProvider'
 import { RiskBadge } from '../../components/badges'
 import { SegmentedTabs } from '../../components/rich'
-import { toast } from '../../components/toast'
-import { Button, ConfirmModal, ErrorState, Select, Sheet, Spinner } from '../../components/ui'
-import { PRESET_LABEL, RISK_LABEL, RULE_LABEL } from '../../lib/labels'
+import { Button, ConfirmModal, EmptyState, ErrorState, Select, Sheet, Spinner } from '../../components/ui'
+import { UNSIGNED_POLICY_NOTICE, policyAdminProof } from '../../crypto/adminProof'
+import { PRESET_LABEL, RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL } from '../../lib/labels'
 import { useRefreshAll } from '../../lib/queries'
 import { policyQuery } from './adminQueries'
+import { notifyPolicySaved, onPolicyError } from './policyChange'
 
 const PRESETS: PolicyPreset[] = ['SMALL', 'MEDIUM', 'LARGE']
 
@@ -48,8 +51,22 @@ const PRESET_COMPARISON: Array<{ label: string; value: (detail: PresetDetail) =>
   { label: '감사 로그 보관', value: (detail) => detail.audit },
 ]
 
-const EDITABLE_RISKS: Array<ApprovalMatrixRow['defaultRisk']> = ['LOW', 'MEDIUM', 'HIGH']
+const EDITABLE_RISKS: Risk[] = ['LOW', 'MEDIUM', 'HIGH']
 const EDITABLE_RULES: ApproverRule[] = ['ANYONE', 'PROJECT_OWNER']
+
+/** 서버 기준표에는 유형과 위험도, 승인권자만 있다. 예시는 화면 설명이다 (기능 명세서 5.2). */
+const TASK_TYPE_EXAMPLES: Record<TaskType, string> = {
+  DOC: '문서, 주석',
+  CODE_MINOR: '테스트 코드 추가, 리팩터링',
+  CODE_FEATURE: '기능 코드, 의존성 변경',
+  DATA_READ: '운영 데이터 읽기',
+  DATA_WRITE: '운영 데이터 쓰기·삭제',
+  DB: '스키마 변경, 마이그레이션',
+  DEPLOY: '운영·스테이징 배포',
+}
+
+/** 프리셋을 한 번도 적용하지 않은 서버는 정책과 기준표 조회에 404로 답한다. */
+const noPolicyYet = (error: unknown) => error instanceof ApiError && error.code === 'NOT_FOUND'
 
 /** 안내 한 문장과 그 칸의 버튼 */
 function SectionBar({ text, children }: { text: string; children: ReactNode }) {
@@ -131,30 +148,43 @@ function PresetComparison() {
 }
 
 function PresetSection() {
+  const me = useMe()
   const refresh = useRefreshAll()
   const [choice, setChoice] = useState<PolicyPreset | null>(null)
   const [confirming, setConfirming] = useState(false)
   const policy = useQuery(policyQuery)
-  const selected = choice ?? policy.data?.preset ?? 'SMALL'
+  const applied = policy.data?.preset ?? null
+  const selected = choice ?? applied ?? 'SMALL'
+  const finish = async () => {
+    setChoice(null)
+    setConfirming(false)
+    await refresh()
+  }
   const apply = useMutation({
-    mutationFn: () => adminApi.applyPreset(selected),
+    mutationFn: () => adminApi.applyPreset(selected, policyAdminProof(me.id)),
+    meta: { silent: true },
     onSuccess: async (result) => {
-      toast.success(`${PRESET_LABEL[result.preset]} 프리셋을 적용했습니다`)
-      setChoice(null)
-      setConfirming(false)
-      await refresh()
+      notifyPolicySaved(`${PRESET_LABEL[result.preset]} 프리셋을 적용했습니다`, result.webshellApplied)
+      await finish()
     },
+    onError: onPolicyError(finish),
   })
 
   if (policy.isPending) return <Spinner />
-  if (policy.isError) return <ErrorState error={policy.error} onRetry={() => policy.refetch()} />
+  if (policy.isError && !noPolicyYet(policy.error)) return <ErrorState error={policy.error} onRetry={() => policy.refetch()} />
 
   return (
     <Sheet>
-      <SectionBar text="프리셋은 승인 기준표의 승인권자를 그대로 두고, 필요한 승인 인원만 바꿉니다.">
+      <SectionBar
+        text={
+          applied
+            ? '프리셋을 적용하면 회사 규모에 맞는 승인 기준표로 바뀝니다.'
+            : '아직 적용한 프리셋이 없습니다. 프리셋을 적용해야 승인 기준표와 금지 작업을 쓸 수 있습니다.'
+        }
+      >
         <Button
           variant="primary"
-          disabled={selected === policy.data.preset}
+          disabled={selected === applied}
           disabledReason="지금 적용된 프리셋입니다"
           onClick={() => setConfirming(true)}
         >
@@ -167,7 +197,7 @@ function PresetSection() {
             key={preset}
             preset={preset}
             selected={preset === selected}
-            applied={preset === policy.data.preset}
+            applied={preset === applied}
             onSelect={() => setChoice(preset)}
           />
         ))}
@@ -182,44 +212,59 @@ function PresetSection() {
         onConfirm={() => apply.mutate()}
       >
         {/* TODO(spec): 진행 중인 요청을 어떻게 다룰지 명세에 없다. 명세 5장대로 웹쉘은 실행 직전의 정책으로 검증한다. */}
-        관리자 서명된 웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 승인 인원으로 검증하므로, 인원이 늘면 진행 중인 요청은 검증에 실패할 수 있습니다.
+        웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 승인 인원으로 검증하므로, 인원이 늘면 진행 중인 요청은 검증에 실패할 수 있습니다. {UNSIGNED_POLICY_NOTICE}
       </ConfirmModal>
     </Sheet>
   )
 }
 
+/** 승인권자 칸은 한 사람 규칙만 고칠 수 있다. 서버 프리셋의 여러 사람 규칙은 그대로 보여 주고 그대로 돌려보낸다. */
+const withApprover = (row: ApprovalMatrixRule, rule: ApproverRule): ApprovalMatrixRule =>
+  row.requiredApprovers.length === 1 ? { ...row, requiredApprovers: [{ rule, count: row.requiredApprovers[0].count }] } : row
+
+/** 승인권자는 위험도로 정해진다: 높음은 담당자로 고정, 높음에서 내리면 누구나로 돌아간다 (5.2). */
+function withRisk(row: ApprovalMatrixRule, risk: Risk): ApprovalMatrixRule {
+  const next = { ...row, risk }
+  if (risk === 'HIGH') return withApprover(next, 'PROJECT_OWNER')
+  return row.risk === 'HIGH' ? withApprover(next, 'ANYONE') : next
+}
+
 function MatrixSection() {
+  const me = useMe()
   const refresh = useRefreshAll()
-  const [draft, setDraft] = useState<ApprovalMatrixRow[] | null>(null)
+  const [draft, setDraft] = useState<ApprovalMatrixRule[] | null>(null)
   const [confirming, setConfirming] = useState(false)
-  const matrix = useQuery({ queryKey: ['approval-matrix'], queryFn: orgApi.approvalMatrix })
+  const matrix = useQuery({
+    queryKey: ['approval-matrix'],
+    queryFn: async () => (await orgApi.approvalMatrix()).rules,
+  })
   const rows = draft ?? matrix.data
   const dirty = Boolean(draft) && JSON.stringify(draft) !== JSON.stringify(matrix.data)
+  const finish = async () => {
+    setDraft(null)
+    setConfirming(false)
+    await refresh()
+  }
   const save = useMutation({
-    mutationFn: () => adminApi.updateMatrix(rows as ApprovalMatrixRow[]),
-    onSuccess: async () => {
-      toast.success('승인 기준표를 저장했습니다')
-      setDraft(null)
-      setConfirming(false)
-      await refresh()
+    mutationFn: () => adminApi.updateMatrix(rows as ApprovalMatrixRule[], policyAdminProof(me.id)),
+    meta: { silent: true },
+    onSuccess: async (result) => {
+      notifyPolicySaved('승인 기준표를 저장했습니다', result.webshellApplied)
+      await finish()
     },
+    onError: onPolicyError(finish),
   })
 
-  const updateRow = (taskType: ApprovalMatrixRow['taskType'], patch: Partial<ApprovalMatrixRow>) => {
-    setDraft((rows ?? []).map((row) => (row.taskType === taskType ? { ...row, ...patch } : row)))
+  const updateRow = (index: number, next: ApprovalMatrixRule) => {
+    setDraft((rows ?? []).map((row, at) => (at === index ? next : row)))
   }
 
-  /** 승인권자는 위험도로 정해진다: 높음은 담당자로 고정, 높음에서 내리면 누구나로 돌아간다 (5.2). */
-  const changeRisk = (row: ApprovalMatrixRow, risk: ApprovalMatrixRow['defaultRisk']) => {
-    if (risk === 'HIGH') updateRow(row.taskType, { defaultRisk: risk, approverRule: 'PROJECT_OWNER' })
-    else if (row.defaultRisk === 'HIGH') updateRow(row.taskType, { defaultRisk: risk, approverRule: 'ANYONE' })
-    else updateRow(row.taskType, { defaultRisk: risk })
+  const changed = (row: ApprovalMatrixRule, index: number) => {
+    const saved = matrix.data?.[index]
+    return Boolean(saved) && JSON.stringify(saved) !== JSON.stringify(row)
   }
 
-  const changed = (row: ApprovalMatrixRow) => {
-    const saved = matrix.data?.find((item) => item.taskType === row.taskType)
-    return Boolean(saved) && (saved?.defaultRisk !== row.defaultRisk || saved?.approverRule !== row.approverRule)
-  }
+  const missingPolicy = matrix.isError && noPolicyYet(matrix.error)
 
   return (
     <Sheet flush>
@@ -237,7 +282,8 @@ function MatrixSection() {
         </SectionBar>
       </div>
       {matrix.isPending && <Spinner />}
-      {matrix.isError && <ErrorState error={matrix.error} onRetry={() => matrix.refetch()} />}
+      {missingPolicy && <EmptyState title="아직 승인 기준표가 없습니다">규모 프리셋을 먼저 적용해 주세요.</EmptyState>}
+      {matrix.isError && !missingPolicy && <ErrorState error={matrix.error} onRetry={() => matrix.refetch()} />}
       {rows && (
         <div className="overflow-x-auto">
           <table className="sheet-table">
@@ -245,52 +291,66 @@ function MatrixSection() {
               <tr>
                 <th>작업 유형</th>
                 <th>예시</th>
-                <th>기본 위험도</th>
+                <th>위험도</th>
                 <th>승인권자</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.taskType}>
-                  <td className="font-medium whitespace-nowrap">
-                    {row.label}
-                    {changed(row) && <span className="ml-2 text-[0.875rem] font-medium text-seal">바뀜</span>}
-                  </td>
-                  <td className="text-ink-2">{row.examples}</td>
-                  <td>
-                    <div className="w-28">
-                      <Select
-                        aria-label={`${row.label} 기본 위험도`}
-                        value={row.defaultRisk}
-                        onChange={(event) => changeRisk(row, event.target.value as ApprovalMatrixRow['defaultRisk'])}
-                      >
-                        {EDITABLE_RISKS.map((risk) => (
-                          <option key={risk} value={risk}>
-                            {RISK_LABEL[risk as Risk]}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="w-44">
-                      <Select
-                        aria-label={`${row.label} 승인권자`}
-                        value={row.approverRule}
-                        disabled={row.defaultRisk === 'HIGH'}
-                        title={row.defaultRisk === 'HIGH' ? '위험도 높음은 프로젝트 담당자가 승인합니다' : undefined}
-                        onChange={(event) => updateRow(row.taskType, { approverRule: event.target.value as ApproverRule })}
-                      >
-                        {EDITABLE_RULES.map((rule) => (
-                          <option key={rule} value={rule}>
-                            {RULE_LABEL[rule]}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {rows.map((row, index) => {
+                const label = TASK_TYPE_LABEL[row.taskType]
+                const [only, ...others] = row.requiredApprovers
+                // 서버 프리셋이 정한 규칙은 고를 수 있는 값이 아니어도 그대로 보여 준다.
+                const ruleOptions = only && !EDITABLE_RULES.includes(only.rule) ? [only.rule, ...EDITABLE_RULES] : EDITABLE_RULES
+                return (
+                  <tr key={`${row.taskType}-${index}`}>
+                    <td className="font-medium whitespace-nowrap">
+                      {label}
+                      {changed(row, index) && <span className="ml-2 text-[0.875rem] font-medium text-seal">바뀜</span>}
+                    </td>
+                    <td className="text-ink-2">{TASK_TYPE_EXAMPLES[row.taskType]}</td>
+                    <td>
+                      {row.risk === 'FORBIDDEN' ? (
+                        <RiskBadge risk="FORBIDDEN" />
+                      ) : (
+                        <div className="w-28">
+                          <Select
+                            aria-label={`${label} 위험도`}
+                            value={row.risk}
+                            onChange={(event) => updateRow(index, withRisk(row, event.target.value as Risk))}
+                          >
+                            {EDITABLE_RISKS.map((risk) => (
+                              <option key={risk} value={risk}>
+                                {RISK_LABEL[risk]}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      {only && others.length === 0 ? (
+                        <div className="w-44">
+                          <Select
+                            aria-label={`${label} 승인권자`}
+                            value={only.rule}
+                            disabled={row.risk === 'HIGH'}
+                            title={row.risk === 'HIGH' ? '위험도 높음은 프로젝트 담당자가 승인합니다' : undefined}
+                            onChange={(event) => updateRow(index, withApprover(row, event.target.value as ApproverRule))}
+                          >
+                            {ruleOptions.map((rule) => (
+                              <option key={rule} value={rule}>
+                                {RULE_LABEL[rule]}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                      ) : (
+                        <span className="text-ink-2">{row.requiredApprovers.map((approver) => RULE_LABEL[approver.rule]).join(' + ')}</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
               <tr>
                 <td className="font-medium whitespace-nowrap">부서 금지 작업</td>
                 <td className="text-ink-2">금지 목록에 있는 작업</td>
@@ -311,7 +371,7 @@ function MatrixSection() {
         onClose={() => setConfirming(false)}
         onConfirm={() => save.mutate()}
       >
-        관리자 서명된 웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 기준표로 검증하므로, 승인권자가 늘면 진행 중인 요청은 검증에 실패할 수 있습니다.
+        웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 기준표로 검증하므로, 승인권자가 늘면 진행 중인 요청은 검증에 실패할 수 있습니다. {UNSIGNED_POLICY_NOTICE}
       </ConfirmModal>
     </Sheet>
   )

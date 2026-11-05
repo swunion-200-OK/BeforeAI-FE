@@ -1,9 +1,14 @@
 import { downloadFile, http } from './client'
+import { whenOnServer } from './missingOnServer'
 import { streamMessages } from './sse'
 import type {
   AcceptedRequest,
+  AdminProof,
+  AdminSigningKey,
   ApprovalContext,
-  ApprovalMatrixRow,
+  ApplyPresetResponse,
+  ApprovalMatrixResponse,
+  ApprovalMatrixRule,
   AuditExport,
   AuditExportAccepted,
   AuditLog,
@@ -23,41 +28,50 @@ import type {
   FileContent,
   FileListing,
   ForbiddenProposal,
+  ForbiddenProposalConfirmResponse,
+  ForbiddenProposalStatusResponse,
   ForbiddenProposalStatus,
   ForbiddenRule,
+  ForbiddenRuleStatusResponse,
+  KillAllResponse,
   KillResponse,
   LogLine,
   LoginResponse,
   Me,
   NotificationSettings,
+  OtpEnrollResponse,
   Page,
   PatchPlanBody,
   PendingApproval,
   Policy,
   PolicyPreset,
+  PlanRetryResponse,
   ProgressNode,
-  ProgressRequestNode,
   ProgressStreamEvent,
   ProgressTree,
   Project,
   ProjectSpec,
+  RegisterKeyResponse,
   RejectBody,
+  RejectionResponse,
   RequestDetail,
   RequestStatus,
   RequestSummary,
+  ResetPasswordResponse,
   Risk,
   Role,
   RollbackBody,
   SigningKey,
   SlackIntegration,
   SpecChangeRequest,
+  SpecChangeRequestAccepted,
   SubmitApprovalBody,
   SubmitApprovalResponse,
   SubmitResponse,
-  TaskApprovalStatus,
   TaskDocument,
   TaskType,
   TokenResponse,
+  UpdateApprovalMatrixResponse,
   User,
   WebshellPublicKey,
 } from './types'
@@ -90,88 +104,28 @@ type Loose<T> = { [K in keyof T]?: T[K] | null }
 /** 사람 정보가 빠졌을 때 화면이 깨지지 않게 하는 자리 값. 지어낸 이름 대신 모른다고 쓴다. */
 const UNKNOWN_USER = { id: '', name: '알 수 없음', departmentId: null }
 
-/** TODO(spec): 목록에 담당자가 오는지 명세에 없다 (3.3은 상세에만 "담당자 포함"). 없으면 비워 둔다. */
-function withProjectDefaults(project: Omit<Project, 'owners'> & Loose<Pick<Project, 'owners'>>): Project {
-  return { ...project, owners: project.owners ?? [] }
-}
-
-/** TODO(spec): 기획서 응답 모양은 명세에 없다. */
-function withSpecDefaults(spec: Omit<ProjectSpec, 'updatedBy'> & Loose<Pick<ProjectSpec, 'updatedBy'>>): ProjectSpec {
-  return { ...spec, updatedBy: spec.updatedBy ?? UNKNOWN_USER }
-}
-
-function withChangeRequestDefaults(item: Omit<SpecChangeRequest, 'requester'> & Loose<Pick<SpecChangeRequest, 'requester'>>): SpecChangeRequest {
-  return { ...item, requester: item.requester ?? UNKNOWN_USER }
-}
-
 function withVersionDefaults<T extends { createdBy?: DocumentVersionSummary['createdBy'] | null }>(version: T) {
   return { ...version, createdBy: version.createdBy ?? UNKNOWN_USER }
 }
 
-/** TODO(spec): 명세는 "위험도·요청자·요청 시각"만 약속한다 (3.6). */
-function withPendingDefaults(item: Omit<PendingApproval, 'taskTitle' | 'projectName' | 'requester' | 'blockedReason'> & Loose<PendingApproval>): PendingApproval {
-  return {
-    ...item,
-    taskTitle: item.taskTitle ?? '제목 없는 작업',
-    projectName: item.projectName ?? item.projectId,
-    requester: item.requester ?? UNKNOWN_USER,
-    blockedReason: item.blockedReason ?? null,
-  }
-}
-
-/** 승인 현황의 모양은 명세에 없다. 충족 여부를 모르면 충족으로 보지 않는다. ID만 온 후보는 보여 줄 이름이 없어 뺀다. */
-function withApprovalStatusDefaults(status: TaskApprovalStatus): TaskApprovalStatus {
-  return {
-    ...status,
-    requirements: (status.requirements ?? []).map((item) => ({
-      ...item,
-      candidates: (item.candidates ?? []).filter((candidate) => Boolean(candidate?.name)),
-      approvedBy: item.approvedBy ?? [],
-      satisfied: item.satisfied === true,
-    })),
-  }
-}
-
-type RawRequestDetail = RequestSummary &
-  Loose<Omit<RequestDetail, keyof RequestSummary | 'clarification'>> & {
-    /** 명세 4.1은 "clarification 필드에 질문이 담기고"라고만 해서 문자열로 올 수도 있다 */
-    clarification?: RequestDetail['clarification'] | string
-  }
-
-/** TODO(spec): 요청 상세의 추가 필드는 명세에 없다 (types.ts). 빠지거나 null이어도 화면이 깨지지 않게 여기서 채운다. */
-function withDetailDefaults(detail: RawRequestDetail): RequestDetail {
-  const { clarification } = detail
-  return {
-    ...detail,
-    projectName: detail.projectName ?? detail.projectId,
-    plan: detail.plan ?? null,
-    approvalStatus: (detail.approvalStatus ?? []).map(withApprovalStatusDefaults),
-    clarification: typeof clarification === 'string' ? { question: clarification } : (clarification ?? null),
-    analysisError: detail.analysisError ?? null,
-    changedTaskIds: detail.changedTaskIds ?? [],
-    removedTaskTitles: detail.removedTaskTitles ?? [],
-    failedChecks: detail.failedChecks ?? [],
-    approvalRecordCount: detail.approvalRecordCount ?? undefined,
-    rejection: detail.rejection ?? null,
-    kill: detail.kill ?? null,
-    events: detail.events ?? [],
-  }
-}
-
-/** TODO(spec): 재시도·롤백 응답 모양은 명세에 없다 (3.5, 3.7). 제출 응답(4.3)과 같다고 보되, 상태를 이미 바꾼 뒤 여기서 터지지 않게 한다. */
+/** TODO(spec): 롤백 응답 모양은 명세에 없다 (3.7). 제출 응답(4.3)과 같다고 보되, 상태를 이미 바꾼 뒤 여기서 터지지 않게 한다. */
 function withSubmitDefaults(requestId: string, result: Omit<SubmitResponse, 'id' | 'selfApprovableTaskIds'> & Loose<SubmitResponse>): SubmitResponse {
   return { ...result, id: result.id ?? requestId, selfApprovableTaskIds: result.selfApprovableTaskIds ?? [] }
 }
 
-/** 명세 2.6의 예시에서도 STEP과 APPROVAL에는 children이 없다. 나머지 노드는 비어 있어도 배열로 맞춘다. */
-function withNodeDefaults(node: ProgressNode): ProgressNode {
+/**
+ * 서버의 승인 노드 ID는 approval:{승인 기록 id}라서 한 번에 여러 작업을 서명하면 작업마다 같은 ID가 나온다.
+ * 화면은 ID로 노드를 찾고 선을 그리므로, 작업 ID를 앞에 붙여 트리 안에서 하나로 만든다.
+ */
+function withUniqueNodeIds<T extends ProgressNode>(node: T): T {
   if (node.type === 'APPROVAL' || node.type === 'STEP') return node
-  const children = (node.children ?? []).map(withNodeDefaults)
-  return node.type === 'TASK' ? { ...node, children, dependsOn: node.dependsOn ?? [] } : { ...node, children }
+  if (node.type !== 'TASK') return { ...node, children: node.children.map(withUniqueNodeIds) }
+  const children = node.children.map((child) => (child.type === 'APPROVAL' ? { ...child, id: `${node.id}/${child.id}` } : child))
+  return { ...node, children }
 }
 
-function withTreeDefaults(tree: ProgressTree): ProgressTree {
-  return { ...tree, root: withNodeDefaults(tree.root) as ProgressRequestNode }
+function withTreeIds(tree: ProgressTree): ProgressTree {
+  return { ...tree, root: withUniqueNodeIds(tree.root) }
 }
 
 function parseJson(text: string): unknown {
@@ -183,36 +137,29 @@ function parseJson(text: string): unknown {
 }
 
 /**
- * SSE 메시지를 진행 상황 이벤트로 바꾼다 (명세 4.9). heartbeat와 tree.replaced는 본문이 명세에 없어 비어 있어도 된다.
+ * SSE 메시지를 진행 상황 이벤트로 바꾼다. 서버는 node.updated, tree.replaced, heartbeat만 보낸다 (RequestStreamService).
  * 패치를 읽지 못하거나 버전을 모르면 변경을 잃지 않도록 전체를 다시 받게 한다. 모르는 이벤트는 버린다.
  */
 export function toProgressEvent({ id, event, data }: { id: string | null; event: string; data: string }): ProgressStreamEvent | null {
   const parsed = id === null || id === '' ? Number.NaN : Number(id)
   const version = Number.isNaN(parsed) ? null : parsed
+  const replaced = (): ProgressStreamEvent => ({ id: version ?? 0, event: 'tree.replaced', data: { version: version ?? 0 } })
+  if (event === 'heartbeat') return { id: null, event, data: {} }
+  if (event === 'tree.replaced') return replaced()
+  if (event !== 'node.updated') return null
   const body = parseJson(data) as Record<string, unknown> | null
-  const at = typeof body?.at === 'string' ? body.at : ''
-  if (event === 'heartbeat') return { id: null, event, data: { at } }
-  if (event === 'tree.replaced') return { id: version ?? 0, event, data: { at } }
-  if (event !== 'node.updated' && event !== 'node.added') return null
-  if (version === null || !body) return { id: version ?? 0, event: 'tree.replaced', data: { at } }
-  if (event === 'node.added') {
-    if (typeof body.parentId !== 'string' || !body.node) return { id: version, event: 'tree.replaced', data: { at } }
-    return { id: version, event, data: { parentId: body.parentId, node: withNodeDefaults(body.node as ProgressNode) } }
-  }
-  if (typeof body.nodeId !== 'string') return { id: version, event: 'tree.replaced', data: { at } }
-  return { id: version, event, data: { ...body, nodeId: body.nodeId, at } }
+  if (version === null || typeof body?.nodeId !== 'string' || typeof body.status !== 'string') return replaced()
+  return { id: version, event, data: { nodeId: body.nodeId, status: body.status, at: typeof body.at === 'string' ? body.at : '' } }
 }
 
-/** TODO(spec): 승인 기준표 응답 모양은 명세에 없다 (3.2). 표 그대로, { rows }, 목록 규칙(1.1)의 { items } 모두 받는다. */
-function toMatrixRows(result: ApprovalMatrixRow[] | { rows?: ApprovalMatrixRow[]; items?: ApprovalMatrixRow[] }): ApprovalMatrixRow[] {
-  return Array.isArray(result) ? result : (result.rows ?? result.items ?? [])
-}
-
-/** TODO(spec): 필드 이름은 명세에 없다. 없는 값을 기기에 고정하면 승인 서명을 암호화할 수 없으니 여기서 멈춘다. */
+/** 없는 값을 기기에 고정하면 승인 서명을 암호화할 수 없으니 여기서 멈춘다. */
 function requireWebshellKey(key: WebshellPublicKey): WebshellPublicKey {
-  if (!key.encryptionKey || !key.signingKey) throw new Error('웹쉘 공개키 응답에 필요한 값이 없습니다. 관리자에게 알려 주세요')
+  if (!key.encryption?.publicKey || !key.signing?.publicKey) throw new Error('웹쉘 공개키 응답에 필요한 값이 없습니다. 관리자에게 알려 주세요')
   return key
 }
+
+/** 서버는 승인 키로 이 알고리즘만 받는다. */
+const SIGNING_KEY_ALGORITHM = 'Ed25519'
 
 const NO_RISKS: Record<Risk, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, FORBIDDEN: 0 }
 
@@ -231,16 +178,11 @@ function withDashboardDefaults(raw: Pick<Dashboard, 'scope'> & Loose<Dashboard>)
   }
 }
 
-/** TODO(spec): 디렉터리 목록의 모양은 명세에 없다. "응답에 기준 커밋 포함"뿐이라 목록 규칙(1.1)의 items로 올 수도 있다. */
-function withListingDefaults(listing: Omit<FileListing, 'entries'> & { entries?: FileListing['entries'] | null; items?: FileListing['entries'] | null }): FileListing {
-  return { ...listing, entries: listing.entries ?? listing.items ?? [] }
-}
-
 export const authApi = {
-  login: (employeeNo: string, password: string) =>
-    http<LoginResponse>('POST', '/auth/login', { body: { employeeNo, password }, skipRefresh: true }),
-  verifyOtp: (tempToken: string, code: string) =>
-    http<TokenResponse>('POST', '/auth/otp/verify', { body: { tempToken, code }, skipRefresh: true }),
+  login: (employeeNumber: string, password: string) =>
+    http<LoginResponse>('POST', '/auth/login', { body: { employeeNumber, password }, skipRefresh: true }),
+  verifyOtp: (temporaryToken: string, otpCode: string) =>
+    http<TokenResponse>('POST', '/auth/otp/verify', { body: { temporaryToken, otpCode }, skipRefresh: true }),
   refresh: () => http<TokenResponse>('POST', '/auth/refresh', { skipRefresh: true }),
   logout: () => http<void>('POST', '/auth/logout', { skipRefresh: true }),
 }
@@ -249,69 +191,75 @@ export const meApi = {
   get: () => http<Me>('GET', '/me'),
   changePassword: (currentPassword: string, newPassword: string) =>
     http<void>('PUT', '/me/password', { body: { currentPassword, newPassword } }),
-  enrollOtp: (code?: string) => http<{ secret: string; enrolled: boolean }>('POST', '/me/otp', { body: { code } }),
-  submitSigningKey: (publicKey: string) => http<SigningKey>('POST', '/me/signing-keys', { body: { publicKey } }),
+  /** 서버는 otpCode가 없거나 비어 있으면 비밀키를 새로 발급해 앱에 넣은 키를 덮어쓴다. 그래서 발급과 확인을 나눠 둔다. */
+  issueOtpSecret: () => http<OtpEnrollResponse>('POST', '/me/otp'),
+  confirmOtp: async (otpCode: string) => {
+    if (!otpCode.trim()) throw new Error('OTP 번호를 입력해 주세요')
+    const result = await http<OtpEnrollResponse>('POST', '/me/otp', { body: { otpCode } })
+    if (!result.verified) throw new Error('OTP 등록을 확인하지 못했습니다. 다시 등록해 주세요')
+    return result
+  },
+  submitSigningKey: (publicKey: string) =>
+    http<SigningKey>('POST', '/me/signing-keys', { body: { algorithm: SIGNING_KEY_ALGORITHM, publicKey } }),
   signingKeys: () => allPages<SigningKey>('/me/signing-keys'),
   webshellPublicKey: () => http<WebshellPublicKey>('GET', '/webshell/public-key').then(requireWebshellKey),
-  notificationSettings: () => http<NotificationSettings>('GET', '/me/notification-settings'),
+  notificationSettings: () => whenOnServer(http<NotificationSettings>('GET', '/me/notification-settings')),
   updateNotificationSettings: (body: NotificationSettings) =>
-    http<NotificationSettings>('PUT', '/me/notification-settings', { body }),
+    whenOnServer(http<NotificationSettings>('PUT', '/me/notification-settings', { body })),
 }
 
 export const adminApi = {
   users: (query?: { departmentId?: string; role?: Role }) => allPages<User>('/admin/users', query),
-  createUser: (body: { employeeNo: string; name: string; role: Role; departmentId: string | null; slackUserId?: string }) =>
+  createUser: (body: { employeeNumber: string; name: string; role: Role; departmentId: string | null }) =>
     http<CreateUserResponse>('POST', '/admin/users', { body }),
-  updateUser: (
-    userId: string,
-    body: Partial<Pick<User, 'role' | 'departmentId' | 'slackUserId' | 'active'>>,
-  ) => http<User>('PATCH', `/admin/users/${userId}`, { body }),
+  /** 서버는 null을 "바꾸지 않음"으로 읽는다. 부서를 비울 수는 없다. */
+  updateUser: (userId: string, body: Partial<Pick<User, 'role' | 'departmentId' | 'active'>>) =>
+    http<User>('PATCH', `/admin/users/${userId}`, { body }),
   resetPassword: (userId: string) =>
-    http<{ initialPassword: string }>('POST', `/admin/users/${userId}/reset-password`),
+    http<ResetPasswordResponse>('POST', `/admin/users/${userId}/reset-password`),
   createDepartment: (name: string) => http<Department>('POST', '/admin/departments', { body: { name } }),
   policy: () => http<Policy>('GET', '/admin/policy'),
-  applyPreset: (preset: PolicyPreset) => http<Policy>('PUT', '/admin/policy/preset', { body: { preset } }),
-  updateMatrix: (rows: ApprovalMatrixRow[]) =>
-    http<Parameters<typeof toMatrixRows>[0]>('PUT', '/admin/approval-matrix', { body: { rows } }).then(toMatrixRows),
-  signingKeys: () => allPages<SigningKey>('/admin/signing-keys'),
-  registerKey: (keyId: string) => http<SigningKey>('POST', `/admin/signing-keys/${keyId}/register`),
-  revokeKey: (keyId: string) => http<SigningKey>('DELETE', `/admin/signing-keys/${keyId}`),
-  updateSlack: (body: SlackIntegration) => http<SlackIntegration>('PUT', '/admin/integrations/slack', { body }),
-  killAll: (reason: string) => http<{ killedRequestIds: string[] }>('POST', '/admin/kill-all', { body: { reason } }),
+  applyPreset: (preset: PolicyPreset, adminProof: AdminProof) =>
+    http<ApplyPresetResponse>('PUT', '/admin/policy/preset', { body: { preset, adminProof } }),
+  updateMatrix: (rules: ApprovalMatrixRule[], adminProof: AdminProof) =>
+    http<UpdateApprovalMatrixResponse>('PUT', '/admin/approval-matrix', { body: { rules, adminProof } }),
+  signingKeys: () => allPages<AdminSigningKey>('/admin/signing-keys'),
+  registerKey: (keyId: string, adminProof: AdminProof) =>
+    http<RegisterKeyResponse>('POST', `/admin/signing-keys/${keyId}/register`, { body: { adminProof } }),
+  revokeKey: (keyId: string) => http<void>('DELETE', `/admin/signing-keys/${keyId}`),
+  updateSlack: (body: SlackIntegration) => whenOnServer(http<SlackIntegration>('PUT', '/admin/integrations/slack', { body })),
+  killAll: (reason: string) => http<KillAllResponse>('POST', '/admin/kill-all', { body: { reason } }),
   createProject: (body: {
     name: string
     departmentId: string
     repository: string
     ownerIds: string[]
-    specBody: string
-  }) => http<Project>('POST', '/admin/projects', { body }).then(withProjectDefaults),
+    initialSpec: { body: string }
+  }) => http<Project>('POST', '/admin/projects', { body }),
 }
 
 export const orgApi = {
   departments: () => allPages<Department>('/departments'),
-  approvalMatrix: () => http<Parameters<typeof toMatrixRows>[0]>('GET', '/approval-matrix').then(toMatrixRows),
+  approvalMatrix: () => http<ApprovalMatrixResponse>('GET', '/approval-matrix'),
 }
 
 export const projectsApi = {
-  list: () => allPages<Project>('/projects').then((page) => withItems(page, withProjectDefaults)),
-  get: (projectId: string) => http<Project>('GET', `/projects/${projectId}`).then(withProjectDefaults),
-  spec: (projectId: string) => http<ProjectSpec>('GET', `/projects/${projectId}/spec`).then(withSpecDefaults),
+  list: () => allPages<Project>('/projects'),
+  get: (projectId: string) => http<Project>('GET', `/projects/${projectId}`),
+  spec: (projectId: string) => http<ProjectSpec>('GET', `/projects/${projectId}/spec`),
   updateSpec: (projectId: string, body: string) =>
-    http<ProjectSpec>('PUT', `/projects/${projectId}/spec`, { body: { body } }).then(withSpecDefaults),
-  specVersions: (projectId: string) =>
-    allPages<ProjectSpec>(`/projects/${projectId}/spec/versions`).then((page) => withItems(page, withSpecDefaults)),
+    http<ProjectSpec>('PUT', `/projects/${projectId}/spec`, { body: { body } }),
+  specVersions: (projectId: string) => allPages<ProjectSpec>(`/projects/${projectId}/spec/versions`),
   restoreSpec: (projectId: string, version: number) =>
-    http<ProjectSpec>('POST', `/projects/${projectId}/spec/versions/${version}/restore`).then(withSpecDefaults),
+    http<ProjectSpec>('POST', `/projects/${projectId}/spec/versions/${version}/restore`),
   updateOwners: (projectId: string, ownerIds: string[]) =>
-    http<Project>('PUT', `/projects/${projectId}/owners`, { body: { ownerIds } }).then(withProjectDefaults),
+    whenOnServer(http<Project>('PUT', `/projects/${projectId}/owners`, { body: { ownerIds } })),
   createChangeRequest: (projectId: string, body: { content: string; reason: string }) =>
     http<SpecChangeRequest>('POST', `/projects/${projectId}/spec/change-requests`, { body }),
   changeRequests: (projectId: string, status?: ChangeRequestStatus) =>
-    allPages<SpecChangeRequest>(`/projects/${projectId}/spec/change-requests`, { status }).then((page) =>
-      withItems(page, withChangeRequestDefaults),
-    ),
+    allPages<SpecChangeRequest>(`/projects/${projectId}/spec/change-requests`, { status }),
   acceptChangeRequest: (projectId: string, crId: string) =>
-    http<SpecChangeRequest>('POST', `/projects/${projectId}/spec/change-requests/${crId}/accept`),
+    http<SpecChangeRequestAccepted>('POST', `/projects/${projectId}/spec/change-requests/${crId}/accept`),
   rejectChangeRequest: (projectId: string, crId: string, reason: string) =>
     http<SpecChangeRequest>('POST', `/projects/${projectId}/spec/change-requests/${crId}/reject`, { body: { reason } }),
 }
@@ -328,12 +276,15 @@ export const forbiddenApi = {
     http<ForbiddenProposal>('POST', `/departments/${deptId}/forbidden-proposals`, { body }),
   proposals: (status?: ForbiddenProposalStatus) =>
     allPages<ForbiddenProposal>('/admin/forbidden-proposals', { status }),
-  confirm: (proposalId: string) => http<ForbiddenProposal>('POST', `/admin/forbidden-proposals/${proposalId}/confirm`),
+  confirm: (proposalId: string, adminProof: AdminProof) =>
+    http<ForbiddenProposalConfirmResponse>('POST', `/admin/forbidden-proposals/${proposalId}/confirm`, { body: { adminProof } }),
   reject: (proposalId: string, reason: string) =>
-    http<ForbiddenProposal>('POST', `/admin/forbidden-proposals/${proposalId}/reject`, { body: { reason } }),
-  addRule: (body: ForbiddenInput & { departmentId: string }) =>
+    http<ForbiddenProposalStatusResponse>('POST', `/admin/forbidden-proposals/${proposalId}/reject`, { body: { reason } }),
+  addRule: (body: ForbiddenInput & { departmentId: string; adminProof: AdminProof }) =>
     http<ForbiddenRule>('POST', '/admin/forbidden-rules', { body }),
-  release: (ruleId: string) => http<ForbiddenRule>('POST', `/admin/forbidden-rules/${ruleId}/release`),
+  /** adminProof가 없으면 서버는 요청만 저장하고, 다음 서명된 정책 변경 때 웹쉘에 보낸다 */
+  release: (ruleId: string, body: { reason: string; adminProof?: AdminProof }) =>
+    http<ForbiddenRuleStatusResponse>('POST', `/admin/forbidden-rules/${ruleId}/release`, { body }),
 }
 
 export const requestsApi = {
@@ -342,7 +293,7 @@ export const requestsApi = {
     http<Page<RequestSummary>>('GET', '/requests', { query }),
   /** 화면이 건수나 전체를 믿어야 할 때만 쓴다 (전사 일괄 중단 대상 등) */
   listAll: (query?: { mine?: boolean; status?: RequestStatus; projectId?: string }) => allPages<RequestSummary>('/requests', query),
-  get: (requestId: string) => http<RawRequestDetail>('GET', `/requests/${requestId}`).then(withDetailDefaults),
+  get: (requestId: string) => http<RequestDetail>('GET', `/requests/${requestId}`),
   retryAnalysis: (requestId: string) => http<AcceptedRequest>('POST', `/requests/${requestId}/analysis/retry`),
   patchPlan: (requestId: string, body: PatchPlanBody) =>
     http<AcceptedRequest>('PATCH', `/requests/${requestId}/plan`, { body }),
@@ -350,22 +301,24 @@ export const requestsApi = {
   cancel: (requestId: string) => http<AcceptedRequest>('POST', `/requests/${requestId}/cancel`),
   kill: (requestId: string, reason: string) =>
     http<KillResponse>('POST', `/requests/${requestId}/kill`, { body: { reason } }),
-  retryFailed: (requestId: string) =>
-    http<SubmitResponse>('POST', `/requests/${requestId}/retry`).then((result) => withSubmitDefaults(requestId, result)),
+  retryFailed: (requestId: string) => http<PlanRetryResponse>('POST', `/requests/${requestId}/retry`),
   logs: (requestId: string, query?: { cursor?: string; limit?: number }) =>
     http<Page<LogLine>>('GET', `/requests/${requestId}/logs`, { query }),
-  /** TODO(spec): 로그 스트림의 이벤트 이름과 연결 유지 메시지는 명세에 없다. seq가 있는 메시지만 로그로 본다. */
-  streamLogs: (requestId: string, onLine: (line: LogLine) => void, signal: AbortSignal) =>
+  /** 이벤트 이름은 log이고 id가 없으며 지난 줄을 다시 보내지 않는다. 연결 유지는 SSE 주석이라 메시지로 오지 않는다 (RequestStreamService) */
+  streamLogs: (requestId: string, onLine: (line: LogLine) => void, signal: AbortSignal, onOpen?: () => void) =>
     streamMessages(
       `/requests/${requestId}/logs/stream`,
-      ({ data }) => {
+      ({ event, data }) => {
+        if (event !== 'log') return
         const line = parseJson(data) as LogLine | null
-        if (typeof line?.seq === 'number') onLine(line)
+        if (typeof line?.sequence === 'number') onLine(line)
       },
       signal,
+      undefined,
+      onOpen,
     ),
-  progress: (requestId: string) => http<ProgressTree>('GET', `/requests/${requestId}/progress`).then(withTreeDefaults),
-  /** lastVersion을 주면 Last-Event-ID로 보내 그 뒤부터 이어 받는다 (명세 4.9) */
+  progress: (requestId: string) => http<ProgressTree>('GET', `/requests/${requestId}/progress`).then(withTreeIds),
+  /** lastVersion을 주면 Last-Event-ID로 보낸다. 서버는 지난 이벤트를 다시 보내지 않고, 버전이 다르면 tree.replaced를 보낸다 */
   streamProgress: (
     requestId: string,
     onEvent: (event: ProgressStreamEvent) => void,
@@ -382,31 +335,31 @@ export const requestsApi = {
       lastVersion === undefined ? undefined : String(lastVersion),
     ),
   taskDocument: (requestId: string, taskId: string) =>
-    http<TaskDocument>('GET', `/requests/${requestId}/tasks/${taskId}/document`),
+    whenOnServer(http<TaskDocument>('GET', `/requests/${requestId}/tasks/${taskId}/document`)),
   rollback: (requestId: string, body: RollbackBody) =>
-    http<SubmitResponse>('POST', `/requests/${requestId}/rollback`, { body }).then((result) => withSubmitDefaults(requestId, result)),
+    whenOnServer(http<SubmitResponse>('POST', `/requests/${requestId}/rollback`, { body })).then((result) => withSubmitDefaults(requestId, result)),
 }
 
 export const approvalsApi = {
-  pending: () => allPages<PendingApproval>('/approvals/pending').then((page) => withItems(page, withPendingDefaults)),
+  pending: () => allPages<PendingApproval>('/approvals/pending'),
   context: (requestId: string) => http<ApprovalContext>('GET', `/requests/${requestId}/approval-context`),
   submit: (requestId: string, body: SubmitApprovalBody) =>
     http<SubmitApprovalResponse>('POST', `/requests/${requestId}/approvals`, { body }),
   reject: (requestId: string, body: RejectBody) =>
-    http<AcceptedRequest>('POST', `/requests/${requestId}/rejections`, { body }),
+    http<RejectionResponse>('POST', `/requests/${requestId}/rejections`, { body }),
 }
 
 export const documentsApi = {
-  list: (projectId: string) => allPages<DocumentSummary>(`/projects/${projectId}/documents`),
+  list: (projectId: string) => whenOnServer(allPages<DocumentSummary>(`/projects/${projectId}/documents`)),
   versions: (documentId: string) =>
-    allPages<DocumentVersionSummary>(`/documents/${documentId}/versions`).then((page) => withItems(page, withVersionDefaults)),
+    whenOnServer(allPages<DocumentVersionSummary>(`/documents/${documentId}/versions`)).then((page) => withItems(page, withVersionDefaults)),
   version: (documentId: string, version: number) =>
-    http<DocumentVersion>('GET', `/documents/${documentId}/versions/${version}`).then(withVersionDefaults),
+    whenOnServer(http<DocumentVersion>('GET', `/documents/${documentId}/versions/${version}`)).then(withVersionDefaults),
 }
 
 export const editorApi = {
   files: (projectId: string, query?: { path?: string; ref?: string }) =>
-    http<Parameters<typeof withListingDefaults>[0]>('GET', `/projects/${projectId}/files`, { query }).then(withListingDefaults),
+    http<FileListing>('GET', `/projects/${projectId}/files`, { query }),
   content: (projectId: string, query: { path: string; ref?: string }) =>
     http<FileContent>('GET', `/projects/${projectId}/files/content`, { query }),
   save: (projectId: string, body: EditorChangeBody) =>
@@ -415,17 +368,17 @@ export const editorApi = {
 
 export const dashboardApi = {
   get: (scope: DashboardScope, departmentId?: string) =>
-    http<Dashboard>('GET', '/dashboard', { query: { scope, departmentId } }).then(withDashboardDefaults),
+    whenOnServer(http<Dashboard>('GET', '/dashboard', { query: { scope, departmentId } })).then(withDashboardDefaults),
 }
 
 export const auditApi = {
-  list: (query: AuditLogQuery) => http<Page<AuditLog>>('GET', '/audit-logs', { query: { ...query } }),
-  get: (logId: string) => http<AuditLog>('GET', `/audit-logs/${logId}`),
+  list: (query: AuditLogQuery) => whenOnServer(http<Page<AuditLog>>('GET', '/audit-logs', { query: { ...query } })),
+  get: (logId: string) => whenOnServer(http<AuditLog>('GET', `/audit-logs/${logId}`)),
 }
 
 export const auditExportApi = {
-  create: (body: CreateAuditExportBody) => http<AuditExportAccepted>('POST', '/audit-logs/exports', { body }),
-  list: () => http<Page<AuditExport>>('GET', '/audit-logs/exports'),
-  get: (exportId: string) => http<AuditExport>('GET', `/audit-logs/exports/${exportId}`),
-  download: (exportId: string, fileName: string) => downloadFile(`/audit-logs/exports/${exportId}/file`, fileName),
+  create: (body: CreateAuditExportBody) => whenOnServer(http<AuditExportAccepted>('POST', '/audit-logs/exports', { body })),
+  list: () => whenOnServer(http<Page<AuditExport>>('GET', '/audit-logs/exports')),
+  get: (exportId: string) => whenOnServer(http<AuditExport>('GET', `/audit-logs/exports/${exportId}`)),
+  download: (exportId: string, fileName: string) => whenOnServer(downloadFile(`/audit-logs/exports/${exportId}/file`, fileName)),
 }

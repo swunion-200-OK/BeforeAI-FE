@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useMe } from '../../app/AuthProvider'
 import { requestsApi } from '../../api/endpoints'
-import type { PlanChange, RequestDetail, SubmitResponse } from '../../api/types'
+import type { PlanChange, RequestDetail } from '../../api/types'
 import { toast } from '../../components/toast'
 import { useRefreshAll } from '../../lib/queries'
 import { submitWithSelfApproval, type ReviewedPlan, type SubmitOutcome } from '../approvals/approvalFlow'
@@ -36,8 +36,8 @@ async function announceSubmit(requestId: string, outcome: SubmitOutcome) {
 }
 
 /** 지금 화면에 보여 준 내용. 본인 승인은 이것과 서명할 내용이 같을 때만 한다. */
-function reviewedOf(request: Pick<RequestDetail, 'projectId' | 'plan'>): ReviewedPlan | null {
-  return request.plan ? { projectId: request.projectId, tasks: request.plan.tasks } : null
+function reviewedOf(request: Pick<RequestDetail, 'projectId' | 'currentPlan'>): ReviewedPlan | null {
+  return request.currentPlan ? { projectId: request.projectId, tasks: request.currentPlan.tasks } : null
 }
 
 /** 제출·다시 제출. 본인 승인이 허용된 작업은 제출과 함께 승인까지 끝낸다. */
@@ -55,18 +55,14 @@ export function useSubmitRequest(request: RequestDetail, onDone?: () => void) {
   })
 }
 
-/** 부분완료의 실패 작업 재시도. 서명은 1회용이라 새 해시에 새 서명을 받는다. */
+/** 부분완료의 실패 작업 재시도. 서버가 실패 작업으로 새 Plan을 만들어 승인 대기로 둔다. 응답에 본인 승인 목록이 없어 자동으로 서명하지 않는다. */
 export function useRetryFailed(request: RequestDetail) {
   const requestId = request.id
-  const me = useMe()
   const refresh = useRefreshAll()
   return useMutation({
-    mutationFn: async () => {
-      const submitted: SubmitResponse = await requestsApi.retryFailed(requestId)
-      return submitWithSelfApproval(me, requestId, reviewedOf(request), submitted)
-    },
-    onSuccess: async (outcome) => {
-      await announceSubmit(requestId, outcome)
+    mutationFn: () => requestsApi.retryFailed(requestId),
+    onSuccess: async () => {
+      toast.success('실패 작업으로 새 Plan을 만들었습니다. 새 승인 서명이 필요합니다')
       await refresh()
     },
   })

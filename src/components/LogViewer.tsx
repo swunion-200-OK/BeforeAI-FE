@@ -3,15 +3,8 @@ import { errorMessage } from '../api/errors'
 import { useMe } from '../app/AuthProvider'
 import { deviceStore } from '../crypto/deviceStore'
 import { signingService } from '../crypto/signingService'
-import { followLogs, mergeLogLine } from '../api/logStream'
-import type { LogLevel, LogLine, LogRange } from '../api/types'
-
-const LEVEL_CLASS: Record<LogLevel, string> = {
-  INFO: 'text-terminal-ink',
-  CMD: 'text-[#8ab4ff]',
-  ERROR: 'text-[#ff8f85]',
-  SUCCESS: 'text-[#7ddc9f]',
-}
+import { followLogs, logLineKey, mergeLogLine } from '../api/logStream'
+import type { LogLine, LogRange } from '../api/types'
 
 const time = new Intl.DateTimeFormat('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 const signatureCache = new WeakMap<LogLine, Map<string, boolean>>()
@@ -28,7 +21,7 @@ function verifyLogLine(requestId: string, line: LogLine, signingKey: string): bo
     variants = new Map()
     signatureCache.set(line, variants)
   }
-  const cacheKey = JSON.stringify([requestId, signingKey, line.seq, line.at, line.level, line.taskId, line.text, line.webshellSignature])
+  const cacheKey = JSON.stringify([requestId, signingKey, line.sequence, line.at, line.taskId, line.message, line.webshellSignature])
   const cached = variants.get(cacheKey)
   if (cached !== undefined) return cached
 
@@ -46,26 +39,23 @@ function verifyLogLine(requestId: string, line: LogLine, signingKey: string): bo
 export function LogViewer({ requestId, live, range }: { requestId: string; live: boolean; range?: LogRange }) {
   const me = useMe()
   const [received, setLines] = useState<LogLine[]>([])
-  const lines = range ? received.filter((l) => l.seq >= range.from && (range.to === null || l.seq <= range.to)) : received
-  const signingKey = deviceStore.get(me.id).pinnedWebshellKey?.signingKey
-  const checkedLines = lines.map((line) => {
-    if (!signingKey) return { line, verified: null }
-    return { line, verified: verifyLogLine(requestId, line, signingKey) }
-  })
+  const lines = range ? received.filter((l) => l.sequence >= range.from && (range.to === null || l.sequence <= range.to)) : received
+  const signingKey = deviceStore.get(me.id).pinnedWebshellKey?.signing.publicKey
+  const checkedLines = lines.map((line) => ({
+    line,
+    verified: signingKey ? verifyLogLine(requestId, line, signingKey) : null,
+  }))
   const hasInvalidSignature = checkedLines.some(({ verified }) => verified === false)
   const [error, setError] = useState<string | null>(null)
   const [connection, setConnection] = useState<'open' | 'dropped' | 'closed'>('closed')
   const bodyRef = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)
 
-  const position = useRef<string | undefined>(undefined)
-
   useEffect(() => {
-    position.current = undefined
     setLines([])
   }, [requestId])
 
-  // 실행이 시작되거나 끝나면(live) 받던 곳부터 이어 받는다.
+  // 실행이 시작되거나 끝나면(live) 다시 읽는다. 같은 줄은 겹치지 않는다.
   useEffect(() => {
     const controller = new AbortController()
     setError(null)
@@ -74,9 +64,7 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
       requestId,
       live,
       signal: controller.signal,
-      position,
       onLine: (line) => setLines((current) => mergeLogLine(current, line)),
-      onRestart: () => setLines([]),
       onConnection: (connected) => setConnection(connected ? 'open' : 'dropped'),
     })
       .catch((reason) => {
@@ -123,13 +111,13 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
       >
         {lines.length === 0 && !error && <p className="text-terminal-dim">아직 실행 로그가 없습니다.</p>}
         {checkedLines.map(({ line, verified }) => (
-          <div key={line.seq} className="flex gap-3">
+          <div key={logLineKey(line)} className="flex gap-3">
             <span className="shrink-0 text-terminal-dim select-none">{formatLogTime(line.at)}</span>
             {verified === false ? (
               <span role="alert" className="text-[#ff8f85]">웹쉘 서명 확인에 실패해 내용을 숨겼습니다.</span>
             ) : (
-              <span className={`break-all whitespace-pre-wrap ${LEVEL_CLASS[line.level]}`}>
-                {line.text}
+              <span className="break-all whitespace-pre-wrap text-terminal-ink">
+                {line.message}
                 {verified === null && <span className="ml-2 text-[#ffca85]">(미검증)</span>}
               </span>
             )}

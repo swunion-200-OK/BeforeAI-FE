@@ -180,6 +180,14 @@ function tryRefresh(): Promise<boolean> {
   return refreshing
 }
 
+/**
+ * 서버 쪽 값이 바뀌어 지금 토큰이 낡았을 때 새 토큰을 받는다. 비밀번호 변경 필요 표시가 토큰 안에 있어,
+ * 바꾼 뒤에도 옛 토큰으로는 다른 API가 모두 409다. 받으면 true.
+ */
+export function renewAccessToken(): Promise<boolean> {
+  return tryRefresh()
+}
+
 let restoring: Promise<boolean> | null = null
 
 /**

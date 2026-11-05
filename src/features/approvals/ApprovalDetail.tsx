@@ -33,10 +33,12 @@ import {
 } from "../../components/ui";
 import { deviceStore } from "../../crypto/deviceStore";
 import { signingService } from "../../crypto/signingService";
+import { useApprovalStatuses } from "../../lib/approvalStatus";
 import { formatDateTime } from "../../lib/format";
 import { REQUEST_STATUS_LABEL, SOURCE_LABEL } from "../../lib/labels";
 import {
   useDepartmentNames,
+  useIsExternal,
   useProjects,
   useRefreshAll,
   useRequest,
@@ -81,11 +83,11 @@ function RequestMeta({
 }) {
   const departmentName = useDepartmentNames();
   const projects = useProjects();
-  // 프로젝트 이름은 명세의 Request에 없어 프로젝트 목록에서 먼저 찾는다.
+  // 프로젝트 이름은 서버의 요청 응답에 없어 프로젝트 목록에서 찾는다.
   const parts = [
     request.requester.name,
     projects.data?.find((project) => project.id === request.projectId)?.name ??
-      request.projectName,
+      request.projectId,
     `작업 ${taskCount}개`,
   ];
   // 롤백인지, 에디터에서 온 요청인지는 승인 판단에 필요해서 접지 않는다.
@@ -147,34 +149,16 @@ function taskNote(
   return <p className="text-sm text-ink-2">{approvalSummary(status)}</p>;
 }
 
-function ContextNotice({
-  error,
-  requestId,
-}: {
-  error: unknown;
-  requestId: string;
-}) {
-  const detailLink = (
-    <Link to={`/requests/${requestId}`} className="font-medium underline">
-      요청 상세 보기
-    </Link>
-  );
-  if (error instanceof ApiError && error.code === "NOT_APPROVER") {
-    return (
-      <Banner
-        tone="warning"
-        title="이 작업의 승인권자가 아닙니다"
-        action={detailLink}
-      >
-        승인 현황과 실행 로그는 요청 상세에서 볼 수 있습니다.
-      </Banner>
-    );
-  }
+function NoPlanNotice({ requestId }: { requestId: string }) {
   return (
     <Banner
       tone="info"
       title="아직 승인할 수 없는 요청입니다"
-      action={detailLink}
+      action={
+        <Link to={`/requests/${requestId}`} className="font-medium underline">
+          요청 상세 보기
+        </Link>
+      }
     >
       요청자가 Plan을 제출하면 승인할 수 있습니다.
     </Banner>
@@ -256,6 +240,8 @@ export function ApprovalDetail({
   const refreshAll = useRefreshAll();
   const requestQuery = useRequest(requestId);
   const request = requestQuery.data;
+  const approvalStatuses = useApprovalStatuses(request);
+  const externalHint = useIsExternal();
 
   // 다른 사람의 승인이나 Plan 변경으로 요청이 바뀌면 승인 자료도 다시 받는다.
   const contextQuery = useQuery({
@@ -295,18 +281,34 @@ export function ApprovalDetail({
 
   // 서명 대상은 승인 자료의 Plan이고, 진행 상태만 요청 상세에서 최신 값을 가져온다.
   const tasks = useMemo<Task[]>(() => {
-    const plan = context?.plan ?? request?.plan;
+    const plan = context?.plan ?? request?.currentPlan;
     if (!plan) return [];
-    if (request?.plan?.id !== plan.id) return plan.tasks;
+    if (request?.currentPlan?.id !== plan.id) return plan.tasks;
     return plan.tasks.map((task) => ({
       ...task,
       status:
-        request.plan?.tasks.find((t) => t.id === task.id)?.status ??
+        request.currentPlan?.tasks.find((t) => t.id === task.id)?.status ??
         task.status,
     }));
   }, [context, request]);
 
-  const approvable = context?.approvableTaskIds ?? [];
+  // 승인 자료의 network는 서버가 이 요청을 보고 판별한 값이라 응답 헤더로 받은 값보다 앞선다.
+  const external = context ? context.network === "EXTERNAL" : externalHint;
+  // 서버는 내가 이미 서명한 작업도 승인 대기면 approvable로 준다. 같은 서명을 또 만들지 않도록 뺀다.
+  // 해시 대상에 없는 작업(금지 작업)은 서명할 수 없으니 고를 수도 없게 한다.
+  const signable = new Set(context?.hashTarget.tasks.map((task) => task.id));
+  const signedByMe = (taskId: string) =>
+    Boolean(
+      request?.approvals.some(
+        (approval) =>
+          approval.approverId === me.id &&
+          approval.planId === context?.plan.id &&
+          approval.taskIds.includes(taskId),
+      ),
+    );
+  const approvable = (context?.approvableTaskIds ?? []).filter(
+    (id) => signable.has(id) && !signedByMe(id),
+  );
   const blocked = context?.blockedTaskIds ?? [];
   const selected = approvable.filter((id) => !deselected.has(id));
   // 외부망에서 막힌 문서 작업도 버튼 문구는 적용/미적용이어야 해서, 고를 게 없으면 막힌 작업을 기준으로 삼는다.
@@ -325,7 +327,7 @@ export function ApprovalDetail({
 
   // 서명은 이 기기의 키로 한다. 다른 기기에 등록된 키가 있어도 이 기기의 키가 등록되어 있어야 한다.
   const deviceKeyId = deviceStore.get(me.id).keyId;
-  const deviceKey = keysQuery.data?.find((key) => key.keyId === deviceKeyId);
+  const deviceKey = keysQuery.data?.find((key) => key.id === deviceKeyId);
   const keyChecking = keysQuery.isPending;
   const keyReady =
     signingService.hasDeviceKey(me.id) &&
@@ -373,6 +375,7 @@ export function ApprovalDetail({
   const decide = useMutation({
     mutationFn: ({ reason, kind }: { reason: string; kind: DecisionKind }) =>
       approvalsApi.reject(requestId, {
+        planId: context?.plan.id as string,
         taskIds: selected,
         // TODO(spec): 기능 명세서 DEP-03에 "수정 요청"이 있지만 API가 없다. 거부 API에 표시를 붙여 사유로 전달한다.
         reason: kind === "change" ? `[수정 요청] ${reason}` : reason,
@@ -398,10 +401,11 @@ export function ApprovalDetail({
       </div>
     );
   }
-  // 제출 전의 Plan은 승인 후보에게 보이지 않는다. 승인 대기 중에 요청자가 Plan을 고치면 여기로 온다.
+  // 볼 수 없는 요청이다. 서버는 403을 준다. 승인 후보에 이름이 없는 "누구나 승인" 작업도 서버가 상세를 막아 여기로 온다.
   if (
     requestQuery.error instanceof ApiError &&
-    requestQuery.error.code === "NOT_FOUND"
+    (requestQuery.error.code === "NOT_FOUND" ||
+      requestQuery.error.code === "FORBIDDEN_ROLE")
   ) {
     return (
       <div className="flex min-w-0 flex-1 items-center justify-center bg-paper">
@@ -419,7 +423,8 @@ export function ApprovalDetail({
             )
           }
         >
-          요청자가 Plan을 고치는 중이거나 조회 권한이 없는 요청입니다.
+          요청자가 Plan을 고치는 중이거나 조회 권한이 없는 요청입니다. 조회할 수
+          없으면 서명할 내용도 확인할 수 없어 서명하지 않습니다.
         </EmptyState>
       </div>
     );
@@ -436,10 +441,9 @@ export function ApprovalDetail({
   }
 
   const contextError = contextQuery.error;
+  // 서버는 아직 Plan이 없을 때만 승인 자료를 INVALID_STATE로 막는다.
   const expectedContextError =
-    contextError instanceof ApiError &&
-    (contextError.code === "NOT_APPROVER" ||
-      contextError.code === "INVALID_STATE");
+    contextError instanceof ApiError && contextError.code === "INVALID_STATE";
 
   const toggle = (taskId: string) => {
     setDeselected((current) => {
@@ -473,6 +477,9 @@ export function ApprovalDetail({
   let signBlockedReason: string | null = null;
   if (integrityFailed)
     signBlockedReason = "Plan 무결성 확인에 실패해 서명할 수 없습니다.";
+  // 서버의 승인·거부 API는 내부망 전용이다 (ApprovalController).
+  else if (external)
+    signBlockedReason = "승인과 거부는 내부망에서만 할 수 있습니다.";
   else if (keyChecking) signBlockedReason = "승인 키를 확인하고 있습니다.";
   else if (keysQuery.isError)
     signBlockedReason =
@@ -493,13 +500,13 @@ export function ApprovalDetail({
   const rejectLabel = docMode ? "미적용" : "거부";
   // 저장소와 기준 커밋은 해시로 확인하는 hashTarget의 값을 보여 준다.
   const plan =
-    request.plan && context
+    request.currentPlan && context
       ? {
-          ...request.plan,
+          ...request.currentPlan,
           repository: context.hashTarget.repository,
           baseCommit: context.hashTarget.baseCommit,
         }
-      : request.plan;
+      : request.currentPlan;
   const nothingLeft = result?.response.remainingTaskIds.length === 0;
   // 제출 결과는 그 순간의 값이다. 웹쉘 연결이 돌아와 다시 시도된 결과는 요청 상태로 따라간다.
   // 실패한 뒤 상태가 바뀌었으면(다시 제출, 취소 등) 지난 실패 결과는 치운다.
@@ -516,13 +523,20 @@ export function ApprovalDetail({
     (nothingLeft && EXECUTION_STARTED.includes(request.status));
   // 서명을 마쳐 더 고를 작업이 없으면 결정 버튼을 치운다. 남은 작업이 있으면 이어서 서명한다.
   // 이미 내 승인을 마친 요청을 다시 열었을 때도 같은 상태로 본다.
-  const alreadyMine =
+  const nothingToDecide =
     Boolean(context) &&
     !contextQuery.isPlaceholderData &&
     request.status === "PENDING_APPROVAL" &&
     approvable.length === 0 &&
     blocked.length === 0 &&
     !integrityFailed;
+  // 서버는 승인권자가 아니어도 승인 자료를 준다. 내 서명 기록이 있어야 "내 승인은 끝났습니다"라고 말한다.
+  const hasMySignature = request.approvals.some(
+    (approval) =>
+      approval.approverId === me.id && approval.planId === context?.plan.id,
+  );
+  const alreadyMine = nothingToDecide && hasMySignature;
+  const notApprover = nothingToDecide && !hasMySignature;
   const decisionDone =
     (Boolean(result) || alreadyMine) && approvable.length === 0;
   // 작업을 고를 수 있거나 일부가 막혀 있을 때만 몇 개에 서명하는지 알려 준다.
@@ -542,10 +556,24 @@ export function ApprovalDetail({
       </Banner>
     );
   } else if (expectedContextError) {
-    notice = <ContextNotice error={contextError} requestId={requestId} />;
+    notice = <NoPlanNotice requestId={requestId} />;
   } else if (contextQuery.isError) {
     notice = (
       <ErrorState error={contextError} onRetry={() => contextQuery.refetch()} />
+    );
+  } else if (notApprover && !result) {
+    notice = (
+      <Banner
+        tone="warning"
+        title="이 작업의 승인권자가 아닙니다"
+        action={
+          <Link to={`/requests/${requestId}`} className="font-medium underline">
+            요청 상세 보기
+          </Link>
+        }
+      >
+        승인 현황과 실행 로그는 요청 상세에서 볼 수 있습니다.
+      </Banner>
     );
   } else if (context && request.status !== "PENDING_APPROVAL" && !result) {
     notice = (
@@ -553,6 +581,17 @@ export function ApprovalDetail({
         tone="neutral"
         title={`이 요청은 지금 ${REQUEST_STATUS_LABEL[request.status]} 상태라 승인을 받지 않습니다`}
       />
+    );
+  } else if (external && context && approvable.length + blocked.length > 0) {
+    // 키가 없어도 내부망이 먼저다. 키를 만들어도 외부망에서는 제출할 수 없다.
+    notice = (
+      <Banner
+        tone="warning"
+        title="외부망에서는 승인하거나 거부할 수 없습니다"
+      >
+        내용은 여기서 확인할 수 있습니다. 승인 서명과 거부는 내부망에서 접속해
+        주세요.
+      </Banner>
     );
   } else if (context && keysQuery.isSuccess && !keyReady) {
     notice = (
@@ -567,15 +606,9 @@ export function ApprovalDetail({
       >
         {deviceKey?.status === "PENDING"
           ? "승인 키가 관리자 등록을 기다리고 있습니다."
-          : me.signingKeyStatus === "REGISTERED"
+          : me.hasRegisteredSigningKey
             ? "이 기기에 등록된 승인 키가 없습니다. 키를 만든 기기에서 서명하거나 이 기기에서 새로 등록해 주세요."
             : "이 기기에서 승인 키를 만들고 관리자 등록을 받으면 서명할 수 있습니다."}
-      </Banner>
-    );
-  } else if (blocked.length > 0) {
-    notice = (
-      <Banner tone="warning" title="외부망에서 승인할 수 없는 작업이 있습니다">
-        코드 수정(낮음·중간)이 아닌 작업은 내부망에서 승인합니다.
       </Banner>
     );
   }
@@ -623,7 +656,7 @@ export function ApprovalDetail({
                     task={task}
                     requestId={requestId}
                     defaultOpen={task.risk === "HIGH" || integrityFailed}
-                    highlighted={request.changedTaskIds.includes(task.id)}
+                    highlighted={request.changedTaskIds?.includes(task.id)}
                     leading={
                       !context ? undefined : task.risk !== "FORBIDDEN" &&
                         task.status === "PENDING" ? (
@@ -654,7 +687,7 @@ export function ApprovalDetail({
                             task,
                             canApprove,
                             isBlocked,
-                            request.approvalStatus.find(
+                            approvalStatuses.find(
                               (s) => s.taskId === task.id,
                             ),
                           )
@@ -680,11 +713,11 @@ export function ApprovalDetail({
               awaitingKey={onlyAwaitingKey}
             />
           )}
-          {request.approvalStatus.length > 0 && (
+          {approvalStatuses.length > 0 && (
             <section>
               <h2 className="mb-3 text-base font-semibold">결재란</h2>
               <StampSheet
-                statuses={request.approvalStatus}
+                statuses={approvalStatuses}
                 tasks={tasks}
                 stamped={stamped}
               />
@@ -796,7 +829,10 @@ export function ApprovalDetail({
                     variant="ghost"
                     size="md"
                     disabled={
-                      selected.length === 0 || sign.isPending || !accepting
+                      selected.length === 0 ||
+                      sign.isPending ||
+                      !accepting ||
+                      external
                     }
                     onClick={() => setDecision("reject")}
                   >
@@ -806,7 +842,10 @@ export function ApprovalDetail({
                     variant="ghost"
                     size="md"
                     disabled={
-                      selected.length === 0 || sign.isPending || !accepting
+                      selected.length === 0 ||
+                      sign.isPending ||
+                      !accepting ||
+                      external
                     }
                     onClick={() => setDecision("change")}
                   >

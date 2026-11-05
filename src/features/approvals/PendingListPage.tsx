@@ -1,6 +1,7 @@
 import { Navigate, useSearchParams } from 'react-router'
 import { usePendingApprovals } from '../../lib/queries'
 import { ApprovalWorkspace } from './ApprovalWorkspace'
+import { groupByRequest } from './queueGroups'
 
 /**
  * 기본 진입은 가장 오래 기다린 요청을 바로 연다. 모바일의 목록 복귀는 queue=1로 자동 선택을 멈춘다.
@@ -10,7 +11,7 @@ import { ApprovalWorkspace } from './ApprovalWorkspace'
 export default function PendingListPage() {
   const [searchParams] = useSearchParams()
   const pending = usePendingApprovals()
-  const oldest = pending.isSuccess && pending.isFetchedAfterMount ? pending.data[0]?.requestId : undefined
+  const oldest = pending.isSuccess && pending.isFetchedAfterMount ? groupByRequest(pending.data)[0]?.requestId : undefined
   if (oldest && searchParams.get('queue') !== '1') return <Navigate to={`/approvals/${oldest}`} replace />
   return <ApprovalWorkspace />
 }

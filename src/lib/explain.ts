@@ -234,7 +234,8 @@ export function explainTask(input: {
  * TODO(spec): explanation은 명세에 없는 필드다. 승인자가 믿고 판단하는 문장이라 추측하지 않는다.
  * 대상과 내용 종류, diff에서 센 값만 쓰고, 영향과 안전 여부("운영에는 영향 없음" 등)는 말하지 않는다.
  */
-function factualExplanation({ title, target, content }: Task): TaskExplanation {
+function factualExplanation({ title, target, content: taskContent }: Task): TaskExplanation {
+  const content = taskContent ?? {}
   const about = (what: string, undo = NO_UNDO): TaskExplanation => ({
     summary: `${title}: ${target}${what}`,
     changes: [],

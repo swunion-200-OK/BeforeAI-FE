@@ -5,6 +5,7 @@ import { ApprovalStamps, approvalSummary } from '../../components/ApprovalStamps
 import { LogViewer } from '../../components/LogViewer'
 import { KeyValues, Timeline } from '../../components/rich'
 import { Mono } from '../../components/ui'
+import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { formatDateTime, shortHash } from '../../lib/format'
 import { REQUEST_STATUS_LABEL, SOURCE_LABEL } from '../../lib/labels'
 import { approvalToShow } from './requestPaths'
@@ -71,10 +72,13 @@ function Part({ title, children, wide }: { title: string; children: ReactNode; w
 
 /** 맨 아래에 접어 두는 기록: Plan 정보, 결재란, 진행 기록 */
 export function MoreDetails({ request }: { request: RequestDetail }) {
-  const { plan, events } = request
+  const statuses = useApprovalStatuses(request)
+  const plan = request.currentPlan
+  // 진행 기록은 서버에 없다. 없으면 칸을 그리지 않는다.
+  const events = request.events ?? []
   const last = events.length - 1
   const stamps = (plan?.tasks ?? []).flatMap((task) => {
-    const status = approvalToShow(request, task)
+    const status = approvalToShow(statuses, request, task)
     return status ? [{ task, status }] : []
   })
   return (
@@ -96,23 +100,25 @@ export function MoreDetails({ request }: { request: RequestDetail }) {
             />
           </Part>
         )}
-        <Part title="진행 기록">
-          <Timeline
-            items={events.map((event, index) => ({
-              key: `${event.status}-${event.at}`,
-              title: REQUEST_STATUS_LABEL[event.status],
-              meta: `${event.by ? `${event.by}, ` : ''}${formatDateTime(event.at)}`,
-              tone:
-                index < last
-                  ? 'done'
-                  : ERROR_END.includes(event.status)
-                    ? 'error'
-                    : IN_PROGRESS.includes(event.status)
-                      ? 'current'
-                      : 'done',
-            }))}
-          />
-        </Part>
+        {events.length > 0 && (
+          <Part title="진행 기록">
+            <Timeline
+              items={events.map((event, index) => ({
+                key: `${event.status}-${event.at}`,
+                title: REQUEST_STATUS_LABEL[event.status],
+                meta: `${event.by ? `${event.by}, ` : ''}${formatDateTime(event.at)}`,
+                tone:
+                  index < last
+                    ? 'done'
+                    : ERROR_END.includes(event.status)
+                      ? 'error'
+                      : IN_PROGRESS.includes(event.status)
+                        ? 'current'
+                        : 'done',
+              }))}
+            />
+          </Part>
+        )}
         {stamps.length > 0 && (
           <Part title="결재 현황" wide>
             <ul className="flex flex-wrap gap-x-6 gap-y-4">

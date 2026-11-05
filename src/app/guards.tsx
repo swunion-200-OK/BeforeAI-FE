@@ -19,7 +19,7 @@ export function RequireAuth() {
     const state = signedOut ? undefined : { from: location.pathname + location.search + location.hash }
     return <Navigate to="/login" replace state={state} />
   }
-  if (me.mustChangePassword) return <ForcePasswordPage />
+  if (me.passwordChangeRequired) return <ForcePasswordPage />
   return <Outlet />
 }
 

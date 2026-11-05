@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query'
 import { OctagonX } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { TaskProgress } from '../../components/rich'
 import { Button, EmptyState, ErrorState, Sheet, Spinner } from '../../components/ui'
 import { formatElapsed } from '../../lib/format'
 import { useProjects } from '../../lib/queries'
@@ -44,7 +43,6 @@ export function KillAllTab() {
                 <tr>
                   <th>요청</th>
                   <th>요청자</th>
-                  <th>진행</th>
                   <th>요청 후 경과</th>
                 </tr>
               </thead>
@@ -58,7 +56,6 @@ export function KillAllTab() {
                       <p className="mt-0.5 text-[0.875rem] text-ink-3">{projectName(request.projectId)}</p>
                     </td>
                     <td className="whitespace-nowrap">{request.requester.name}</td>
-                    <td>{request.taskSummary ? <TaskProgress summary={request.taskSummary} /> : '-'}</td>
                     <td className="whitespace-nowrap text-ink-2">{formatElapsed(request.createdAt)}</td>
                   </tr>
                 ))}

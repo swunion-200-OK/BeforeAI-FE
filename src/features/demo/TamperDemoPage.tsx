@@ -112,7 +112,7 @@ function AttackerPanel({
   // 공격 직후의 옛 응답으로 "막지 못했다"고 말하면 안 되므로, 새로 받기 전에는 결과를 내지 않는다.
   const outcome = attack && request && !busy ? describeOutcome(attack, { request, context, integrity, contextFailed: contextQuery.isError }) : null
   useRevealDefense(approverRegion, attack, outcome?.tone === 'caught' || outcome?.tone === 'missed')
-  const untouched = !attack && request?.status === 'PENDING_APPROVAL' && request.approvalStatus.every((s) => s.requirements.every((r) => r.approvedBy.length === 0))
+  const untouched = !attack && request?.status === 'PENDING_APPROVAL' && request.approvals.length === 0
 
   const refresh = async (work: () => unknown) => {
     setBusy(true)

@@ -1,10 +1,12 @@
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router'
-import type { RequestDetail, RequestStatus } from '../../api/types'
+import type { RequestDetail, RequestStatus, TaskApprovalStatus } from '../../api/types'
 import { approvalSummary } from '../../components/ApprovalStamps'
+import { useAnalysisOverdue } from '../../lib/analysisWait'
+import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { Banner, Button, Mono, ReasonModal } from '../../components/ui'
 import { allApprovalsCollected, approvalToShow } from './requestPaths'
-import { AnalysisFailedPanel, CancelRequestButton } from './RequestParts'
+import { AnalysisFailedPanel, AnalysisOverdueBanner, CancelRequestButton } from './RequestParts'
 import { useKillRequest, useRetryFailed, useSubmitRequest } from './useRequestActions'
 
 const CANCELABLE: RequestStatus[] = ['REVIEWING', 'PENDING_APPROVAL', 'REAPPROVAL_REQUIRED', 'VERIFICATION_FAILED']
@@ -32,9 +34,9 @@ function KillSwitch({ requestId }: { requestId: string }) {
 }
 
 /** 아직 승인이 덜 모인 작업과 그 작업이 누구를 기다리는지. */
-function waitingRows(request: RequestDetail) {
-  return (request.plan?.tasks ?? []).flatMap((task) => {
-    const status = approvalToShow(request, task)
+function waitingRows(request: RequestDetail, statuses: TaskApprovalStatus[]) {
+  return (request.currentPlan?.tasks ?? []).flatMap((task) => {
+    const status = approvalToShow(statuses, request, task)
     if (!status || status.requirements.every((item) => item.satisfied)) return []
     return [{ id: task.id, title: task.title, text: approvalSummary(status) }]
   })
@@ -108,11 +110,16 @@ export function RequestStatusBanner({
   isRequester: boolean
   canKill: boolean
 }) {
+  const statuses = useApprovalStatuses(request)
+  const analysisOverdue = useAnalysisOverdue(request)
   const action = <NextActions request={request} isRequester={isRequester} canKill={canKill} />
-  const changedCount = request.changedTaskIds.length
+  const changedCount = request.changedTaskIds?.length ?? 0
+  const removedTitles = request.removedTaskTitles ?? []
+  const skippedTasks = (request.currentPlan?.tasks ?? []).filter((task) => task.status === 'SKIPPED')
 
   switch (request.status) {
     case 'ANALYZING':
+      if (analysisOverdue) return <AnalysisOverdueBanner requestId={request.id} />
       return (
         <Banner tone="info" title="AI가 Plan을 분석하는 중입니다">
           끝나면 작업 목록이 나타납니다.
@@ -127,7 +134,7 @@ export function RequestStatusBanner({
         </Banner>
       )
     case 'PENDING_APPROVAL': {
-      const waiting = waitingRows(request)
+      const waiting = waitingRows(request, statuses)
       // 승인이 다 모였는데 승인대기면 웹쉘에 연결되지 않아 웹 서비스가 실행 요청을 다시 시도하는 중이다 (API 명세 4.5).
       if (allApprovalsCollected(request) && waiting.length === 0) {
         return (
@@ -139,7 +146,7 @@ export function RequestStatusBanner({
       return (
         <Banner
           tone="info"
-          title={request.plan?.kind === 'ROLLBACK' ? '문서 롤백 승인을 기다립니다' : '승인권자의 승인을 기다립니다'}
+          title={request.currentPlan?.kind === 'ROLLBACK' ? '문서 롤백 승인을 기다립니다' : '승인권자의 승인을 기다립니다'}
           action={action}
         >
           <WaitingFor rows={waiting} />
@@ -151,7 +158,7 @@ export function RequestStatusBanner({
       return (
         <Banner tone="warning" title="Plan이 바뀌어 기존 승인 서명이 모두 무효가 되었습니다" action={action}>
           <p>{changedCount > 0 ? `바뀐 작업 ${changedCount}개를 확인한 뒤 다시 제출해 주세요.` : 'Plan을 확인한 뒤 다시 제출해 주세요.'}</p>
-          {request.removedTaskTitles.length > 0 && <p>삭제된 작업: {request.removedTaskTitles.join(', ')}</p>}
+          {removedTitles.length > 0 && <p>삭제된 작업: {removedTitles.join(', ')}</p>}
         </Banner>
       )
     case 'VERIFICATION_FAILED':
@@ -160,7 +167,7 @@ export function RequestStatusBanner({
         <Banner tone="danger" title="위변조 가능성이 있어 관리자와 부서 관리자에게 경보를 보냈습니다" action={action}>
           <p>다시 제출하면 승인 서명을 새로 받습니다.</p>
           <p className="mt-1 flex flex-wrap gap-x-3">
-            {request.failedChecks.map((check) => (
+            {(request.failedChecks ?? []).map((check) => (
               <Mono key={check}>{check}</Mono>
             ))}
           </p>
@@ -173,22 +180,17 @@ export function RequestStatusBanner({
       return <Banner tone="info" title="문서를 이전 버전으로 되돌리는 중입니다" />
     case 'REJECTED':
       return (
-        <Banner tone="danger" title={`${request.rejection?.by ?? '승인권자'} 님이 거부했습니다`}>
+        // 거부한 사람과 사유는 서버 상세에 없다. 없으면 거부됐다고만 말한다.
+        <Banner tone="danger" title={request.rejection ? `${request.rejection.by} 님이 거부했습니다` : '요청이 거부되었습니다'}>
           {request.rejection?.reason}
         </Banner>
       )
     case 'KILLED':
       return (
-        <Banner tone="danger" title={`${request.kill?.by ?? '사용자'} 님이 킬 스위치로 중단했습니다`}>
-          <p>{request.kill?.reason}</p>
-          {request.kill && request.kill.skippedTaskIds.length > 0 && (
-            <p className="mt-1">
-              실행하지 않은 작업:{' '}
-              {request.kill.skippedTaskIds
-                .map((id) => request.plan?.tasks.find((task) => task.id === id)?.title ?? id)
-                .join(', ')}
-            </p>
-          )}
+        // 중단한 사람과 사유는 서버 상세에 없다. 실행하지 않은 작업은 작업 상태로 안다.
+        <Banner tone="danger" title={request.kill ? `${request.kill.by} 님이 킬 스위치로 중단했습니다` : '킬 스위치로 중단되었습니다'}>
+          {request.kill && <p>{request.kill.reason}</p>}
+          {skippedTasks.length > 0 && <p className="mt-1">실행하지 않은 작업: {skippedTasks.map((task) => task.title).join(', ')}</p>}
         </Banner>
       )
     case 'PARTIALLY_COMPLETED':

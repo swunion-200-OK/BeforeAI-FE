@@ -1,10 +1,17 @@
 import { ed25519 } from '@noble/curves/ed25519.js'
-import type { ApprovalPayload, SignedApproval } from '../api/types'
+import type { AdminProof, ApprovalPayload, SignedApproval, SigningKey } from '../api/types'
 import { deviceStore } from './deviceStore'
 import { base64ToBytes, bytesToBase64 } from './encoding'
 import { canonicalize } from './hashService'
 
 const encoder = new TextEncoder()
+
+type RegisterTarget = Pick<SigningKey, 'id' | 'publicKey'>
+
+/** 승인 키 등록의 서명 대상. 백엔드 SigningKeyAdminService와 글자까지 같아야 한다. */
+function registerProofMessage(target: RegisterTarget): Uint8Array {
+  return encoder.encode(`beforeai:register-signing-key:${target.id}:${target.publicKey}`)
+}
 
 export const signingService = {
   /** 이 기기에서 Ed25519 키 쌍을 만든다. 개인키는 기기 밖으로 나가지 않는다. */
@@ -25,6 +32,17 @@ export const signingService = {
     if (!secretKey) throw new Error('이 기기에 승인 키가 없습니다')
     const message = encoder.encode(canonicalize(payload))
     return { payload, signature: bytesToBase64(ed25519.sign(message, base64ToBytes(secretKey))) }
+  },
+
+  /** 관리자가 이 기기의 키로 승인 키 등록에 서명한다. */
+  signRegisterProof(userId: string, target: RegisterTarget): AdminProof {
+    const { keyId, secretKey } = deviceStore.get(userId)
+    if (!keyId || !secretKey) throw new Error('이 기기에 관리자 승인 키가 없습니다. 내 정보에서 키를 만들어 주세요')
+    return { keyId, signature: bytesToBase64(ed25519.sign(registerProofMessage(target), base64ToBytes(secretKey))) }
+  },
+
+  verifyRegisterProof(signature: string, target: RegisterTarget, proofPublicKey: string): boolean {
+    return verify(signature, registerProofMessage(target), proofPublicKey)
   },
 
   verifyApproval(signed: SignedApproval, publicKey: string): boolean {

@@ -3,12 +3,11 @@ import type { PendingApproval, Risk } from '../../api/types'
 export interface QueueGroup {
   requestId: string
   requester: PendingApproval['requester']
-  projectName: string
   requestedAt: string
   tasks: PendingApproval[]
 }
 
-/** 작업 단위 목록을 요청 단위로 묶는다. 서버가 오래 기다린 순으로 주므로 그 순서를 지킨다. */
+/** 작업 단위 목록을 요청 단위로 묶어 오래 기다린 순으로 놓는다. 서버는 최근 요청부터 주므로 여기서 정렬한다. */
 export function groupByRequest(items: PendingApproval[]): QueueGroup[] {
   const groups = new Map<string, QueueGroup>()
   for (const item of items) {
@@ -20,19 +19,18 @@ export function groupByRequest(items: PendingApproval[]): QueueGroup[] {
     groups.set(item.requestId, {
       requestId: item.requestId,
       requester: item.requester,
-      projectName: item.projectName,
       requestedAt: item.requestedAt,
       tasks: [item],
     })
   }
-  return [...groups.values()]
+  return [...groups.values()].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime())
 }
 
 const RISK_RANK: Record<Risk, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, FORBIDDEN: 3 }
 
 /** 목록 한 줄의 제목과 배지는 요청에서 위험도가 가장 높은 작업을 따른다. */
 export function riskiestTask(group: QueueGroup): PendingApproval {
-  return group.tasks.reduce((top, task) => (RISK_RANK[task.risk] > RISK_RANK[top.risk] ? task : top))
+  return group.tasks.reduce((top, task) => (RISK_RANK[task.task.risk] > RISK_RANK[top.task.risk] ? task : top))
 }
 
 const ONE_HOUR_MS = 60 * 60 * 1000

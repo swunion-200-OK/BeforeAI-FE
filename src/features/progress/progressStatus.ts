@@ -3,7 +3,9 @@
  * 화면에 쓰는 값만 만들고, 데이터가 말해 주지 않는 것은 주장하지 않는다.
  */
 import type {
+  ApproverRule,
   FailedCheck,
+  Plan,
   ProgressApprovalNode,
   ProgressNode,
   ProgressRequestNode,
@@ -13,6 +15,7 @@ import type {
   RequestEvent,
   RequestStatus,
 } from '../../api/types'
+import { isAnalysisOverdue } from '../../lib/analysisWait'
 import { FAILED_CHECK_LABEL, RULE_LABEL } from '../../lib/labels'
 
 // ── 웹쉘 검증 관문 ─────────────────────────────────────────
@@ -60,7 +63,7 @@ const RUN_STATUSES: RequestStatus[] = ['RUNNING', 'ROLLING_BACK']
 /** 승인을 받는 중에만 갈 수 있어 지금 Plan은 관문에 닿지 않았다 */
 const NEVER_REACHED: RequestStatus[] = ['ANALYSIS_FAILED', 'REJECTED', 'CANCELED']
 
-type GateInput = Pick<RequestDetail, 'status'> & Partial<Pick<RequestDetail, 'failedChecks' | 'events' | 'approvalRecordCount'>>
+type GateInput = Pick<RequestDetail, 'status'> & Partial<Pick<RequestDetail, 'failedChecks' | 'events' | 'approvals' | 'approvalRecordCount'>>
 
 /**
  * 지금 Plan이 실행까지 갔는지. 진행 기록에는 Plan id가 없지만, 새 Plan은 승인 단계를 다시 거치므로
@@ -72,7 +75,7 @@ function currentPlanRan(events: RequestEvent[]): boolean {
 }
 
 export function gateView(request: GateInput): GateView {
-  const { status, failedChecks = [], events = [], approvalRecordCount } = request
+  const { status, failedChecks = [], events = [], approvals = [], approvalRecordCount = approvals.length } = request
   const withState = (state: (codes: FailedCheck[], index: number) => GateCheckState) =>
     GATE_CHECKS.map(({ key, name, codes, bySignature }, index) => {
       const value = state(codes, index)
@@ -143,18 +146,17 @@ function sinceStatus(events: RequestEvent[] | undefined, status: RequestStatus):
   return events?.findLast((event) => event.status === status)?.at
 }
 
-/** 이름을 아는 후보만. ID 문자열만 오면 사람에게 보여 줄 이름이 없다. */
-export function candidateNames(node: ProgressApprovalNode): string[] {
-  return (node.candidates ?? []).flatMap((candidate) => (typeof candidate !== 'string' && candidate.name ? [candidate.name] : []))
+/**
+ * 승인 대기 노드가 기다리는 규칙. 노드에는 규칙이 없지만 ID가 approval:pending:{작업 id}:{순번}이고
+ * 순번이 requiredApprovers의 자리다 (RequestProgressService.approvalNodes). 후보는 ID로만 와서 사람 이름은 말하지 못한다.
+ */
+export function pendingRule(node: ProgressApprovalNode, plan: Pick<Plan, 'tasks'> | null | undefined): ApproverRule | undefined {
+  const match = /approval:pending:(.+):(\d+)$/.exec(node.id)
+  if (!match) return undefined
+  return plan?.tasks.find((task) => task.id === match[1])?.requiredApprovers[Number(match[2])]?.rule
 }
 
-function approverText(node: ProgressApprovalNode): string {
-  const names = candidateNames(node)
-  if (names.length > 0) return names.join(' 또는 ')
-  return node.rule && node.rule !== 'ANYONE' ? (RULE_LABEL[node.rule] ?? '') : ''
-}
-
-function waitingForApproval(root: ProgressRequestNode, since: string | undefined): ProgressNow {
+function waitingForApproval(root: ProgressRequestNode, since: string | undefined, plan: Pick<Plan, 'tasks'> | null | undefined): ProgressNow {
   const waiting = tasksOf(root).flatMap((task) => {
     const pending = approvalsOf(task).filter((node) => node.status === 'PENDING')
     return pending.length > 0 ? [{ task, pending }] : []
@@ -171,9 +173,10 @@ function waitingForApproval(root: ProgressRequestNode, since: string | undefined
     return { text: `작업 ${waiting.length}개가 승인을 기다립니다: ${names}`, since, leaves, mode: 'wait' }
   }
   const [{ task, pending }] = waiting
-  const who = pending.map(approverText).filter(Boolean).join(', ')
+  const rules = pending.map((node) => pendingRule(node, plan))
+  const who = [...new Set(rules.flatMap((rule) => (rule && rule !== 'ANYONE' ? [RULE_LABEL[rule]] : [])))].join(', ')
   const subject = josa(title(task), '이', '가')
-  const anyone = pending.every((node) => node.rule === 'ANYONE')
+  const anyone = rules.every((rule) => rule === 'ANYONE')
   const text = who ? `${subject} ${who}의 승인을 기다립니다` : anyone ? `${subject} 승인을 기다립니다 (누구나 승인 가능)` : `${subject} 승인을 기다립니다`
   return { text, since, leaves, mode: 'wait' }
 }
@@ -203,7 +206,7 @@ function failedLeaves(root: ProgressRequestNode): string[] {
 /** 트리를 스트림으로 바로 따라가므로 상태는 트리 값을 쓰고, 사유와 시각은 요청 상세에서 가져온다. */
 export function progressNow(
   root: ProgressRequestNode,
-  request: Partial<Pick<RequestDetail, 'failedChecks' | 'rejection' | 'kill' | 'events' | 'analysisError' | 'requester'>> | undefined,
+  request: Partial<Pick<RequestDetail, 'failedChecks' | 'rejection' | 'kill' | 'events' | 'requester' | 'currentPlan' | 'updatedAt'>> | undefined,
   gateReplaying = false,
 ): ProgressNow {
   const events = request?.events
@@ -214,13 +217,12 @@ export function progressNow(
 
   switch (root.status) {
     case 'ANALYZING':
+      if (request?.updatedAt && isAnalysisOverdue({ updatedAt: request.updatedAt })) {
+        return { text: '분석이 평소보다 오래 걸리고 있습니다', since: request.updatedAt, leaves: [plan ?? root.id], mode: 'wait' }
+      }
       return { text: 'AI가 요청을 분석하고 있습니다', since: sinceStatus(events, 'ANALYZING'), leaves: [plan ?? root.id], mode: 'wait' }
     case 'ANALYSIS_FAILED':
-      return {
-        text: request?.analysisError ? `AI 분석에 실패했습니다: ${request.analysisError}` : 'AI 분석에 실패했습니다',
-        leaves: [root.id],
-        mode: 'failed',
-      }
+      return { text: 'AI 분석에 실패했습니다', leaves: [root.id], mode: 'failed' }
     case 'REVIEWING':
       return {
         text: `${requester}Plan 확인과 제출을 기다립니다`,
@@ -236,7 +238,7 @@ export function progressNow(
         mode: 'wait',
       }
     case 'PENDING_APPROVAL':
-      return waitingForApproval(root, sinceStatus(events, 'PENDING_APPROVAL'))
+      return waitingForApproval(root, sinceStatus(events, 'PENDING_APPROVAL'), request?.currentPlan)
     case 'RUNNING':
     case 'ROLLING_BACK':
       return running(root, gateReplaying)
@@ -245,7 +247,7 @@ export function progressNow(
       return { text: reasons ? `웹쉘이 실행을 거부했습니다: ${reasons}` : '웹쉘이 실행을 거부했습니다', leaves: [GATE_ID], mode: 'failed' }
     }
     case 'REJECTED': {
-      const leaves = tasks.flatMap((task) => approvalsOf(task).filter((node) => node.status === 'REJECTED').map((node) => node.id))
+      const leaves = tasks.filter((task) => task.status === 'REJECTED').map((task) => task.id)
       const rejection = request?.rejection
       return {
         text: rejection ? `${josa(rejection.by, '이', '가')} 요청을 거부했습니다: ${rejection.reason}` : '요청이 거부되었습니다',

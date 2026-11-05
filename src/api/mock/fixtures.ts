@@ -1,4 +1,4 @@
-import type { ApprovalMatrixRow } from '../types'
+import type { ApprovalMatrixRule, ApproverRule, Risk, TaskType } from '../types'
 
 export const AUTH_REPOSITORY = 'git@internal:auth-service.git'
 export const AUTH_BASE_COMMIT = '9b2f4e1'
@@ -118,12 +118,18 @@ export const DEPLOY_SPEC = `# deploy-pipeline 기획서
 전사 서비스를 스테이징과 운영에 배포하는 스크립트를 관리합니다.
 `
 
-export const DEFAULT_MATRIX: ApprovalMatrixRow[] = [
-  { taskType: 'DOC', label: '문서 작성·수정', examples: '문서, 주석', defaultRisk: 'LOW', approverRule: 'ANYONE' },
-  { taskType: 'CODE_MINOR', label: '코드 수정 (경미)', examples: '테스트 코드 추가, 리팩터링', defaultRisk: 'LOW', approverRule: 'ANYONE' },
-  { taskType: 'CODE_FEATURE', label: '코드 수정 (기능)', examples: '기능 코드, 의존성 변경', defaultRisk: 'MEDIUM', approverRule: 'ANYONE' },
-  { taskType: 'DATA_READ', label: '데이터 조회', examples: '운영 데이터 읽기', defaultRisk: 'MEDIUM', approverRule: 'ANYONE' },
-  { taskType: 'DATA_WRITE', label: '데이터 수정', examples: '운영 데이터 쓰기·삭제', defaultRisk: 'HIGH', approverRule: 'PROJECT_OWNER' },
-  { taskType: 'DB', label: 'DB 접근', examples: '스키마 변경, 마이그레이션', defaultRisk: 'HIGH', approverRule: 'PROJECT_OWNER' },
-  { taskType: 'DEPLOY', label: '배포', examples: '운영·스테이징 배포', defaultRisk: 'HIGH', approverRule: 'PROJECT_OWNER' },
+const matrixRule = (taskType: TaskType, risk: Risk, rule: ApproverRule): ApprovalMatrixRule => ({
+  taskType,
+  risk,
+  requiredApprovers: [{ rule, count: 1 }],
+})
+
+export const DEFAULT_MATRIX: ApprovalMatrixRule[] = [
+  matrixRule('DOC', 'LOW', 'ANYONE'),
+  matrixRule('CODE_MINOR', 'LOW', 'ANYONE'),
+  matrixRule('CODE_FEATURE', 'MEDIUM', 'ANYONE'),
+  matrixRule('DATA_READ', 'MEDIUM', 'ANYONE'),
+  matrixRule('DATA_WRITE', 'HIGH', 'PROJECT_OWNER'),
+  matrixRule('DB', 'HIGH', 'PROJECT_OWNER'),
+  matrixRule('DEPLOY', 'HIGH', 'PROJECT_OWNER'),
 ]

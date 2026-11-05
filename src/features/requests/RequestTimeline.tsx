@@ -34,9 +34,11 @@ const FINISHED: RequestStatus[] = ['COMPLETED', 'ROLLED_BACK']
 
 function currentStage(request: RequestDetail): number {
   if (request.status !== 'CANCELED') return STAGE_OF[request.status]
-  // 취소는 취소하기 직전 단계에 표시한다.
-  const before = [...request.events].reverse().find((event) => event.status !== 'CANCELED')
-  return before && before.status !== 'CANCELED' ? STAGE_OF[before.status] : 0
+  // 취소는 취소하기 직전 단계에 표시한다. 진행 기록은 서버에 없어, 없으면 Plan이 어디까지 왔는지로 정한다.
+  const before = [...(request.events ?? [])].reverse().find((event) => event.status !== 'CANCELED')
+  if (before && before.status !== 'CANCELED') return STAGE_OF[before.status]
+  if (request.currentPlan?.planHash) return STAGE_OF.PENDING_APPROVAL
+  return request.currentPlan ? STAGE_OF.REVIEWING : 0
 }
 
 /** 상태 타임라인: 분석 → 검토 → 제출 → 승인 → 실행 → 결과 */

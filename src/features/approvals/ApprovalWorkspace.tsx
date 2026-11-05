@@ -21,7 +21,7 @@ export function ApprovalWorkspace({ requestId }: { requestId?: string }) {
     return (
       <div className="flex h-full items-center justify-center bg-paper">
         <h1 className="sr-only">승인 대기</h1>
-        <EmptyState title="지금 승인할 작업이 없습니다">새 승인 요청이 오면 Slack으로 알려 드립니다.</EmptyState>
+        <EmptyState title="지금 승인할 작업이 없습니다">새 요청이 승인 대기에 들어오면 여기에 표시됩니다.</EmptyState>
       </div>
     )
   }
