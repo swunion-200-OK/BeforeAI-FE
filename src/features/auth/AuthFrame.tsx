@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import loginStamp from '../../assets/login-stamp.webp'
 import { useNetwork } from '../../lib/queries'
 
 /** 왼쪽 문서는 장식이다. 실제 승인 데이터나 절차와 아무 관련이 없다. */
@@ -56,7 +57,7 @@ function ApprovalDocument() {
   return (
     <div
       aria-hidden
-      className="-mb-12 w-full max-w-[34rem] shrink-0 bg-[#f8f6ef] px-7 pt-6 text-xs text-[#26241f] shadow-[1px_1px_1px_rgb(0_0_0/0.35),8px_16px_36px_rgb(0_0_0/0.45)] [@media(max-height:620px)]:hidden"
+      className="-mb-12 w-[calc(100%-3.5rem)] max-w-[34rem] shrink-0 bg-[#f8f6ef] px-7 pt-6 text-xs text-[#26241f] shadow-[1px_1px_1px_rgb(0_0_0/0.35),8px_16px_36px_rgb(0_0_0/0.45)] [@media(max-height:620px)]:hidden"
     >
       <p className="mb-4 text-center text-lg font-semibold tracking-[0.6em] indent-[0.6em]">업무기안</p>
 
@@ -76,10 +77,19 @@ function ApprovalDocument() {
             <span>재</span>
           </div>
           {APPROVAL_LINE.map((seal) => (
-            <div key={seal.step} className={`w-[3.75rem] border-r last:border-r-0 ${FORM_RULE}`}>
+            <div key={seal.step} className={`w-[3.25rem] border-r last:border-r-0 ${FORM_RULE}`}>
               <div className={`border-b py-1 text-center ${FORM_RULE} ${FORM_LABEL}`}>{seal.step}</div>
-              <div className="flex h-[3.625rem] items-center justify-center">
+              <div className="relative flex h-[3.625rem] items-center justify-center">
                 <NameSeal {...seal} />
+                {/* 방금 찍고 든 도장. 고무면이 승인 도장 오른쪽 위에 온다. 움직이지 않는 그림이다 */}
+                {seal.step === '승인' && (
+                  <img
+                    src={loginStamp}
+                    alt=""
+                    draggable={false}
+                    className="pointer-events-none absolute top-1/2 left-1/2 z-10 -mt-[226px] -ml-[20px] w-[260px] max-w-none select-none"
+                  />
+                )}
               </div>
             </div>
           ))}
