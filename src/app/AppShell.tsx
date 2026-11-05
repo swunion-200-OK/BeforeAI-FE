@@ -55,7 +55,7 @@ function Sidebar() {
   return (
     <aside className="flex w-[15rem] shrink-0 flex-col border-r border-rule bg-nav text-nav-ink">
       <div className="flex h-14 shrink-0 items-center px-5">
-        <span className="text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink">AI 작업 승인</span>
+        <span className="text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink">BeforeAI</span>
       </div>
 
       <nav aria-label="주 메뉴" className="quiet-scroll flex-1 overflow-y-auto px-2.5 pb-3">
