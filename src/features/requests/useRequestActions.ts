@@ -28,6 +28,8 @@ async function announceSubmit(requestId: string, outcome: SubmitOutcome) {
     toast.info(`${approved}. ${executionDeferredText()}`)
   } else if (outcome.selfApprovedTaskIds.length > 0) {
     toast.success(approved)
+  } else if (outcome.selfApprovalSkipped) {
+    toast.success('제출했습니다. 이 기기에 승인 키가 없어 본인 승인은 하지 않았습니다')
   } else {
     toast.success('제출했습니다. 승인권자의 승인을 기다립니다')
   }

@@ -8,6 +8,7 @@ import type { RequestDetail } from '../../api/types'
 import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { Button, ErrorState, Field, PageHeader, Select, Sheet, Spinner, TextArea } from '../../components/ui'
 import { useAnalysisOverdue } from '../../lib/analysisWait'
+import { sendOnEnter } from '../../lib/enterToSend'
 import { formatElapsed } from '../../lib/format'
 import { REQUEST_STATUS_LABEL } from '../../lib/labels'
 import { taskNumber } from '../../lib/taskLabel'
@@ -72,7 +73,7 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
         className="rounded-lg border border-rule-strong bg-sheet focus-within:border-seal focus-within:ring-1 focus-within:ring-seal"
         onSubmit={(event) => {
           event.preventDefault()
-          if (prompt.trim() && projectId) create.mutate()
+          if (prompt.trim() && projectId && !create.isPending) create.mutate()
         }}
       >
         <textarea
@@ -82,6 +83,7 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
           autoFocus
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
+          onKeyDown={sendOnEnter}
           placeholder="로그인 실패 시 에러 메시지를 바꾸고 스테이징에 배포해줘"
           className="block w-full resize-none rounded-t-lg bg-transparent px-4 py-3.5 text-lg leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none"
         />
@@ -98,16 +100,19 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
               </option>
             ))}
           </Select>
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            loading={create.isPending}
-            disabled={!prompt.trim() || !projectId}
-            disabledReason="프로젝트를 고르고 프롬프트를 입력해 주세요"
-          >
-            AI 분석 요청
-          </Button>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-sm text-ink-3 sm:inline">Shift+Enter로 줄바꿈</span>
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              loading={create.isPending}
+              disabled={!prompt.trim() || !projectId}
+              disabledReason="프로젝트를 고르고 프롬프트를 입력해 주세요"
+            >
+              AI 분석 요청
+            </Button>
+          </div>
         </div>
       </form>
       <div className="mt-3.5 flex flex-wrap gap-x-5 gap-y-1">
@@ -139,12 +144,12 @@ function ClarificationForm({ request }: { request: RequestDetail }) {
         className="flex flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault()
-          if (answer.trim()) patch.mutate({ basePlanId: request.currentPlanId ?? undefined, answer: answer.trim() })
+          if (answer.trim() && !patch.isPending) patch.mutate({ basePlanId: request.currentPlanId ?? undefined, answer: answer.trim() })
         }}
       >
         <p className="text-base text-ink">{request.clarification}</p>
         <Field label="답변">
-          {(id) => <TextArea id={id} rows={4} value={answer} onChange={(event) => setAnswer(event.target.value)} />}
+          {(id) => <TextArea id={id} rows={4} value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={sendOnEnter} />}
         </Field>
         <div>
           <Button
@@ -216,7 +221,7 @@ function ReviewStep({ requestId }: { requestId: string }) {
     // 작업이 적어도 제출 막대가 화면 바닥에 붙도록 본문 높이를 채운다.
     // 84px = 망 띠 4px + 상단 바 56px + 본문 위 여백 24px. 아래 여백(pb-16)은 음수 여백으로 상쇄한다.
     <div className={`flex flex-col ${reviewing ? '-mb-16 min-h-[calc(100dvh-84px)]' : ''}`}>
-      <PageHeader title={request.prompt} meta={<RequestMeta request={request} />} />
+      <PageHeader title={<span className="line-clamp-2 break-words">{request.prompt}</span>} meta={<RequestMeta request={request} />} />
       <div className="flex-1">
         {request.status === 'ANALYZING' && <AnalyzingPlaceholder request={request} />}
         {request.status === 'ANALYSIS_FAILED' && <AnalysisFailedPanel request={request} isRequester />}

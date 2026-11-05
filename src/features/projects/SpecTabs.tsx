@@ -7,6 +7,7 @@ import { SegmentedTabs } from '../../components/rich'
 import { toast } from '../../components/toast'
 import {
   Button,
+  ConfirmModal,
   EmptyState,
   ErrorState,
   Field,
@@ -35,7 +36,10 @@ export function ChangeRequestModal({
   onClose: () => void
 }) {
   const refreshAll = useRefreshAll()
-  const [content, setContent] = useState('')
+  const spec = useQuery({ ...specQuery(projectId), enabled: open })
+  // 서버는 반영할 때 이 내용으로 기획서 전체를 바꾼다. 그래서 현재 본문에서 고쳐 쓰게 한다.
+  const [edited, setEdited] = useState<string | null>(null)
+  const content = edited ?? spec.data?.body ?? ''
   const [reason, setReason] = useState('')
   const send = useMutation({
     mutationFn: () => projectsApi.createChangeRequest(projectId, { content: content.trim(), reason: reason.trim() }),
@@ -43,12 +47,12 @@ export function ChangeRequestModal({
       await refreshAll()
       // 배포된 서버에는 Slack 알림이 없다.
       toast.success(USE_MOCK ? '수정 요청을 보냈습니다. 담당 부서 팀장에게 Slack으로 알립니다' : '수정 요청을 보냈습니다')
-      setContent('')
+      setEdited(null)
       setReason('')
       onClose()
     },
   })
-  const blocked = !content.trim() || !reason.trim()
+  const blocked = !content.trim() || !reason.trim() || content === spec.data?.body
   return (
     <Modal
       open={open}
@@ -71,8 +75,8 @@ export function ChangeRequestModal({
       }
     >
       <div className="flex flex-col gap-3">
-        <Field label="변경 내용">
-          {(id) => <TextArea id={id} rows={6} value={content} onChange={(event) => setContent(event.target.value)} />}
+        <Field label="고친 기획서 전체">
+          {(id) => <TextArea id={id} rows={12} value={content} onChange={(event) => setEdited(event.target.value)} />}
         </Field>
         <Field label="사유">
           {(id) => <TextArea id={id} rows={3} value={reason} onChange={(event) => setReason(event.target.value)} />}
@@ -241,6 +245,7 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
   const personName = usePersonName(project)
   const [status, setStatus] = useState<StatusFilter>('ALL')
   const [rejecting, setRejecting] = useState<SpecChangeRequest | null>(null)
+  const [accepting, setAccepting] = useState<SpecChangeRequest | null>(null)
   const list = useQuery(changeRequestsQuery(project.id))
   const accept = useMutation({
     mutationFn: (crId: string) => projectsApi.acceptChangeRequest(project.id, crId),
@@ -306,8 +311,7 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
                     <div className="flex gap-1.5">
                       <Button
                         size="sm"
-                        loading={accept.isPending && accept.variables === item.id}
-                        onClick={() => accept.mutate(item.id)}
+                        onClick={() => setAccepting(item)}
                       >
                         반영
                       </Button>
@@ -334,6 +338,19 @@ export function ChangeRequestsTab({ project, canEdit }: { project: Project; canE
         </ul>
       )}
 
+      <ConfirmModal
+        open={accepting !== null}
+        title="수정 요청을 반영할까요?"
+        confirmLabel="반영"
+        loading={accept.isPending}
+        onClose={() => setAccepting(null)}
+        onConfirm={() => accepting && accept.mutate(accepting.id, { onSuccess: () => setAccepting(null) })}
+      >
+        <p>기획서 전체가 아래 내용으로 바뀝니다. 이전 내용은 이전 버전에 남습니다.</p>
+        <div className="mt-2 max-h-64 overflow-y-auto rounded-md border border-rule p-3 whitespace-pre-wrap break-words text-ink">
+          {accepting?.content}
+        </div>
+      </ConfirmModal>
       <ReasonModal
         open={rejecting !== null}
         title="수정 요청 반려"

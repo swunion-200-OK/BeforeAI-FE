@@ -136,6 +136,8 @@ export interface SubmitOutcome {
   executionDeferred: boolean
   /** 본인 승인을 못 했을 때의 이유. 제출 자체는 끝난 상태다. */
   selfApprovalError: string | null
+  /** 이 기기에 승인 키가 없어 본인 승인을 시도하지 않았다. 오류가 아니다. */
+  selfApprovalSkipped: boolean
 }
 
 /** 사용자가 화면에서 본 프로젝트와 작업 */
@@ -171,6 +173,7 @@ export async function submitWithSelfApproval(
     executionRequested: false,
     executionDeferred: false,
     selfApprovalError: null,
+    selfApprovalSkipped: false,
   }
   if (submit.selfApprovableTaskIds.length === 0) return outcome
   try {
@@ -180,6 +183,11 @@ export async function submitWithSelfApproval(
     if (taskIds.length === 0) return outcome
     if (!matchesReviewed(context, reviewed)) {
       outcome.selfApprovalError = '검토한 Plan과 서명할 내용이 달라 서명하지 않았습니다'
+      return outcome
+    }
+    const device = deviceStore.get(me.id)
+    if (!device.secretKey || !device.keyId || !device.pinnedWebshellKey) {
+      outcome.selfApprovalSkipped = true
       return outcome
     }
     const result = await signAndSubmitApproval({ me, context, taskIds, shownProjectId: reviewed.projectId })
