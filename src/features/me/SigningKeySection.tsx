@@ -19,9 +19,9 @@ const STATUS_LABEL: Record<SigningKeyStatus, string> = {
 }
 
 const STATUS_CLASS: Record<SigningKeyStatus, string> = {
-  PENDING: 'bg-medium-soft text-medium',
-  REGISTERED: 'bg-low-soft text-low',
-  REVOKED: 'bg-forbidden-soft text-forbidden',
+  PENDING: 'text-medium',
+  REGISTERED: 'text-low',
+  REVOKED: 'text-forbidden',
 }
 
 type KeyState = 'ready' | 'waiting' | 'none'
@@ -130,7 +130,7 @@ export function SigningKeySection({ me }: { me: Me }) {
           {keys.isSuccess && (
             <div className="mt-1 flex flex-wrap items-center justify-between gap-4">
               <div className="min-w-0">
-                <p className={`text-[2rem] leading-tight font-bold tracking-tight ${view.color}`}>
+                <p className={`text-[2rem] leading-tight font-semibold tracking-[-0.02em] ${view.color}`}>
                   {revoked ? '폐기됨' : elsewhere ? '이 기기에 없음' : view.label}
                 </p>
                 <p className="mt-1 text-sm text-ink-2">
@@ -199,7 +199,7 @@ export function SigningKeySection({ me }: { me: Me }) {
                             <Mono>{shorten(key.publicKey)}</Mono>
                           </td>
                           <td>
-                            <span className={`rounded px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_CLASS[key.status]}`}>
+                            <span className={`text-xs font-semibold whitespace-nowrap ${STATUS_CLASS[key.status]}`}>
                               {STATUS_LABEL[key.status]}
                             </span>
                           </td>

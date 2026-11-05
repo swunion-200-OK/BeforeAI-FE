@@ -158,7 +158,7 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
 
   return (
     <>
-      <h2 className="text-[1.5rem] font-bold tracking-tight">{document.title}</h2>
+      <h2 className="text-[1.5rem] font-semibold tracking-[-0.01em]">{document.title}</h2>
       <Mono className="text-ink-3">{document.path}</Mono>
 
       <div className="mt-4 mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -298,7 +298,7 @@ export default function DocumentsPage() {
                   to={`/documents/${document.id}`}
                   aria-current={active ? 'page' : undefined}
                   className={`flex items-center justify-between gap-2 rounded-md px-3 py-2 text-sm ${
-                    active ? 'bg-seal-soft font-medium text-seal-dark' : 'text-ink hover:bg-sheet'
+                    active ? 'bg-seal-soft font-medium text-seal-dark' : 'text-ink hover:bg-sheet-alt'
                   }`}
                 >
                   <span className="truncate">{document.title}</span>

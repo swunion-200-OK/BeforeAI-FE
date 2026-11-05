@@ -73,7 +73,7 @@ export function DiffViewer({ diff }: { diff: string }) {
             if (row.type === 'hunk') {
               return (
                 <tr key={index}>
-                  <td colSpan={4} className="bg-seal-soft px-3 py-0.5 text-seal-dark">
+                  <td colSpan={4} className="border-b border-rule bg-sheet-alt px-3 py-0.5 text-ink-3">
                     {row.header}
                   </td>
                 </tr>

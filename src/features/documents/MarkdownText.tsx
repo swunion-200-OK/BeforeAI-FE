@@ -47,7 +47,7 @@ function parse(source: string): Block[] {
 }
 
 const HEADING_CLASS = {
-  1: 'mt-5 text-lg font-bold first:mt-0',
+  1: 'mt-5 text-lg font-semibold first:mt-0',
   2: 'mt-4 border-b border-rule pb-1 text-base font-semibold first:mt-0',
   3: 'mt-3 text-sm font-semibold first:mt-0',
 }

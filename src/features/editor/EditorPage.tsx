@@ -398,7 +398,7 @@ function ProjectPicker() {
   return (
     <div className="quiet-scroll min-h-0 flex-1 overflow-y-auto px-8 py-10">
       <div className="mx-auto max-w-xl">
-        <h1 className="mb-4 text-[1.5rem] font-bold tracking-tight">수정할 프로젝트를 고르세요</h1>
+        <h1 className="mb-4 text-[1.5rem] font-semibold tracking-[-0.01em]">수정할 프로젝트를 고르세요</h1>
         {projects.isError ? (
           <ErrorState error={projects.error} onRetry={() => projects.refetch()} />
         ) : projects.isPending ? (

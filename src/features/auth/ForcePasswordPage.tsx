@@ -15,9 +15,9 @@ export function ForcePasswordPage() {
   const client = useQueryClient()
   return (
     <AuthFrame>
-      <section className="rounded-2xl border border-rule bg-sheet p-8 shadow-card">
+      <section>
         <header className="mb-3 flex items-center justify-between gap-3">
-          <h1 className="text-[2rem] leading-tight font-bold tracking-tight">비밀번호를 바꿔 주세요</h1>
+          <h1 className="text-[2.25rem] leading-tight font-bold tracking-tight">비밀번호를 바꿔 주세요</h1>
           {network === 'EXTERNAL' && <NetworkBadge network={network} />}
         </header>
         <p className="mb-5 text-base text-ink-2">
@@ -40,7 +40,7 @@ export function ForcePasswordPage() {
         />
       </section>
       <div>
-        <Button variant="ghost" onClick={() => signOut()}>
+        <Button variant="ghost" className="-ml-4" onClick={() => signOut()}>
           로그아웃
         </Button>
       </div>

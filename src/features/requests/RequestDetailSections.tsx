@@ -29,17 +29,15 @@ const ERROR_END: RequestStatus[] = [
 const FOLD_LABEL =
   'inline-flex cursor-pointer list-none items-center gap-1.5 rounded text-sm font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden'
 
-/** 작업 카드 아래 한 줄: 작은 도장과 승인 현황. 결재란 전체는 맨 아래 "자세히"에 있다. */
+/** 작업 카드 아래 한 줄: 작은 도장과 승인 현황. 도장이 없으면 글만 쓴다. 결재란 전체는 맨 아래 "자세히"에 있다. */
 export function TaskApprovalLine({ status }: { status: TaskApprovalStatus }) {
   const signer = status.requirements.flatMap((requirement) => requirement.approvedBy)[0]
   return (
     <p className="flex items-center gap-2.5 text-sm text-ink-2">
-      {signer ? (
-        <span className="inline-flex size-9 shrink-0 -rotate-6 items-center justify-center rounded-full border-2 border-seal text-[0.65rem] leading-none font-bold tracking-tight text-seal">
+      {signer && (
+        <span className="inline-flex size-11 shrink-0 -rotate-6 items-center justify-center rounded-full border-2 border-stamp text-[0.6875rem] leading-none font-bold tracking-tight text-stamp">
           {signer.name}
         </span>
-      ) : (
-        <span aria-hidden className="size-9 shrink-0 rounded-full border-2 border-dashed border-rule-strong" />
       )}
       {approvalSummary(status)}
     </p>
@@ -85,7 +83,7 @@ export function MoreDetails({ request }: { request: RequestDetail }) {
         자세히
         <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
       </summary>
-      <div className="mt-3 grid grid-cols-2 gap-x-10 gap-y-6 rounded-xl border border-rule bg-sheet p-5">
+      <div className="mt-3 grid grid-cols-2 gap-x-10 gap-y-6 rounded-lg border border-rule bg-sheet p-5">
         {plan && (
           <Part title="Plan 정보">
             <KeyValues

@@ -2,15 +2,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowRight,
   ChevronDown,
-  CircleCheck,
-  CircleX,
-  Clock,
   Lock,
   Maximize2,
-  Play,
-  SkipForward,
   X,
-  type LucideIcon,
 } from 'lucide-react'
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Link, useMatch } from 'react-router'
@@ -28,7 +22,7 @@ import type {
   TaskStatus,
 } from '../../api/types'
 import { LogViewer } from '../../components/LogViewer'
-import { NetworkBadge, RiskBadge } from '../../components/badges'
+import { NetworkBadge, RiskBadge, StatusGlyph, type StatusShape } from '../../components/badges'
 import { KeyValues } from '../../components/rich'
 import { TaskContentView } from '../../components/TaskCard'
 import { Button, ErrorState, Mono, Spinner } from '../../components/ui'
@@ -71,69 +65,21 @@ const TONE_OF_STATUS: Record<RequestStatus | TaskStatus | StepStatus | ApprovalN
 /** 모르는 상태값이 와도 화면이 깨지지 않게 대기로 본다 */
 const toneOf = (status: string): Tone => TONE_OF_STATUS[status as keyof typeof TONE_OF_STATUS] ?? 'wait'
 
-const TONE_STYLE: Record<Tone, { band: string; border: string; softBorder: string; softBg: string; ink: string; Icon: LucideIcon }> = {
-  wait: {
-    band: 'bg-flow-wait text-white',
-    border: 'border-flow-wait',
-    softBorder: 'border-flow-wait/40',
-    softBg: 'bg-flow-wait-soft',
-    ink: 'text-flow-wait-ink',
-    Icon: Clock,
-  },
-  approved: {
-    band: 'bg-seal text-white',
-    border: 'border-seal',
-    softBorder: 'border-seal/40',
-    softBg: 'bg-seal-soft',
-    ink: 'text-seal-dark',
-    Icon: CircleCheck,
-  },
-  running: {
-    band: 'bg-flow-run-band text-flow-run-ink',
-    border: 'border-flow-run',
-    softBorder: 'border-flow-run',
-    softBg: 'bg-flow-run-soft',
-    ink: 'text-flow-run-ink',
-    Icon: Play,
-  },
-  success: {
-    band: 'bg-low text-white',
-    border: 'border-low',
-    softBorder: 'border-low/40',
-    softBg: 'bg-low-soft',
-    ink: 'text-low',
-    Icon: CircleCheck,
-  },
-  failed: {
-    band: 'bg-high text-white',
-    border: 'border-high',
-    softBorder: 'border-high/40',
-    softBg: 'bg-high-soft',
-    ink: 'text-[#a81f16]',
-    Icon: CircleX,
-  },
-  forbidden: {
-    band: 'bg-black text-white',
-    border: 'border-black',
-    softBorder: 'border-black',
-    softBg: 'bg-black',
-    ink: 'text-white',
-    Icon: Lock,
-  },
-  skipped: {
-    band: 'bg-flow-skip text-flow-skip-ink',
-    border: 'border-flow-skip',
-    softBorder: 'border-flow-skip',
-    softBg: 'bg-flow-skip-soft',
-    ink: 'text-flow-skip-ink',
-    Icon: SkipForward,
-  },
+/** 노드는 흰 바탕에 왼쪽 선 하나로 상태를 나타낸다. 색만으로 구분하지 않도록 아이콘과 글자를 함께 쓴다 */
+const TONE_STYLE: Record<Tone, { edge: string; ink: string; glyph: string; shape: StatusShape }> = {
+  wait: { edge: 'bg-flow-wait', ink: 'text-flow-wait-ink', glyph: 'text-flow-wait', shape: 'wait' },
+  approved: { edge: 'bg-seal', ink: 'text-seal-dark', glyph: 'text-seal', shape: 'done' },
+  running: { edge: 'bg-flow-run', ink: 'text-flow-run-ink', glyph: 'text-flow-run', shape: 'run' },
+  success: { edge: 'bg-low', ink: 'text-low', glyph: 'text-low', shape: 'done' },
+  failed: { edge: 'bg-high', ink: 'text-high', glyph: 'text-high', shape: 'fail' },
+  forbidden: { edge: 'bg-black', ink: 'text-ink', glyph: 'text-ink', shape: 'stop' },
+  skipped: { edge: 'bg-flow-skip', ink: 'text-flow-skip-ink', glyph: 'text-flow-skip', shape: 'stop' },
 }
 
 const APPROVAL_WORD: Record<ApprovalNodeStatus, string> = { PENDING: '승인 대기', APPROVED: '승인', REJECTED: '거부' }
 const STEP_WORD: Record<StepStatus, string> = { RUNNING: '실행 중', SUCCEEDED: '성공', FAILED: '실패', SKIPPED: '건너뜀' }
 
-const SELECTED = 'ring-[3px] ring-seal ring-offset-2 ring-offset-sheet'
+const SELECTED = 'border-seal ring-2 ring-seal'
 const shortPlanHash = (hash: string) => `${hash.replace(/^sha256:/, '').slice(0, 4)}…`
 
 function candidatesText(node: ProgressApprovalNode): string {
@@ -151,20 +97,34 @@ interface NodeActions {
   isOnPath: (id: string) => boolean
 }
 
-/** 경로 위 말단 노드(승인·단계)는 굵은 테두리, 경로 밖은 옅은 테두리, 나머지는 평소대로 */
-function softFrame(tone: Tone, quiet: boolean, onPath: boolean): string {
-  const { border, softBorder, softBg } = TONE_STYLE[tone]
-  if (quiet) return `border border-rule-strong ${softBg}`
-  return onPath ? `border-2 ${border} ${softBg}` : `border ${softBorder} ${softBg}`
+/** 선택 > 실행 중 > 경로 위 > 평소 > 경로 밖 순서로 테두리가 진해진다. 굵기는 선택과 실행 중에만 더한다 */
+function frameOf(tone: Tone, selected: boolean, quiet: boolean, onPath: boolean): string {
+  if (selected) return SELECTED
+  if (tone === 'running') return 'border-flow-run ring-1 ring-flow-run'
+  if (quiet) return 'border-rule hover:border-ink-3'
+  return onPath ? 'border-ink-3' : 'border-rule-strong hover:border-ink-3'
 }
+
+const NODE = 'relative overflow-hidden rounded-md border bg-sheet text-left transition-colors'
 
 // ── 노드 ──────────────────────────────────────────────────
 
-function StatusBand({ tone, word }: { tone: Tone; word: string }) {
-  const { band, Icon } = TONE_STYLE[tone]
+/** 노드의 왼쪽 상태 선. 노드의 첫 자식이다 */
+function NodeEdge({ tone, moving }: { tone: Tone; moving?: boolean }) {
+  return <span aria-hidden className={`absolute inset-y-0 left-0 w-1 ${TONE_STYLE[tone].edge} ${moving ? 'flow-running' : ''}`} />
+}
+
+/** 앱 전체와 같은 상태 모양. 금지만 잠금 모양으로 구분하고, 도는 것은 실행 중인 단계 하나뿐이다 */
+function ToneGlyph({ tone, moving }: { tone: Tone; moving?: boolean }) {
+  if (tone === 'forbidden') return <Lock size={15} aria-hidden className="shrink-0" />
+  const { glyph, shape } = TONE_STYLE[tone]
+  return <StatusGlyph shape={shape} size={15} className={`${glyph} ${moving ? '' : 'animate-none!'}`} />
+}
+
+function StatusLine({ tone, word, moving }: { tone: Tone; word: string; moving?: boolean }) {
   return (
-    <span className={`flex items-center gap-1.5 px-3 py-1 text-sm font-semibold ${band}`}>
-      <Icon size={15} aria-hidden />
+    <span className={`flex items-center gap-1.5 text-sm font-semibold ${TONE_STYLE[tone].ink}`}>
+      <ToneGlyph tone={tone} moving={moving} />
       {word}
     </span>
   )
@@ -173,9 +133,10 @@ function StatusBand({ tone, word }: { tone: Tone; word: string }) {
 function RequestNode({ node }: { node: ProgressRequestNode }) {
   const tone = toneOf(node.status)
   return (
-    <div data-node-id={node.id} className={`w-full max-w-[28rem] overflow-hidden rounded-lg border-2 bg-sheet [contain:inline-size] ${TONE_STYLE[tone].border}`}>
-      <StatusBand tone={tone} word={REQUEST_STATUS_LABEL[node.status]} />
-      <p className="line-clamp-2 px-4 py-2.5 leading-snug font-semibold" title={node.label}>
+    <div data-node-id={node.id} className={`${NODE} w-full max-w-[28rem] border-rule-strong py-2.5 pr-4 pl-4.5 [contain:inline-size]`}>
+      <NodeEdge tone={tone} />
+      <StatusLine tone={tone} word={REQUEST_STATUS_LABEL[node.status]} />
+      <p className="mt-1 line-clamp-2 leading-snug font-semibold" title={node.label}>
         {node.label}
       </p>
     </div>
@@ -184,10 +145,10 @@ function RequestNode({ node }: { node: ProgressRequestNode }) {
 
 function CurrentPlanNode({ node }: { node: ProgressPlanNode }) {
   return (
-    <div data-node-id={node.id} className="flex items-center gap-3 rounded-full border-2 border-ink bg-sheet px-5 py-1.5">
+    <div data-node-id={node.id} className="flex items-center gap-3 rounded-md border border-ink-3 bg-sheet px-4 py-1.5">
       <span className="font-semibold">{node.label}</span>
       {node.planHash && <span className="font-mono text-xs text-ink-3">해시 {shortPlanHash(node.planHash)}</span>}
-      <span className="text-sm font-semibold text-ink-2">현재</span>
+      <span className="text-sm text-ink-2">현재</span>
     </div>
   )
 }
@@ -199,7 +160,7 @@ function SupersededPlanNode({ node, expanded, onToggle }: { node: ProgressPlanNo
       data-node-id={node.id}
       aria-expanded={expanded}
       onClick={() => onToggle(node.id)}
-      className="flex items-center gap-3 rounded-full border-2 border-dashed border-ink-3 bg-sheet px-5 py-1.5 text-ink-2 hover:bg-sheet-alt"
+      className="flex items-center gap-3 rounded-md border border-dashed border-ink-3 bg-sheet px-4 py-1.5 text-ink-2 hover:bg-sheet-alt"
     >
       <span className="font-semibold">{node.label}</span>
       {node.planHash && <span className="font-mono text-xs text-ink-3">해시 {shortPlanHash(node.planHash)}</span>}
@@ -218,7 +179,7 @@ function SupersededTasks({ node }: { node: ProgressPlanNode }) {
         <li
           key={task.label}
           data-node-id={`${node.id}#${index}`}
-          className="ml-7 rounded-md border-2 border-dashed border-rule-strong bg-sheet px-3 py-2"
+          className="ml-7 rounded-md border border-dashed border-rule-strong bg-sheet px-3 py-2"
         >
           <p className="text-sm leading-snug font-medium text-ink-2">{task.label}</p>
           <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-ink-3">
@@ -255,17 +216,16 @@ const TaskNode = memo(function TaskNode({
       aria-controls={panelId}
       onClick={() => onSelect(node.id)}
       data-quiet={quiet || undefined}
-      className={`block w-full overflow-hidden rounded-lg border-2 bg-sheet text-left hover:shadow-raised ${quiet ? 'border-rule-strong' : `shadow-card ${TONE_STYLE[tone].border}`} ${selected ? SELECTED : ''}`}
+      className={`${NODE} block w-full py-2.5 pr-3 pl-4 ${frameOf(tone, selected, quiet, false)}`}
     >
-      <StatusBand tone={tone} word={TASK_STATUS_LABEL[node.status]} />
-      <span className="block px-3 pt-2.5 pb-3">
-        <span className="block leading-snug font-semibold">{node.label}</span>
-        <span className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-3">
-          {TASK_TYPE_LABEL[node.taskType]}
-          {node.risk && <RiskBadge risk={node.risk} />}
-        </span>
-        {after && <span className="sr-only">선행 작업: {after}</span>}
+      <NodeEdge tone={tone} />
+      <StatusLine tone={tone} word={TASK_STATUS_LABEL[node.status]} />
+      <span className="mt-1 block leading-snug font-semibold">{node.label}</span>
+      <span className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
+        {TASK_TYPE_LABEL[node.taskType]}
+        {node.risk && <RiskBadge risk={node.risk} />}
       </span>
+      {after && <span className="sr-only">선행 작업: {after}</span>}
     </button>
   )
 })
@@ -296,29 +256,22 @@ const ApprovalNode = memo(function ApprovalNode({
       aria-controls={panelId}
       onClick={() => onSelect(node.id)}
       data-quiet={quiet || undefined}
-      className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:shadow-card ${softFrame(tone, quiet, onPath)} ${selected ? SELECTED : ''}`}
+      className={`${NODE} flex w-full flex-wrap items-center gap-x-1.5 py-1.5 pr-2.5 pl-3.5 text-sm leading-snug ${frameOf(tone, selected, quiet, onPath)}`}
     >
+      <NodeEdge tone={tone} />
+      <ToneGlyph tone={tone} />
       {pending ? (
-        <span aria-hidden className="flex size-10 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-flow-wait text-flow-wait">
-          <Clock size={16} />
-        </span>
+        <>
+          <span className={`font-semibold ${ink}`}>{APPROVAL_WORD[node.status]}</span>
+          <span className="text-ink-2">{candidatesText(node)}</span>
+        </>
       ) : (
-        <span
-          aria-hidden
-          className={`flex size-10 shrink-0 -rotate-6 items-center justify-center rounded-full border-2 bg-sheet text-[0.65rem] leading-none font-bold tracking-tight ${
-            node.status === 'REJECTED' ? 'border-high text-high' : 'border-seal text-seal'
-          }`}
-        >
-          {node.label ?? APPROVAL_WORD[node.status]}
-        </span>
+        <>
+          <span className="font-semibold text-ink">{node.label}</span>
+          <span className={`font-semibold ${ink}`}>{APPROVAL_WORD[node.status]}</span>
+        </>
       )}
-      <span className="min-w-0">
-        <span className={`block text-sm font-semibold ${ink}`}>{APPROVAL_WORD[node.status]}</span>
-        <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs leading-snug text-ink-2">
-          {pending ? candidatesText(node) : node.label}
-          {node.network && <NetworkBadge network={node.network} />}
-        </span>
-      </span>
+      {node.network && <NetworkBadge network={node.network} />}
     </button>
   )
 })
@@ -339,7 +292,6 @@ const StepNode = memo(function StepNode({
   onPath: boolean
 }) {
   const tone = toneOf(node.status)
-  const { ink, Icon } = TONE_STYLE[tone]
   return (
     <button
       type="button"
@@ -348,14 +300,11 @@ const StepNode = memo(function StepNode({
       aria-controls={panelId}
       onClick={() => onSelect(node.id)}
       data-quiet={quiet || undefined}
-      className={`block w-full overflow-hidden rounded-lg text-left hover:shadow-card ${softFrame(tone, quiet, onPath)} ${selected ? SELECTED : ''}`}
+      className={`${NODE} block w-full py-1.5 pr-2.5 pl-3.5 ${frameOf(tone, selected, quiet, onPath)}`}
     >
-      {node.status === 'RUNNING' && <span aria-hidden className="flow-running block h-1.5" />}
-      <span className={`flex items-center gap-1 px-2.5 pt-1.5 text-sm font-semibold ${ink}`}>
-        <Icon size={14} aria-hidden />
-        {STEP_WORD[node.status]}
-      </span>
-      <span className="line-clamp-2 px-2.5 pt-0.5 pb-2 font-mono text-xs [overflow-wrap:anywhere] text-ink" title={node.label}>
+      <NodeEdge tone={tone} moving={node.status === 'RUNNING'} />
+      <StatusLine tone={tone} word={STEP_WORD[node.status]} moving={node.status === 'RUNNING'} />
+      <span className="mt-0.5 line-clamp-2 font-mono text-xs [overflow-wrap:anywhere] text-ink" title={node.label}>
         {node.label}
       </span>
     </button>
@@ -399,7 +348,7 @@ function TaskColumn({
             <StepNode key={child.id} node={child} selected={selectedId === child.id} onSelect={onSelect} panelId={panelId} quiet={isQuiet(child.id)} onPath={onPath(child.id)} />
           ))}
           {cutBelow && steps.length === 0 && (
-            <p data-node-id={`${node.id}#cut`} className="rounded-lg border-2 border-dashed border-high/60 bg-sheet px-2.5 py-2 text-sm font-semibold text-high">
+            <p data-node-id={`${node.id}#cut`} className="rounded-md border border-dashed border-high bg-sheet px-3 py-1.5 text-sm font-semibold text-high">
               실행 안 됨
             </p>
           )}
@@ -547,28 +496,28 @@ function useConnectors(hostRef: RefObject<HTMLDivElement | null>, links: Link[],
 }
 
 const CONNECTOR_CLASS: Record<LinkKind, string> = {
-  branch: 'stroke-ink-3 [stroke-width:2]',
-  branchDashed: 'stroke-ink-3 [stroke-width:2] [stroke-dasharray:6_5]',
-  leaf: 'stroke-ink-3 [stroke-width:1.5]',
-  leafDashed: 'stroke-ink-3 [stroke-width:1.5] [stroke-dasharray:4_4]',
-  arrow: 'stroke-ink [stroke-width:4]',
-  arrowOver: 'stroke-ink [stroke-width:4]',
-  toGate: 'stroke-ink-3 [stroke-width:1.5]',
-  gateLeaf: 'stroke-ink-3 [stroke-width:1.5]',
+  branch: 'stroke-(--flow-line) [stroke-width:1.5]',
+  branchDashed: 'stroke-(--flow-line) [stroke-width:1.5] [stroke-dasharray:6_5]',
+  leaf: 'stroke-(--flow-line) [stroke-width:1.5]',
+  leafDashed: 'stroke-(--flow-line) [stroke-width:1.5] [stroke-dasharray:4_4]',
+  arrow: 'stroke-ink-2 [stroke-width:2]',
+  arrowOver: 'stroke-ink-2 [stroke-width:2]',
+  toGate: 'stroke-(--flow-line) [stroke-width:1.5]',
+  gateLeaf: 'stroke-(--flow-line) [stroke-width:1.5]',
   gateCut: 'stroke-high [stroke-width:2] [stroke-dasharray:5_5]',
 }
 
 /** 경로가 될 수 있는 선 */
 const PATH_KINDS: LinkKind[] = ['branch', 'leaf', 'toGate', 'gateLeaf']
 const PATH_CLASS: Record<PathMode, string> = {
-  wait: 'stroke-ink [stroke-width:4]',
-  running: 'stroke-ink [stroke-width:4]',
-  failed: 'stroke-high [stroke-width:4]',
+  wait: 'stroke-ink [stroke-width:3]',
+  running: 'stroke-ink [stroke-width:3]',
+  failed: 'stroke-high [stroke-width:3]',
 }
 /** 기다리는 길은 천천히, 실행 중인 길은 빠르게 흐른다. 실패한 길에는 움직임이 없다 */
 const PULSE_CLASS: Partial<Record<PathMode, string>> = {
-  wait: 'flow-pulse flow-pulse-wait stroke-white [stroke-width:4]',
-  running: 'flow-pulse stroke-[#ffd93b] [stroke-width:4]',
+  wait: 'flow-pulse flow-pulse-wait stroke-white [stroke-width:3]',
+  running: 'flow-pulse stroke-[#ffd93b] [stroke-width:3]',
 }
 
 // ── 도식 ──────────────────────────────────────────────────
@@ -608,8 +557,8 @@ function Diagram({
       <div ref={hostRef} className="relative w-max min-w-full p-7">
         <svg aria-hidden className="pointer-events-none absolute inset-0 size-full fill-none">
           <defs>
-            <marker id={arrowId} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto">
-              <path d="M0 0 10 5 0 10z" className="fill-ink" />
+            <marker id={arrowId} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0 0 10 5 0 10z" className="fill-ink-2" />
             </marker>
           </defs>
           {connectors.map((connector) => (
@@ -838,10 +787,10 @@ function NowLine({ now, large }: { now: ProgressNow; large?: boolean }) {
   return (
     <p
       data-progress-now
-      className={`min-w-0 leading-snug font-bold tracking-tight ${large ? 'text-[2.25rem]' : 'text-[1.375rem]'} ${now.mode === 'failed' ? 'text-high' : 'text-ink'}`}
+      className={`min-w-0 leading-snug font-semibold tracking-[-0.01em] ${large ? 'text-[2.25rem]' : 'text-[1.375rem]'} ${now.mode === 'failed' ? 'text-high' : 'text-ink'}`}
     >
       <span aria-live="polite">{now.text}</span>
-      {elapsed && <span className="font-semibold text-ink-2"> · {elapsed === '방금' ? elapsed : `${elapsed}째`}</span>}
+      {elapsed && <span className="font-medium text-ink-3"> · {elapsed === '방금' ? elapsed : `${elapsed}째`}</span>}
     </p>
   )
 }
@@ -923,7 +872,7 @@ export function ProgressTree({ requestId }: { requestId: string }) {
           ref={largeButton}
           type="button"
           onClick={() => setLarge(true)}
-          className="ml-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-rule-strong bg-sheet px-3 text-[0.875rem] font-medium whitespace-nowrap text-ink hover:bg-sheet-alt"
+          className="ml-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-rule-strong bg-sheet px-3 text-[0.875rem] font-medium whitespace-nowrap text-ink hover:bg-sheet-alt"
         >
           <Maximize2 size={15} aria-hidden />
           크게 보기
@@ -937,7 +886,7 @@ export function ProgressTree({ requestId }: { requestId: string }) {
           onClose={closeLarge}
           className="m-0 h-dvh max-h-none w-dvw max-w-none overflow-y-auto bg-paper p-0 text-ink"
         >
-          <div className="flex min-h-full flex-col gap-5 px-10 py-7">
+          <div className="flex min-h-full flex-col gap-5 px-10 py-6">
             <div className="flex items-start justify-between gap-6">
               <NowLine now={now} large />
               <Button variant="secondary" onClick={() => dialog.current?.close()}>
@@ -961,7 +910,7 @@ export function ProgressSection({ requestId, defaultOpen }: { requestId: string;
   return (
     <details open={open} onToggle={(event) => setOpen(event.currentTarget.open)} className="group min-w-0">
       <summary className="mb-3 inline-flex cursor-pointer list-none items-center gap-1.5 rounded [&::-webkit-details-marker]:hidden">
-        <h2 className="text-base font-semibold">진행 상황</h2>
+        <h2 className="text-[1.25rem] font-semibold">진행 상황</h2>
         <ChevronDown size={16} aria-hidden className="text-ink-3 transition-transform group-open:rotate-180" />
       </summary>
       {open && <ProgressTree requestId={requestId} />}

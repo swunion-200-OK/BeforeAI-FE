@@ -1,6 +1,7 @@
-import { CircleAlert, CircleCheck, Info, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { StatusGlyph, type StatusShape } from './badges'
 
 type ToastKind = 'success' | 'error' | 'info'
 interface ToastItem {
@@ -38,10 +39,11 @@ export const toast = {
   info: (message: string) => push('info', message),
 }
 
-const STYLE: Record<ToastKind, { className: string; Icon: typeof Info }> = {
-  success: { className: 'text-low', Icon: CircleCheck },
-  error: { className: 'text-high', Icon: CircleAlert },
-  info: { className: 'text-seal', Icon: Info },
+/** 안내는 글자만으로 충분하다. 결과가 갈리는 성공과 실패에만 모양을 붙인다. */
+const STYLE: Record<ToastKind, { className: string; shape?: StatusShape }> = {
+  success: { className: 'text-low', shape: 'done' },
+  error: { className: 'text-high', shape: 'fail' },
+  info: { className: 'text-ink' },
 }
 
 const hostListeners = new Set<() => void>()
@@ -78,13 +80,13 @@ export function Toaster() {
       aria-live="polite"
     >
       {current.map((item) => {
-        const { className, Icon } = STYLE[item.kind]
+        const { className, shape } = STYLE[item.kind]
         return (
           <div
             key={item.id}
-            className={`animate-toast pointer-events-auto flex items-start gap-2.5 rounded-xl border border-rule bg-sheet px-4 py-3 text-base font-medium shadow-raised ${className}`}
+            className={`animate-toast pointer-events-auto flex items-start gap-2.5 rounded-xl border border-rule-strong bg-sheet px-4 py-3 text-base shadow-raised ${className}`}
           >
-            <Icon size={20} className="mt-0.5 shrink-0" aria-hidden />
+            {shape && <StatusGlyph shape={shape} size={18} className="mt-1" />}
             <span className="flex-1 text-ink">{item.message}</span>
             <button
               type="button"

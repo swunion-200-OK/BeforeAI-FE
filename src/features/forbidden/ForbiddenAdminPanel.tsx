@@ -150,7 +150,7 @@ function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
   })
 
   return (
-    <Sheet title={`검토할 제안 ${proposals.length}건`} flush className="ring-2 ring-medium/25">
+    <Sheet title={`검토할 제안 ${proposals.length}건`} flush>
       <ProposalTable
         proposals={proposals}
         renderLast={(proposal, index) => (

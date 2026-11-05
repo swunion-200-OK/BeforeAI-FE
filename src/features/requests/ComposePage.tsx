@@ -5,7 +5,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { useMe } from '../../app/AuthProvider'
 import { requestsApi } from '../../api/endpoints'
 import type { RequestDetail } from '../../api/types'
-import { TaskCard } from '../../components/TaskCard'
+import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { Button, ErrorState, Field, PageHeader, Select, Sheet, Spinner, TextArea } from '../../components/ui'
 import { formatElapsed } from '../../lib/format'
 import { REQUEST_STATUS_LABEL } from '../../lib/labels'
@@ -25,14 +25,14 @@ function RecentRequests() {
   })
   if (!recent.data?.length) return null
   return (
-    <section aria-label="최근 내 요청" className="mt-10">
-      <h2 className="mb-2 px-2 text-sm font-semibold text-ink-2">최근 내 요청</h2>
-      <ul>
+    <section aria-label="최근 내 요청" className="mt-12">
+      <h2 className="mb-2 text-sm font-semibold text-ink-2">최근 내 요청</h2>
+      <ul className="divide-y divide-rule border-y border-rule">
         {recent.data.map((request) => (
           <li key={request.id}>
             <Link
               to={pathFor(request, external)}
-              className="flex items-baseline gap-4 rounded-md px-2 py-2 text-base text-ink-2 hover:bg-sheet hover:text-ink"
+              className="flex items-baseline gap-4 py-2.5 text-base text-ink-2 hover:text-seal"
             >
               <span className="min-w-0 flex-1 truncate">{request.prompt}</span>
               <span className="shrink-0 text-sm text-ink-3">
@@ -64,10 +64,10 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
   })
 
   return (
-    <div className="mx-auto max-w-[54rem] pt-[10vh]">
-      <h1 className="mb-7 text-center text-[2rem] font-bold tracking-tight">AI에게 무엇을 맡길까요?</h1>
+    <div className="mx-auto max-w-[54rem] pt-[6vh]">
+      <h1 className="mb-6 text-[2.25rem] leading-tight font-semibold tracking-[-0.02em]">AI에게 무엇을 맡길까요?</h1>
       <form
-        className="rounded-2xl border border-rule-strong bg-sheet shadow-card focus-within:border-seal focus-within:ring-1 focus-within:ring-seal"
+        className="rounded-lg border border-rule-strong bg-sheet focus-within:border-seal focus-within:ring-1 focus-within:ring-seal"
         onSubmit={(event) => {
           event.preventDefault()
           if (prompt.trim() && projectId) create.mutate()
@@ -81,9 +81,9 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
           placeholder="로그인 실패 시 에러 메시지를 바꾸고 스테이징에 배포해줘"
-          className="block w-full resize-none rounded-t-2xl bg-transparent px-5 pt-4 text-base leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none"
+          className="block w-full resize-none rounded-t-lg bg-transparent px-4 py-3.5 text-lg leading-relaxed text-ink placeholder:text-ink-3 focus:outline-none"
         />
-        <div className="flex items-center justify-between gap-3 px-4 pt-2 pb-4">
+        <div className="flex items-center justify-between gap-3 border-t border-rule px-4 py-3">
           <Select
             aria-label="프로젝트"
             value={projectId}
@@ -108,7 +108,7 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
           </Button>
         </div>
       </form>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
+      <div className="mt-3.5 flex flex-wrap gap-x-5 gap-y-1">
         {EXAMPLES.map((example) => (
           <button
             key={example}
@@ -117,7 +117,7 @@ function PromptForm({ initialPrompt }: { initialPrompt: string }) {
               setPrompt(example)
               box.current?.focus()
             }}
-            className="rounded-full border border-rule bg-sheet px-3.5 py-1.5 text-sm text-ink-2 hover:border-seal hover:text-seal"
+            className="py-1 text-sm text-ink-2 underline decoration-rule-strong underline-offset-4 hover:text-seal hover:decoration-seal"
           >
             {example}
           </button>
@@ -163,10 +163,12 @@ function ClarificationForm({ request }: { request: RequestDetail }) {
 /** 분석 결과가 오기 전에 기다리는 이유와 다음에 볼 것을 알려 준다. 움직임은 돌아가는 표시 하나뿐이다. */
 function AnalyzingPlaceholder() {
   return (
-    <div role="status" className="flex flex-col items-center gap-3 rounded-xl border border-rule bg-sheet px-8 py-16 text-center">
-      <Loader2 size={40} className="animate-spin text-seal" aria-hidden />
-      <p className="mt-2 text-xl font-semibold">AI가 프롬프트를 작업 단위로 나누고 위험도를 매기는 중입니다.</p>
-      <p className="text-base text-ink-2">끝나면 이 화면에 작업 목록이 나타납니다. 제출하기 전에 하나씩 확인하고 고칠 수 있습니다.</p>
+    <div role="status" className="flex items-start gap-4 rounded-lg border border-rule bg-sheet p-6">
+      <Loader2 size={26} className="mt-0.5 shrink-0 animate-spin text-seal" aria-hidden />
+      <div className="min-w-0">
+        <p className="text-xl font-semibold">AI가 프롬프트를 작업 단위로 나누고 위험도를 매기는 중입니다.</p>
+        <p className="mt-1 text-base text-ink-2">끝나면 이 화면에 작업 목록이 나타납니다. 제출하기 전에 하나씩 확인하고 고칠 수 있습니다.</p>
+      </div>
     </div>
   )
 }
@@ -176,15 +178,19 @@ function PlanCards({ request }: { request: RequestDetail }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-ink-2">AI가 작업 {tasks.length}개로 나눴습니다.</p>
-      {tasks.map((task) => (
-        <TaskCard
-          key={task.id}
-          task={task}
-          requestId={request.id}
-          showStatus={false}
-          actions={<TaskEditButtons task={task} request={request} />}
-        />
-      ))}
+      {tasks.length > 0 && (
+        <TaskRows>
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              requestId={request.id}
+              showStatus={false}
+              actions={<TaskEditButtons task={task} request={request} />}
+            />
+          ))}
+        </TaskRows>
+      )}
     </div>
   )
 }

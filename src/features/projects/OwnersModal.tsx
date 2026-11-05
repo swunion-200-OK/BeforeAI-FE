@@ -90,7 +90,7 @@ function OwnersEditor({ project, users, onClose }: { project: Project; users: Us
           <ul className="quiet-scroll -mx-1 max-h-80 overflow-y-auto">
             {candidates.map((user) => (
               <li key={user.id}>
-                <label className="flex items-center gap-2.5 rounded-md px-1 py-1.5 hover:bg-paper">
+                <label className="flex items-center gap-2.5 rounded-md px-1 py-1.5 hover:bg-sheet-alt">
                   <input
                     type="checkbox"
                     checked={selected.includes(user.id)}

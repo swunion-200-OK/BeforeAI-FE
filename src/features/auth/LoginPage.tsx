@@ -6,7 +6,6 @@ import { authApi } from '../../api/endpoints'
 import { errorMessage } from '../../api/errors'
 import { useAuth } from '../../app/AuthProvider'
 import { NetworkBadge } from '../../components/badges'
-import { Avatar } from '../../components/rich'
 import { Button, Spinner } from '../../components/ui'
 import { homePath } from '../../lib/access'
 import { useNetwork } from '../../lib/queries'
@@ -77,9 +76,9 @@ export default function LoginPage() {
 
   return (
     <AuthFrame>
-      <section className="rounded-2xl border border-rule bg-sheet p-8 shadow-card">
+      <section>
         <header className="mb-6 flex items-center justify-between gap-3">
-          <h1 className="text-[2rem] leading-tight font-bold tracking-tight">{tempToken === null ? '로그인' : 'OTP 확인'}</h1>
+          <h1 className="text-[2.25rem] leading-tight font-bold tracking-tight">{tempToken === null ? '로그인' : 'OTP 확인'}</h1>
           {network === 'EXTERNAL' && <NetworkBadge network={network} />}
         </header>
 
@@ -161,35 +160,35 @@ export default function LoginPage() {
       </section>
 
       {USE_MOCK && (
-        <section aria-label="시연 계정">
-          <p className="mb-2 text-base text-ink-2">
+        <section aria-label="시연 계정" className="border-t border-rule pt-5">
+          <p className="mb-3 text-sm text-ink-2">
             시연 계정을 고르면 입력해 줍니다. 비밀번호 <code className="font-mono text-ink">{DEMO_PASSWORD}</code>, OTP{' '}
             <code className="font-mono text-ink">{DEMO_OTP}</code>
           </p>
-          <ul className="grid grid-cols-2 gap-2">
-            {DEMO_ACCOUNTS.map((account) => (
-              <li key={account.employeeNo}>
-                <button
-                  type="button"
-                  className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors hover:border-seal/50 hover:bg-seal-soft/40 ${
-                    employeeNo === account.employeeNo ? 'border-seal bg-seal-soft' : 'border-rule bg-sheet'
-                  }`}
-                  onClick={() => {
-                    setEmployeeNo(account.employeeNo)
-                    setPassword(DEMO_PASSWORD)
-                    setError(null)
-                  }}
-                >
-                  <Avatar name={account.name} />
-                  <span className="min-w-0 leading-snug">
-                    <span className="block text-base font-semibold text-ink">
+          <ul className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-rule bg-rule">
+            {DEMO_ACCOUNTS.map((account) => {
+              const picked = employeeNo === account.employeeNo
+              return (
+                <li key={account.employeeNo} className="min-w-0">
+                  <button
+                    type="button"
+                    className={`block h-full w-full px-3.5 py-2.5 text-left leading-snug transition-colors ${
+                      picked ? 'bg-seal-soft' : 'bg-sheet hover:bg-sheet-alt'
+                    }`}
+                    onClick={() => {
+                      setEmployeeNo(account.employeeNo)
+                      setPassword(DEMO_PASSWORD)
+                      setError(null)
+                    }}
+                  >
+                    <span className={`block text-base font-semibold ${picked ? 'text-seal-dark' : 'text-ink'}`}>
                       {account.name} <code className="ml-0.5 font-mono text-[0.875rem] font-normal text-ink-3">{account.employeeNo}</code>
                     </span>
                     <span className="block truncate text-[0.875rem] text-ink-2">{account.role}</span>
-                  </span>
-                </button>
-              </li>
-            ))}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         </section>
       )}

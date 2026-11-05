@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown, Lock } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { requestsApi } from '../api/endpoints'
 import type { ApproverRequirement, Task } from '../api/types'
@@ -70,10 +70,23 @@ function TaskMeta({ task }: { task: Task }) {
   )
 }
 
+/** 작업 카드들을 테두리 하나에 담고 가로줄로 나눈다. */
+export function TaskRows({ children }: { children: ReactNode }) {
+  return <div className="divide-y divide-rule overflow-hidden rounded-lg border border-rule bg-sheet">{children}</div>
+}
+
+/** 지금 봐야 할 작업의 왼쪽 선. 자리를 차지하지 않아 다른 행과 글자 줄이 어긋나지 않는다. */
+const EDGE = {
+  changed: 'shadow-[inset_3px_0_0_var(--color-medium)]',
+  running: 'shadow-[inset_3px_0_0_var(--color-medium)]',
+  failed: 'shadow-[inset_3px_0_0_var(--color-high)]',
+} as const
+
 /**
- * Plan 작업 카드. 작업 요청·요청 상세·승인 상세가 같이 쓴다.
+ * Plan 작업 카드. 작업 요청·요청 상세·승인 상세가 같이 쓴다. TaskRows 안에 놓는다.
  * 위험도, 제목, 쉬운 설명 한 문장만 먼저 보여 주고 나머지는 "자세히"에 접어 둔다.
  * - highlighted: 재승인 화면에서 바뀐 작업 강조
+ * - spotlight: 실행 중이거나 실패한 작업 강조
  * - leading: 승인 체크박스 등 카드 왼쪽 요소
  * - actions: 수정·삭제 등 카드 오른쪽 위 버튼
  * - footer: 승인 현황 등 카드 아래 내용
@@ -83,6 +96,7 @@ export function TaskCard({
   task,
   requestId,
   highlighted,
+  spotlight,
   leading,
   actions,
   footer,
@@ -92,6 +106,7 @@ export function TaskCard({
   task: Task
   requestId?: string
   highlighted?: boolean
+  spotlight?: 'running' | 'failed'
   leading?: ReactNode
   actions?: ReactNode
   footer?: ReactNode
@@ -101,32 +116,20 @@ export function TaskCard({
   const departmentName = useDepartmentNames()
   const forbidden = task.risk === 'FORBIDDEN'
   const [open, setOpen] = useState(defaultOpen)
+  const edge = spotlight ? EDGE[spotlight] : highlighted ? EDGE.changed : ''
   return (
-    <article
-      className={`rounded-xl border ${
-        forbidden
-          ? 'border-rule bg-forbidden-soft/50'
-          : highlighted
-            ? 'border-medium bg-sheet ring-2 ring-medium/30'
-            : 'border-rule bg-sheet'
-      }`}
-    >
+    <article className={`${forbidden ? 'bg-sheet-alt' : ''} ${edge}`}>
       <div className="flex gap-3 p-5">
-        {leading && <div className="pt-1">{leading}</div>}
+        {leading && <div className="pt-1.5">{leading}</div>}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
               <RiskBadge risk={task.risk} />
-              <h3 className={`text-lg font-semibold ${forbidden ? 'text-forbidden' : ''}`}>
-                {forbidden && <Lock size={14} className="mr-1 inline-block align-[-2px]" aria-hidden />}
-                {task.title}
-              </h3>
+              <h3 className={`text-lg font-semibold ${forbidden ? 'text-forbidden' : ''}`}>{task.title}</h3>
               <span className="font-mono text-xs text-ink-3">{task.id}</span>
-              {highlighted && (
-                <span className="rounded bg-medium-soft px-1.5 py-0.5 text-xs font-medium text-medium">바뀐 작업</span>
-              )}
+              {highlighted && <span className="text-xs font-semibold text-medium">바뀐 작업</span>}
             </div>
-            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+            <div className="flex shrink-0 flex-wrap items-center gap-2">
               {showStatus && <TaskStatusBadge status={task.status} />}
               {actions}
             </div>
@@ -164,8 +167,8 @@ export function TaskCard({
 
           {!forbidden && (
             <details className="group mt-3" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
-              <summary className="flex list-none flex-wrap items-center gap-x-4 gap-y-1.5 [&::-webkit-details-marker]:hidden">
-                <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rule-strong bg-sheet px-3 text-sm font-medium text-ink transition-colors hover:border-seal hover:text-seal">
+              <summary className="flex min-h-8 list-none flex-wrap items-center gap-x-4 gap-y-1 [&::-webkit-details-marker]:hidden">
+                <span className="inline-flex items-center gap-1 text-sm font-medium text-seal hover:underline">
                   <span className="group-open:hidden">자세히 보기</span>
                   <span className="hidden group-open:inline">접기</span>
                   <ChevronDown size={15} className="transition-transform group-open:rotate-180" aria-hidden />
@@ -176,7 +179,7 @@ export function TaskCard({
                   <span>승인: {approversText(task.requiredApprovers)}</span>
                 </span>
               </summary>
-              <div className="mt-4 flex flex-col gap-4">
+              <div className="mt-4 flex flex-col gap-6">
                 <ChangeDetails task={task} />
                 <section aria-label="실제 변경 내용" className="flex flex-col gap-2">
                   <div>
@@ -191,7 +194,7 @@ export function TaskCard({
             </details>
           )}
 
-          {footer && <div className="mt-3 border-t border-rule pt-3">{footer}</div>}
+          {footer && <div className="mt-3">{footer}</div>}
         </div>
       </div>
     </article>

@@ -48,7 +48,7 @@ export function TodoPanel({ emptyText }: { emptyText: string }) {
               <li key={group.requestId}>
                 <Link
                   to={`/approvals/${group.requestId}`}
-                  className="grid grid-cols-[4.25rem_minmax(0,1fr)_minmax(0,11rem)_7rem] items-center gap-x-4 px-4 py-3.5 hover:bg-seal-soft/40"
+                  className="grid grid-cols-[4.25rem_minmax(0,1fr)_minmax(0,11rem)_7rem] items-center gap-x-4 px-4 py-3.5 hover:bg-sheet-alt"
                 >
                   <span>
                     <RiskBadge risk={top.risk} />
@@ -93,7 +93,7 @@ function RequestLine({ request, projectName, external }: { request: RequestSumma
   return (
     <Link
       to={pathFor(request, external)}
-      className="grid grid-cols-[6.5rem_minmax(0,1fr)_minmax(0,11rem)_10rem_6rem] items-center gap-x-4 px-4 py-3.5 hover:bg-seal-soft/40"
+      className="grid grid-cols-[6.5rem_minmax(0,1fr)_minmax(0,11rem)_10rem_6rem] items-center gap-x-4 px-4 py-3.5 hover:bg-sheet-alt"
     >
       <span>
         <RequestStatusBadge status={request.status} />
@@ -177,7 +177,7 @@ const DEPARTMENT_MEASURES: Array<{ key: 'requests' | 'pendingApprovals' | 'runni
   { key: 'running', label: '실행 중' },
 ]
 
-const SUBTITLE = 'mb-3 text-sm font-medium text-ink-2'
+const SUBTITLE = 'mb-3 text-sm font-semibold text-ink'
 
 function RiskDistribution({ distribution, total }: { distribution: Dashboard['riskDistribution']; total: number }) {
   return (
@@ -219,7 +219,7 @@ function StatusCounts({
                 <li key={status}>
                   <Link
                     to={statusTo(status)}
-                    className="-mx-1.5 flex items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-seal-soft/40"
+                    className="-mx-1.5 flex items-center justify-between gap-2 rounded px-1.5 py-1 hover:bg-sheet-alt"
                   >
                     <RequestStatusBadge status={status} />
                     <span className="text-sm font-medium tabular-nums">{counts[status]}</span>
@@ -286,7 +286,7 @@ export function DashboardDetails({
   if (riskTotal === 0 && groups.length === 0 && departments.length === 0) return null
 
   return (
-    <details className="group rounded-xl border border-rule bg-sheet shadow-card">
+    <details className="group rounded-xl border border-rule bg-sheet">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-4 py-3 text-base font-semibold hover:bg-sheet-alt [&::-webkit-details-marker]:hidden">
         현황 자세히
         <ChevronDown size={16} className="text-ink-3 transition-transform group-open:rotate-180" aria-hidden />

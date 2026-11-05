@@ -9,47 +9,32 @@ export interface Step {
   state: 'done' | 'current' | 'error' | 'todo'
 }
 
+const BAR: Record<Step['state'], string> = {
+  done: 'border-seal',
+  current: 'border-seal',
+  error: 'border-high',
+  todo: 'border-rule',
+}
+
+const LABEL: Record<Step['state'], string> = {
+  done: 'text-ink-2',
+  current: 'font-semibold text-ink',
+  error: 'font-semibold text-high',
+  todo: 'text-ink-3',
+}
+
 /** 가로 단계 표시. 지금 어디까지 왔는지 한 줄로 보여 준다. 순서가 있는 흐름에만 쓴다. */
 export function Stepper({ steps }: { steps: Step[] }) {
   return (
-    <ol className="flex w-full">
-      {steps.map((step, index) => (
-        <li key={step.key} className="relative flex flex-1 flex-col items-center text-center" aria-current={step.state === 'current' ? 'step' : undefined}>
-          {index > 0 && (
-            <span
-              aria-hidden
-              className={`absolute top-3.5 right-1/2 h-0.5 w-full ${
-                step.state === 'todo' ? 'bg-rule-strong' : step.state === 'error' ? 'bg-high' : 'bg-seal'
-              }`}
-            />
-          )}
-          <span
-            className={`relative z-10 inline-flex size-7 items-center justify-center rounded-full text-xs font-semibold ${
-              step.state === 'done'
-                ? 'bg-seal text-white'
-                : step.state === 'current'
-                  ? 'bg-sheet text-seal ring-2 ring-seal'
-                  : step.state === 'error'
-                    ? 'bg-high text-white'
-                    : 'bg-paper text-ink-3 ring-1 ring-rule-strong'
-            }`}
-          >
-            {step.state === 'done' ? (
-              <Check size={15} aria-hidden />
-            ) : step.state === 'error' ? (
-              <X size={15} aria-hidden />
-            ) : (
-              index + 1
-            )}
-          </span>
-          <span
-            className={`mt-1.5 text-base ${
-              step.state === 'todo' ? 'text-ink-3' : 'font-semibold text-ink'
-            } ${step.state === 'error' ? 'text-high' : ''}`}
-          >
+    <ol className="flex w-full gap-1">
+      {steps.map((step) => (
+        <li key={step.key} className={`min-w-0 flex-1 border-t-2 pt-1.5 ${BAR[step.state]}`} aria-current={step.state === 'current' ? 'step' : undefined}>
+          <span className={`inline-flex items-center gap-1 text-base ${LABEL[step.state]}`}>
+            {step.state === 'done' && <Check size={15} className="shrink-0 text-seal" aria-hidden />}
+            {step.state === 'error' && <X size={15} className="shrink-0" aria-hidden />}
             {step.label}
           </span>
-          {step.hint && <span className="text-xs text-ink-3">{step.hint}</span>}
+          {step.hint && <span className="block text-xs text-ink-3">{step.hint}</span>}
         </li>
       ))}
     </ol>

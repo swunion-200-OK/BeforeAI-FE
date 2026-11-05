@@ -182,7 +182,7 @@ export default function RequestListPage() {
         )}
         {items.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="sheet-table [&_td]:py-3.5">
+            <table className="sheet-table">
               <thead>
                 <tr>
                   <th>상태</th>
