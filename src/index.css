@@ -107,66 +107,6 @@
   }
 }
 
-/*
- * 로그인 화면 왼쪽 문서에 도장을 한 번 찍는다. 세 움직임은 길이가 같아 함께 맞물린다.
- * 48%(720ms)가 닿는 순간이다. 끝나면 도장은 문서 오른쪽 위에 서 있다.
- */
-@keyframes login-tool {
-  0%,
-  13% {
-    transform: translate(var(--login-tool-x), var(--login-tool-y));
-    animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1);
-  }
-  40% {
-    transform: translate(0, -3rem);
-    animation-timing-function: cubic-bezier(0.6, 0, 1, 1);
-  }
-  48%,
-  52% {
-    transform: translate(0, 0) scale(1.02, 0.95);
-    animation-timing-function: cubic-bezier(0, 0, 0.3, 1);
-  }
-  62% {
-    transform: translate(0, -3rem);
-    animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1);
-  }
-  100% {
-    transform: translate(var(--login-tool-x), var(--login-tool-y));
-  }
-}
-
-@keyframes login-mark {
-  0%,
-  47.9% {
-    opacity: 0;
-    background-color: transparent;
-  }
-  48% {
-    opacity: 1;
-    background-color: color-mix(in srgb, var(--color-stamp) 30%, transparent);
-  }
-  75%,
-  100% {
-    opacity: 1;
-    background-color: transparent;
-  }
-}
-
-@keyframes login-paper {
-  0%,
-  45% {
-    translate: 0 0;
-  }
-  48%,
-  52% {
-    translate: 0 2px;
-  }
-  60%,
-  100% {
-    translate: 0 0;
-  }
-}
-
 @keyframes toast {
   from {
     transform: translateY(6px);
@@ -337,21 +277,6 @@
     background-color: var(--color-sheet-alt);
   }
 
-  /* 로그인 화면의 도장. 애니메이션이 없어도(움직임 줄이기) 이 자리에 서 있고 찍힌 자국이 보인다 */
-  .login-tool {
-    --login-tool-x: 3.25rem;
-    --login-tool-y: -10rem;
-    transform: translate(var(--login-tool-x), var(--login-tool-y));
-    transform-origin: 50% 100%;
-    animation: login-tool 1500ms both;
-  }
-  .login-mark {
-    animation: login-mark 1500ms linear both;
-  }
-  .login-paper {
-    animation: login-paper 1500ms ease-out both;
-  }
-
   /* 외부망 띠 */
   .band-external {
     background: repeating-linear-gradient(
@@ -384,10 +309,7 @@
   }
   /* 도장은 움직임 없이 바로 찍혀 있다 */
   .animate-stamp,
-  .animate-stamp-late,
-  .login-tool,
-  .login-mark,
-  .login-paper {
+  .animate-stamp-late {
     animation: none !important;
   }
 }
