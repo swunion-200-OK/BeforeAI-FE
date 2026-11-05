@@ -36,7 +36,7 @@ function AddRuleModal({ onClose }: { onClose: () => void }) {
   const add = useMutation({
     mutationFn: () => forbiddenApi.addRule({ ...input, departmentId: selected }),
     onSuccess: async () => {
-      toast.success('금지 규칙을 추가했습니다. 실행기 로컬 정책에도 바로 반영됩니다')
+      toast.success('금지 규칙을 추가했습니다. 웹쉘 정책에도 바로 반영됩니다')
       await refresh()
       onClose()
     },
@@ -134,7 +134,7 @@ function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
   const confirm = useMutation({
     mutationFn: (proposal: ForbiddenProposal) => forbiddenApi.confirm(proposal.id),
     onSuccess: async () => {
-      toast.success('제안을 확정했습니다. 서비스 정책과 실행기 로컬 정책에 반영됩니다')
+      toast.success('제안을 확정했습니다. 서비스 정책과 웹쉘 정책에 반영됩니다')
       setConfirming(null)
       await refresh()
     },
@@ -177,7 +177,7 @@ function OpenProposals({ proposals }: { proposals: ForbiddenProposal[] }) {
             <p>
               {departmentName(confirming.departmentId)}의 <Mono>{confirming.target}</Mono> 작업을 금지합니다.
             </p>
-            <p className="mt-2">확정하면 서비스 정책과 실행기 로컬 정책에 함께 반영됩니다.</p>
+            <p className="mt-2">확정하면 서비스 정책과 웹쉘 정책에 함께 반영됩니다.</p>
           </>
         )}
       </ConfirmModal>

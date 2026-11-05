@@ -1,6 +1,6 @@
 import type {
-  ApprovalEnvelope,
   ApprovalMatrixRow,
+  ApprovalRecord,
   AuditAction,
   AuditLog,
   Department,
@@ -9,13 +9,14 @@ import type {
   ErrorCode,
   ForbiddenProposal,
   ForbiddenRule,
-  LogLevel,
   LogLine,
   Network,
   NotificationSettings,
   Plan,
   PlanChange,
+  PlanHashTarget,
   Policy,
+  PolicyPreset,
   Project,
   ProjectSpec,
   RequestDetail,
@@ -25,6 +26,8 @@ import type {
   SpecChangeRequest,
   TaskType,
   User,
+  WebshellEvent,
+  WebshellExecution,
 } from '../types'
 
 // ── 서버 내부 모델 ─────────────────────────────────────────
@@ -65,8 +68,10 @@ export interface StoredRequest
       | 'events'
     > {
   plan: Plan | null
+  /** 화면 표시용 "누가 어떤 작업을 승인했는지" (기능 명세서 5.9 ⑥) */
   approvals: StoredApproval[]
-  envelopes: Array<{ planId: string; keyId: string; envelope: ApprovalEnvelope }>
+  /** 승인 기록 (명세 2.5). 웹쉘에는 이 안의 keyId와 envelope만 보낸다 */
+  approvalRecords: ApprovalRecord[]
   pendingAnalysis: PendingAnalysis | null
   submittedAt: string | null
   /** 시드용: 타이머를 돌리지 않고 그 상태로 멈춰 둔다 */
@@ -75,6 +80,11 @@ export interface StoredRequest
   execStepMs?: number
   execLine?: number
   rollback?: { documentId: string; version: number }
+  /** 시드 전용: 화면의 Plan과 다른 해시 대상을 승인 자료로 내려 준다 */
+  forgedHashTarget?: PlanHashTarget
+  /** 웹쉘이 서명해 돌려준 실행 상태 */
+  execution?: WebshellExecution
+  webshellEvents: WebshellEvent[]
 }
 
 export interface SlackMessage {
@@ -109,24 +119,35 @@ export interface MockDb {
   auditLogs: AuditLog[]
   slackOutbox: SlackMessage[]
   notificationSettings: Record<string, NotificationSettings>
-  /** 실행기 쪽 저장소. 서비스 DB와 별개라는 점을 코드에서도 나눠 둔다 */
-  executor: {
-    plans: Record<string, true>
+  /** 웹쉘 쪽 저장소. 서비스 DB와 별개라는 점을 코드에서도 나눠 둔다 */
+  webshell: {
     usedNonces: string[]
-    keys: Array<{ keyId: string; userId: string; publicKey: string }>
-    localRules: Array<{ departmentId: string; taskType: TaskType; target: string }>
+    /**
+     * 웹쉘 정책 (기능 명세서 5.7, 5.9): 승인자 공개키 목록, 금지 규칙, 승인 기준표·규모 프리셋 사본.
+     * MOCK: 관리자 서명 확인은 흉내 내지 않고 배포하는 쪽에서 바로 고친다.
+     */
+    policy: {
+      keys: Array<{ keyId: string; userId: string; publicKey: string }>
+      forbiddenRules: Array<{ departmentId: string; taskType: TaskType; target: string }>
+      preset: PolicyPreset
+      matrix: ApprovalMatrixRow[]
+    }
   }
 }
 
 // ── 싱글턴 상태 ────────────────────────────────────────────
 
 const STORAGE_KEY = 'beforeai.mock.db.v1'
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 export const mockConfig = {
   latencyMs: 180,
   analysisMs: 1800,
   execStepMs: 650,
+  /** 웹쉘에 연결할 수 없을 때 실행 요청을 다시 시도하는 간격 */
+  webshellRetryMs: 5000,
+  /** false면 웹쉘 연결이 끊긴 것처럼 동작한다. 새로고침하면 true로 돌아온다 */
+  webshellReachable: true,
 }
 
 type LogListener = { onLine: (line: LogLine) => void; onEnd: () => void }
@@ -225,7 +246,7 @@ export function setStatus(request: StoredRequest, status: RequestStatus, by: str
   request.events.push({ status, at: request.updatedAt, by })
 }
 
-export const SYSTEM_ACTOR = { id: 'system', name: '실행기' }
+export const SYSTEM_ACTOR = { id: 'system', name: '웹쉘' }
 
 export function ipFor(network: Network) {
   return network === 'INTERNAL' ? '100.64.12.34' : '203.0.113.10'
@@ -286,11 +307,8 @@ export function subscribeLogs(requestId: string, listener: LogListener) {
   }
 }
 
-export function appendLog(requestId: string, level: LogLevel, taskId: string | null, text: string) {
-  const database = db()
-  const lines = (database.logs[requestId] ??= [])
-  const line: LogLine = { seq: lines.length + 1, at: nowIso(), level, taskId, text }
-  lines.push(line)
+export function appendLog(requestId: string, line: LogLine) {
+  ;(db().logs[requestId] ??= []).push(line)
   logListeners.get(requestId)?.forEach((listener) => listener.onLine(line))
 }
 

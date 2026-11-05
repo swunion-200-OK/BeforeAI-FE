@@ -1,6 +1,8 @@
 /** 요청의 상태 전이 (기능 명세서 6장, API 명세서 6장). 라우트는 이 함수들만 부른다. */
+import { hashService, toHashTarget } from '../../crypto/hashService'
 import { makeUnifiedDiff } from '../../lib/diff'
 import type {
+  ApprovalContext,
   ApprovalEnvelope,
   Plan,
   PlanChange,
@@ -20,7 +22,6 @@ import {
   makePlan,
   toTask,
 } from './analysis'
-import { registerPlan, requestExecution, scheduleExecution } from './executor'
 import {
   buildRequiredApprovers,
   isCandidate,
@@ -28,7 +29,6 @@ import {
   isSelfApprovable,
   isTaskFullyApproved,
   matchRequirement,
-  requirementsOf,
   toApprovalStatus,
 } from './policy'
 import {
@@ -47,6 +47,14 @@ import {
   type StoredRequest,
   type StoredUser,
 } from './store'
+import {
+  assertWebshellReachable,
+  isAwaitingExecution,
+  reportFinalStatus,
+  requestExecution,
+  scheduleExecution,
+  scheduleExecutionRetry,
+} from './webshell'
 
 const MAX_ANALYSIS_ATTEMPTS = 3
 
@@ -111,7 +119,8 @@ export function createRequest(
     updatedAt: now,
     plan: null,
     approvals: [],
-    envelopes: [],
+    approvalRecords: [],
+    webshellEvents: [],
     pendingAnalysis: pending,
     submittedAt: null,
     clarification: null,
@@ -245,7 +254,7 @@ function applyPlanChanges(
   request.plan = makePlan(request.id, project, nextTasks, previous.kind)
   request.currentPlanId = request.plan.id
   request.approvals = []
-  request.envelopes = []
+  request.approvalRecords = []
   request.changedTaskIds = returnStatus === 'REAPPROVAL_REQUIRED' ? changedIds : []
   request.removedTaskTitles = returnStatus === 'REAPPROVAL_REQUIRED' ? removedTitles : []
   setStatus(request, returnStatus, 'AI 분석')
@@ -260,7 +269,6 @@ function submitResponse(request: StoredRequest): SubmitResponse {
     status: request.status,
     planId: plan.id,
     planHash: plan.planHash as string,
-    executorSignature: plan.executorSignature as string,
     selfApprovableTaskIds: plan.tasks.filter(isSelfApprovable).map((t) => t.id),
   }
 }
@@ -269,7 +277,7 @@ function notifyApprovers(request: StoredRequest) {
   const plan = request.plan as Plan
   const ids = plan.tasks
     .filter((t) => t.status === 'PENDING')
-    .flatMap((t) => requirementsOf(t).flatMap((r) => r.candidates ?? []))
+    .flatMap((t) => t.requiredApprovers.flatMap((r) => r.candidates ?? []))
   notify(
     ids,
     `승인 요청이 도착했습니다: ${request.prompt.slice(0, 30)}`,
@@ -278,6 +286,7 @@ function notifyApprovers(request: StoredRequest) {
   )
 }
 
+/** 제출 단계에서는 웹쉘을 호출하지 않는다. 표시용 해시는 웹 서비스가 2.3 규칙으로 만든다 (명세 4.3). */
 export function submitRequest(request: StoredRequest, user: StoredUser): SubmitResponse {
   assertRequester(request, user)
   assertStatus(request, ['REVIEWING', 'REAPPROVAL_REQUIRED', 'VERIFICATION_FAILED'])
@@ -288,7 +297,7 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
   }
   // 부분완료에서 실패 작업을 모두 지웠다면 승인받을 작업이 없다. 승인대기에 멈추지 않고 그대로 끝낸다.
   if (plan.tasks.every((t) => t.status === 'BLOCKED' || t.status === 'SUCCEEDED')) {
-    registerPlan(plan)
+    plan.planHash = hashService.computePlanHash(plan)
     setStatus(request, 'COMPLETED', user.name)
     audit(user, 'SUBMITTED', { requestId: request.id }, { planHash: plan.planHash, nothingLeft: true })
     return submitResponse(request)
@@ -299,9 +308,10 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
     if (task.status !== 'BLOCKED' && task.status !== 'SUCCEEDED') task.status = 'PENDING'
   }
   request.approvals = []
-  request.envelopes = []
+  request.approvalRecords = []
   request.failedChecks = []
-  registerPlan(plan)
+  request.forgedHashTarget = undefined
+  plan.planHash = hashService.computePlanHash(plan)
   request.submittedAt = nowIso()
   setStatus(request, 'PENDING_APPROVAL', user.name)
   audit(user, 'SUBMITTED', { requestId: request.id }, { planHash: plan.planHash })
@@ -309,9 +319,13 @@ export function submitRequest(request: StoredRequest, user: StoredUser): SubmitR
   return submitResponse(request)
 }
 
-export function approvalContext(request: StoredRequest, user: StoredUser, network: 'INTERNAL' | 'EXTERNAL') {
+export function approvalContext(
+  request: StoredRequest,
+  user: StoredUser,
+  network: 'INTERNAL' | 'EXTERNAL',
+): ApprovalContext {
   const plan = request.plan
-  if (!plan?.planHash || !plan.executorSignature) {
+  if (!plan?.planHash) {
     throw new HttpError(409, 'INVALID_STATE', '아직 제출되지 않은 요청입니다')
   }
   const signedBefore = request.approvals.some((a) => a.userId === user.id)
@@ -323,12 +337,12 @@ export function approvalContext(request: StoredRequest, user: StoredUser, networ
   const blocked = network === 'EXTERNAL' ? eligible.filter((t) => !isExternallyApprovable(t)) : []
   return {
     requestId: request.id,
-    plan,
+    plan: { id: plan.id, tasks: plan.tasks },
     planHash: plan.planHash,
-    executorSignature: plan.executorSignature,
+    hashTarget: request.forgedHashTarget ?? toHashTarget(plan),
     approvableTaskIds: eligible.filter((t) => !blocked.includes(t)).map((t) => t.id),
     blockedTaskIds: blocked.map((t) => t.id),
-    blockedReason: blocked.length ? ('INTERNAL_NETWORK_ONLY' as const) : null,
+    blockedReason: blocked.length ? 'INTERNAL_NETWORK_ONLY' : null,
     network,
   }
 }
@@ -362,7 +376,18 @@ export function submitApproval(
   }
 
   const at = nowIso()
-  request.envelopes.push({ planId: plan.id, keyId: body.keyId, envelope: body.envelope })
+  request.approvalRecords.push({
+    id: crypto.randomUUID(),
+    requestId: request.id,
+    planId: plan.id,
+    planHash: body.planHash,
+    taskIds: body.taskIds,
+    approverId: user.id,
+    keyId: body.keyId,
+    network,
+    envelope: body.envelope,
+    createdAt: at,
+  })
   for (const { task, requirement } of matched) {
     request.approvals.push({
       planId: plan.id,
@@ -381,8 +406,8 @@ export function submitApproval(
 
   const remaining = plan.tasks.filter((t) => t.status === 'PENDING').map((t) => t.id)
   const approved = plan.tasks.filter((t) => t.status === 'APPROVED').map((t) => t.id)
-  const executionRequested = remaining.length === 0
-  if (executionRequested) requestExecution(request)
+  // 웹쉘에 연결할 수 없으면 false가 되고, 상태는 PENDING_APPROVAL로 남아 웹 서비스가 다시 시도한다 (명세 4.5).
+  const executionRequested = remaining.length === 0 && requestExecution(request)
   return {
     requestId: request.id,
     status: request.status,
@@ -440,6 +465,7 @@ function canKill(request: StoredRequest, user: StoredUser): boolean {
 export function killRequest(request: StoredRequest, user: StoredUser, reason: string) {
   assertStatus(request, ['RUNNING'])
   if (!canKill(request, user)) throw new HttpError(403, 'FORBIDDEN_ROLE', '중단 권한이 없습니다')
+  assertWebshellReachable()
   const plan = request.plan as Plan
   const skipped: string[] = []
   for (const task of plan.tasks) {
@@ -451,6 +477,7 @@ export function killRequest(request: StoredRequest, user: StoredUser, reason: st
   request.kill = { by: user.name, reason, at: nowIso(), skippedTaskIds: skipped }
   setStatus(request, 'KILLED', user.name)
   audit(user, 'KILLED', { requestId: request.id, taskIds: skipped }, { reason })
+  reportFinalStatus(request)
   endLogs(request.id)
   return { id: request.id, status: request.status, skippedTaskIds: skipped }
 }
@@ -468,10 +495,10 @@ export function retryFailedTasks(request: StoredRequest, user: StoredUser): Subm
   request.plan = makePlan(request.id, project, tasks, previous.kind)
   request.currentPlanId = request.plan.id
   request.approvals = []
-  request.envelopes = []
+  request.approvalRecords = []
   // 재시도 프롬프트에는 강제 실패 키워드를 남기지 않아 두 번째 실행은 성공한다.
   request.prompt = request.prompt.replace('#실행실패', '').trim()
-  registerPlan(request.plan)
+  request.plan.planHash = hashService.computePlanHash(request.plan)
   request.submittedAt = nowIso()
   setStatus(request, 'PENDING_APPROVAL', user.name)
   audit(user, 'SUBMITTED', { requestId: request.id }, { retry: true, planHash: request.plan.planHash })
@@ -509,14 +536,16 @@ export function requestRollback(
     project,
     request.requester,
   )
+  // 제출과 같다 (명세 4.2): 금지 작업만 있는 Plan은 승인대기로 보내지 않는다.
+  if (task.status === 'BLOCKED') throw new HttpError(422, 'FORBIDDEN_TASK', '금지 작업이라 이 문서를 되돌릴 수 없습니다')
   // TODO(spec): 롤백 Plan이 같은 요청에 붙는지 새 요청인지 명세가 갈린다(source: ROLLBACK vs 상태 흐름표).
   // 상태 흐름표를 따라 같은 요청에서 PENDING_APPROVAL → ROLLING_BACK으로 진행한다.
   request.plan = makePlan(request.id, project, [task], 'ROLLBACK')
   request.currentPlanId = request.plan.id
   request.approvals = []
-  request.envelopes = []
+  request.approvalRecords = []
   request.rollback = body
-  registerPlan(request.plan)
+  request.plan.planHash = hashService.computePlanHash(request.plan)
   request.submittedAt = nowIso()
   setStatus(request, 'PENDING_APPROVAL', user.name)
   audit(user, 'ROLLBACK_REQUESTED', { requestId: request.id, taskIds: [task.id] }, { ...body })
@@ -530,7 +559,7 @@ export function reapproveAfterOwnerChange(projectId: string, removedIds: string[
   for (const request of db().requests) {
     if (request.projectId !== projectId || request.status !== 'PENDING_APPROVAL' || !request.plan) continue
     const affected = request.plan.tasks.filter((task) =>
-      requirementsOf(task).some(
+      task.requiredApprovers.some(
         (r) => r.rule === 'PROJECT_OWNER' && r.candidates?.some((id) => removedIds.includes(id)),
       ),
     )
@@ -538,12 +567,13 @@ export function reapproveAfterOwnerChange(projectId: string, removedIds: string[
     request.changedTaskIds = affected.map((t) => t.id)
     request.removedTaskTitles = []
     request.approvals = []
-    request.envelopes = []
+    request.approvalRecords = []
     setStatus(request, 'REAPPROVAL_REQUIRED', actorName)
   }
 }
 
 export function killAll(user: StoredUser, reason: string) {
+  assertWebshellReachable()
   const running = db().requests.filter((r) => r.status === 'RUNNING')
   return running.map((request) => {
     killRequest(request, user, reason)
@@ -557,6 +587,7 @@ export function resumeTimers() {
     if (request.frozen) continue
     if (request.status === 'ANALYZING') scheduleAnalysis(request.id)
     if (request.status === 'RUNNING' || request.status === 'ROLLING_BACK') scheduleExecution(request.id)
+    if (isAwaitingExecution(request)) scheduleExecutionRetry(request.id)
   }
 }
 

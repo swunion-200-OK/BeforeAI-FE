@@ -195,7 +195,6 @@ export function makePlan(
     repository: project.repository,
     baseCommit: project.baseCommit,
     planHash: null,
-    executorSignature: null,
     tasks,
   }
 }

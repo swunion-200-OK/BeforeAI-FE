@@ -76,13 +76,12 @@ export const PRESET_LABEL: Record<PolicyPreset, string> = { SMALL: '소규모', 
 
 export const FAILED_CHECK_LABEL: Record<FailedCheck, string> = {
   DECRYPT_FAILED: '승인 서명을 복호화할 수 없음 (중간 변조 또는 다른 키로 암호화)',
-  PLAN_HASH_MISMATCH: '다시 계산한 해시가 보관한 해시 또는 서명의 해시와 다름',
-  UNKNOWN_PLAN: '실행기가 만들지 않은 해시',
+  PLAN_HASH_MISMATCH: '직접 계산한 해시가 서명의 해시와 다름 (Plan이 바뀜)',
   SIGNATURE_INVALID: '서명이 공개키로 검증되지 않음',
-  KEY_NOT_REGISTERED: '로컬 정책에 없거나 폐기된 키',
+  KEY_NOT_REGISTERED: '웹쉘 정책에 없거나 폐기된 키',
   NONCE_ALREADY_USED: '이미 실행에 쓴 서명',
-  MISSING_REQUIRED_APPROVER: '필요한 승인권자의 서명이 없음',
-  FORBIDDEN_TASK: '로컬 정책의 금지 작업이 포함됨',
+  MISSING_REQUIRED_APPROVER: '필요한 승인권자(예: 담당자)의 서명이 없음',
+  FORBIDDEN_TASK: '웹쉘 정책의 금지 작업이 포함됨',
 }
 
 export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {

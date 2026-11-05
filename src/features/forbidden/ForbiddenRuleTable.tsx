@@ -5,7 +5,7 @@ import { formatDateTime } from '../../lib/format'
 import { TASK_TYPE_LABEL } from '../../lib/labels'
 import { useDepartmentNames } from '../../lib/queries'
 
-export const RELEASE_PENDING_NOTICE = '실행기 로컬 콘솔에서 관리자 재확인 후 실제 해제됩니다'
+export const RELEASE_PENDING_NOTICE = '웹쉘 서버 콘솔에서 관리자 재확인 후 실제 해제됩니다'
 
 function RuleStatus({ rule }: { rule: ForbiddenRule }) {
   if (rule.status === 'ACTIVE') return <span className="whitespace-nowrap text-ink-2">적용 중</span>

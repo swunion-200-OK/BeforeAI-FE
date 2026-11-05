@@ -32,14 +32,16 @@ function KillSwitch({ requestId }: { requestId: string }) {
   )
 }
 
-/** 아직 승인이 덜 모인 작업마다 누구를 기다리는지 보여 준다. */
-function WaitingFor({ request }: { request: RequestDetail }) {
-  const rows = (request.plan?.tasks ?? []).flatMap((task) => {
+/** 아직 승인이 덜 모인 작업과 그 작업이 누구를 기다리는지. */
+function waitingRows(request: RequestDetail) {
+  return (request.plan?.tasks ?? []).flatMap((task) => {
     const status = approvalToShow(request, task)
     if (!status || status.requirements.every((item) => item.satisfied)) return []
     return [{ id: task.id, title: task.title, text: approvalSummary(status) }]
   })
-  if (rows.length === 0) return null
+}
+
+function WaitingFor({ rows }: { rows: ReturnType<typeof waitingRows> }) {
   return (
     <ul className="mt-2 mb-1 flex flex-col gap-1.5 text-base text-ink">
       {rows.map((row) => (
@@ -124,17 +126,27 @@ export function RequestStatusBanner({
           제출 전이라 아직 아무 승인도 없습니다.
         </Banner>
       )
-    case 'PENDING_APPROVAL':
+    case 'PENDING_APPROVAL': {
+      const waiting = waitingRows(request)
+      // 승인이 다 모였는데 승인대기면 웹쉘에 연결되지 않아 웹 서비스가 실행 요청을 다시 시도하는 중이다 (API 명세 4.5).
+      if (request.plan && waiting.length === 0) {
+        return (
+          <Banner tone="warning" title="승인은 모두 모였지만 웹쉘에 연결할 수 없습니다" action={action}>
+            연결되면 실행을 자동으로 다시 요청합니다.
+          </Banner>
+        )
+      }
       return (
         <Banner
           tone="info"
           title={request.plan?.kind === 'ROLLBACK' ? '문서 롤백 승인을 기다립니다' : '승인권자의 승인을 기다립니다'}
           action={action}
         >
-          <WaitingFor request={request} />
-          <p className="text-ink-2">승인이 모두 모이면 실행기가 서명과 해시를 다시 검증한 뒤 실행합니다.</p>
+          <WaitingFor rows={waiting} />
+          <p className="text-ink-2">승인이 모두 모이면 웹쉘이 서명과 해시를 직접 검증한 뒤 실행합니다.</p>
         </Banner>
       )
+    }
     case 'REAPPROVAL_REQUIRED':
       return (
         <Banner tone="warning" title="Plan이 바뀌어 기존 승인 서명이 모두 무효가 되었습니다" action={action}>
@@ -144,7 +156,7 @@ export function RequestStatusBanner({
       )
     case 'VERIFICATION_FAILED':
       return (
-        <Banner tone="danger" title="실행기가 승인 서명 검증에 실패해 실행하지 않았습니다" action={action}>
+        <Banner tone="danger" title="웹쉘이 승인 서명 검증에 실패해 실행하지 않았습니다" action={action}>
           <p>위변조 가능성이 있어 관리자와 부서 관리자에게 경보를 보냈습니다. 다시 제출하면 승인 서명을 새로 받습니다.</p>
           <ul className="mt-2 flex flex-col gap-1">
             {request.failedChecks.map((check) => (

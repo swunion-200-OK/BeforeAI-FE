@@ -7,6 +7,7 @@ import { ApiError, errorMessage } from "../../api/errors";
 import type {
   Plan,
   RequestDetail,
+  RequestStatus,
   SubmitApprovalResponse,
   Task,
   TaskApprovalStatus,
@@ -48,6 +49,17 @@ import { SignProgress, type SignRunState } from "./SignProgress";
 
 /** 단계가 눈에 보이도록 시연용으로 잠깐씩 멈춘다. */
 const STEP_DELAY_MS = 350;
+/** 웹쉘이 실행을 시작한 뒤의 상태 */
+const EXECUTION_STARTED: RequestStatus[] = [
+  "RUNNING",
+  "KILLED",
+  "COMPLETED",
+  "PARTIALLY_COMPLETED",
+  "FAILED",
+  "ROLLING_BACK",
+  "ROLLED_BACK",
+  "ROLLBACK_FAILED",
+];
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type DecisionKind = "reject" | "change";
@@ -60,7 +72,7 @@ function RequestMeta({
   taskCount,
 }: {
   request: RequestDetail;
-  plan: Plan | null | undefined;
+  plan: Pick<Plan, "kind" | "repository" | "baseCommit"> | null | undefined;
   planHash: string | undefined;
   taskCount: number;
 }) {
@@ -254,8 +266,9 @@ export function ApprovalDetail({
   // 다시 받기에 실패하면 이전 자료를 믿지 않는다. 옛 Plan에 무결성 ✅와 활성 버튼이 남으면 안 된다.
   const context = contextQuery.isError ? undefined : contextQuery.data;
   const integrity = useMemo(
-    () => (context ? verifyIntegrity(context, me.id) : null),
-    [context, me.id],
+    () =>
+      context ? verifyIntegrity(context, me.id, requestQuery.data?.projectId) : null,
+    [context, me.id, requestQuery.data?.projectId],
   );
 
   // 서명 대상은 승인 자료의 Plan이고, 진행 상태만 요청 상세에서 최신 값을 가져온다.
@@ -293,7 +306,9 @@ export function ApprovalDetail({
   const deviceKey = keysQuery.data?.find((key) => key.keyId === deviceKeyId);
   const keyChecking = keysQuery.isPending;
   const keyReady =
-    signingService.hasDeviceKey(me.id) && deviceKey?.status === "REGISTERED";
+    signingService.hasDeviceKey(me.id) &&
+    deviceKey?.status === "REGISTERED" &&
+    !integrity?.keyMissing;
 
   const sign = useMutation({
     meta: { silent: true },
@@ -303,6 +318,7 @@ export function ApprovalDetail({
         me,
         context,
         taskIds,
+        shownProjectId: requestQuery.data?.projectId,
         onStep: async (next) => {
           setStep(next);
           await delay(STEP_DELAY_MS);
@@ -418,10 +434,11 @@ export function ApprovalDetail({
     samePlan &&
     !contextQuery.isPlaceholderData;
 
-  // 키를 아직 안 만든 사람은 고정한 실행기 공개키도 없어 서명을 확인할 수 없다. 변조가 아니라 키 등록이 먼저다.
+  // 키를 아직 안 만든 사람은 고정한 웹쉘 공개키도 없어 서명할 수 없다. 변조가 아니라 키 등록이 먼저다.
   const onlyAwaitingKey = Boolean(
     integrity?.keyMissing &&
     integrity.hashOk &&
+    integrity.displayOk &&
     !keysQuery.isError &&
     !keyReady,
   );
@@ -450,8 +467,24 @@ export function ApprovalDetail({
 
   const approveLabel = docMode ? "적용" : "승인(서명)";
   const rejectLabel = docMode ? "미적용" : "거부";
-  const plan = context?.plan ?? request.plan;
+  // 저장소와 기준 커밋은 해시로 확인하는 hashTarget의 값을 보여 준다.
+  const plan =
+    request.plan && context
+      ? {
+          ...request.plan,
+          repository: context.hashTarget.repository,
+          baseCommit: context.hashTarget.baseCommit,
+        }
+      : request.plan;
   const nothingLeft = result?.response.remainingTaskIds.length === 0;
+  // 제출 결과는 그 순간의 값이다. 웹쉘 연결이 돌아와 다시 시도된 결과는 요청 상태로 따라간다.
+  const verificationFailed =
+    Boolean(result) &&
+    (result?.response.status === "VERIFICATION_FAILED" ||
+      request.status === "VERIFICATION_FAILED");
+  const executionRequested =
+    result?.response.executionRequested ||
+    (nothingLeft && EXECUTION_STARTED.includes(request.status));
   // 서명을 마쳐 더 고를 작업이 없으면 결정 버튼을 치운다. 남은 작업이 있으면 이어서 서명한다.
   // 이미 내 승인을 마친 요청을 다시 열었을 때도 같은 상태로 본다.
   const alreadyMine =
@@ -473,7 +506,7 @@ export function ApprovalDetail({
     notice = (
       <Banner
         tone="danger"
-        title="이 Plan은 실행기가 만든 내용과 다를 수 있습니다"
+        title="이 Plan은 실제로 서명할 내용과 다를 수 있습니다"
       >
         AI 설명은 검증되지 않은 참고 자료입니다. 실제 변경 내용을 확인하고,
         서명하지 말고 관리자에게 알려 주세요.
@@ -631,10 +664,10 @@ export function ApprovalDetail({
                 {signError}
               </Banner>
             )}
-            {result && result.response.status === "VERIFICATION_FAILED" && (
+            {verificationFailed && (
               <Banner
                 tone="danger"
-                title="실행기가 승인 서명 검증에 실패했습니다"
+                title="웹쉘이 승인 서명 검증에 실패했습니다"
               >
                 실행하지 않았습니다.{" "}
                 <Link
@@ -645,11 +678,11 @@ export function ApprovalDetail({
                 </Link>
               </Banner>
             )}
-            {result && result.response.status !== "VERIFICATION_FAILED" && (
+            {result && !verificationFailed && (
               <div className="flex items-center gap-3.5 rounded-lg bg-seal-soft p-3.5">
                 <ResultSeal label={result.doc ? "적용" : "승인"} />
                 <div className="min-w-0 text-sm break-keep text-seal-dark">
-                  {result.response.executionRequested ? (
+                  {executionRequested ? (
                     <>
                       <p className="text-base font-semibold">
                         필요한 승인이 모두 모여 실행을 요청했습니다
@@ -668,11 +701,13 @@ export function ApprovalDetail({
                           ? "적용으로 처리했습니다"
                           : "승인 서명을 제출했습니다"}
                       </p>
-                      <p>
-                        {nothingLeft
-                          ? ""
-                          : "다른 작업의 승인이 모이면 실행을 요청합니다."}
-                      </p>
+                      {request.status === "PENDING_APPROVAL" && (
+                        <p>
+                          {nothingLeft
+                            ? "웹쉘에 연결할 수 없어 실행 요청을 다시 시도합니다."
+                            : "다른 작업의 승인이 모이면 실행을 요청합니다."}
+                        </p>
+                      )}
                     </>
                   )}
                 </div>

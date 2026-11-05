@@ -237,7 +237,7 @@ function DocumentDetail({ document }: { document: DocumentSummary }) {
         onConfirm={() => rollback.mutate()}
         onClose={() => setConfirming(false)}
       >
-        바로 되돌리지 않습니다. 롤백 Plan도 같은 승인 절차(해시 확인, 서명, 실행기 검증)를 거친 뒤 실행되며, 실행되면 새
+        바로 되돌리지 않습니다. 롤백 Plan도 같은 승인 절차(해시 확인, 서명, 웹쉘 검증)를 거친 뒤 실행되며, 실행되면 새
         버전으로 저장됩니다.
       </ConfirmModal>
     </>

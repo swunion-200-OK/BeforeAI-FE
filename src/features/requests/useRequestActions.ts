@@ -8,7 +8,7 @@ import { submitWithSelfApproval, type SubmitOutcome } from '../approvals/approva
 
 /**
  * 제출 결과를 문구로 알린다. 제출(1차 확인)과 승인(2차)을 섞어 쓰지 않는다.
- * 본인 승인으로 승인이 다 모이면 그 자리에서 실행기가 검증하므로, 실패했는데 성공으로 알리지 않도록 상태를 다시 본다.
+ * 본인 승인으로 승인이 다 모이면 그 자리에서 웹쉘이 검증하므로, 실패했는데 성공으로 알리지 않도록 상태를 다시 본다.
  */
 async function announceSubmit(requestId: string, outcome: SubmitOutcome) {
   if (outcome.submit.status === 'COMPLETED') {
@@ -19,10 +19,12 @@ async function announceSubmit(requestId: string, outcome: SubmitOutcome) {
   if (outcome.executionRequested) {
     const current = await requestsApi.get(requestId).catch(() => null)
     if (current?.status === 'VERIFICATION_FAILED') {
-      toast.error(`${approved}. 하지만 실행기 검증에 실패해 실행하지 않았습니다. 실패 항목을 확인해 주세요`)
+      toast.error(`${approved}. 하지만 웹쉘 검증에 실패해 실행하지 않았습니다. 실패 항목을 확인해 주세요`)
       return
     }
     toast.success(`${approved}. 필요한 승인이 모두 모여 실행을 요청했습니다`)
+  } else if (outcome.executionDeferred) {
+    toast.info(`${approved}. 웹쉘에 연결할 수 없어 실행 요청을 다시 시도합니다`)
   } else if (outcome.selfApprovedTaskIds.length > 0) {
     toast.success(approved)
   } else {

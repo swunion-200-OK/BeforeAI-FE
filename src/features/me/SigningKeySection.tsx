@@ -38,13 +38,13 @@ function shorten(key: string) {
 
 class PinMismatchError extends Error {
   constructor() {
-    super('실행기 공개키가 고정해 둔 키와 다릅니다')
+    super('웹쉘 공개키가 고정해 둔 키와 다릅니다')
     this.name = 'PinMismatchError'
   }
 }
 
 function stepsFor(state: KeyState): Step[] {
-  const labels = ['키 만들기', '실행기 공개키 고정', '공개키 제출', '관리자 등록']
+  const labels = ['키 만들기', '웹쉘 공개키 고정', '공개키 제출', '관리자 등록']
   if (state === 'ready') return labels.map((label) => ({ key: label, label, state: 'done' }))
   if (state === 'waiting') {
     return labels.map((label, i) => ({ key: label, label, state: i < 3 ? 'done' : 'current' }))
@@ -52,7 +52,7 @@ function stepsFor(state: KeyState): Step[] {
   return labels.map((label, i) => ({ key: label, label, state: i === 0 ? 'current' : 'todo' }))
 }
 
-/** 승인 키 등록 (ADM-09): 기기에서 키 생성 → 실행기 공개키 고정 → 공개키 제출 → 관리자 등록 */
+/** 승인 키 등록 (ADM-09): 기기에서 키 생성 → 웹쉘 공개키 고정 → 공개키 제출 → 관리자 등록 */
 export function SigningKeySection({ me }: { me: Me }) {
   const refreshAll = useRefreshAll()
   const keys = useQuery({
@@ -62,7 +62,9 @@ export function SigningKeySection({ me }: { me: Me }) {
   const device = deviceStore.get(me.id)
   const hasDeviceKey = signingService.hasDeviceKey(me.id)
   const deviceKeyStatus = keys.data?.find((key) => key.keyId === device.keyId)?.status
-  const deviceKeyUsable = hasDeviceKey && (deviceKeyStatus === 'REGISTERED' || deviceKeyStatus === 'PENDING')
+  // 고정한 웹쉘 공개키가 없으면 서명을 암호화할 수 없어 쓸 수 없는 키다. 새로 만들어 고정한다.
+  const deviceKeyUsable =
+    hasDeviceKey && Boolean(device.pinnedWebshellKey) && (deviceKeyStatus === 'REGISTERED' || deviceKeyStatus === 'PENDING')
   // 다른 기기에 살아 있는 키가 있으면 새로 만들기 전에 확인한다.
   const activeKeyElsewhere = keys.data?.some((key) => key.status !== 'REVOKED') ?? false
 
@@ -72,13 +74,17 @@ export function SigningKeySection({ me }: { me: Me }) {
   const create = useMutation({
     meta: { silent: true },
     mutationFn: async () => {
-      // 실행기 공개키를 먼저 받아 둔다. 여기서 실패하면 기존 기기 키를 덮어쓰지 않는다.
-      const { publicKey: executorKey } = await meApi.executorPublicKey()
+      // 웹쉘 공개키를 먼저 받아 둔다. 여기서 실패하면 기존 기기 키를 덮어쓰지 않는다.
+      const webshellKey = await meApi.webshellPublicKey()
       const before = deviceStore.get(me.id)
       // 고정의 목적: 서버가 다른 키를 내밀어도 받아들이지 않는다.
-      if (before.pinnedExecutorKey && before.pinnedExecutorKey !== executorKey) throw new PinMismatchError()
+      const pinned = before.pinnedWebshellKey
+      if (pinned && (pinned.encryptionKey !== webshellKey.encryptionKey || pinned.signingKey !== webshellKey.signingKey)) {
+        throw new PinMismatchError()
+      }
       const { publicKey } = signingService.generateDeviceKey(me.id)
-      deviceStore.update(me.id, { pinnedExecutorKey: executorKey })
+      // TODO(spec): 지문 형식이 명세에 없어 서버가 준 값을 그대로 보여 준다. 정해지면 기기에서 다시 계산해 비교한다.
+      deviceStore.update(me.id, { pinnedWebshellKey: webshellKey })
       try {
         const key = await meApi.submitSigningKey(publicKey)
         deviceStore.update(me.id, { keyId: key.keyId })
@@ -89,7 +95,7 @@ export function SigningKeySection({ me }: { me: Me }) {
           keyId: before.keyId,
           secretKey: before.secretKey,
           publicKey: before.publicKey,
-          pinnedExecutorKey: before.pinnedExecutorKey,
+          pinnedWebshellKey: before.pinnedWebshellKey,
         })
         throw error
       }
@@ -107,7 +113,7 @@ export function SigningKeySection({ me }: { me: Me }) {
     },
   })
 
-  const state: KeyState = hasDeviceKey && deviceKeyStatus === 'REGISTERED' ? 'ready' : deviceKeyUsable ? 'waiting' : 'none'
+  const state: KeyState = deviceKeyUsable && deviceKeyStatus === 'REGISTERED' ? 'ready' : deviceKeyUsable ? 'waiting' : 'none'
   const view = STATE_VIEW[state]
   const revoked = state === 'none' && deviceKeyStatus === 'REVOKED'
   const elsewhere = state === 'none' && !revoked && activeKeyElsewhere
@@ -151,7 +157,7 @@ export function SigningKeySection({ me }: { me: Me }) {
         </div>
 
         {pinMismatch && (
-          <Banner tone="danger" title="실행기 공개키가 고정해 둔 키와 다릅니다">
+          <Banner tone="danger" title="웹쉘 공개키가 고정해 둔 키와 다릅니다">
             새 키를 만들지 않았습니다. 웹 서비스가 다른 키를 내미는 것일 수 있으니 관리자에게 알려 주세요.
           </Banner>
         )}
@@ -165,9 +171,9 @@ export function SigningKeySection({ me }: { me: Me }) {
             <div className="mt-4 flex flex-col gap-4">
               <Stepper steps={stepsFor(state)} />
               <p className="text-sm text-ink-2">승인 서명은 이 기기의 개인키로 만들고, 개인키는 기기 밖으로 나가지 않습니다.</p>
-              {device.pinnedExecutorKey && (
+              {device.pinnedWebshellKey && (
                 <p className="text-sm text-ink-2">
-                  고정한 실행기 공개키 <Mono>{shorten(device.pinnedExecutorKey)}</Mono>
+                  고정한 웹쉘 공개키 지문 <Mono>{shorten(device.pinnedWebshellKey.fingerprint)}</Mono>
                 </p>
               )}
               {keys.data.length > 0 && (

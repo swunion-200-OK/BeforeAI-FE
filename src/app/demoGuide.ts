@@ -78,9 +78,9 @@ export const DEMO_SCENARIOS: DemoGroup[] = [
     title: '차단',
     steps: [
       { label: '금지 작업이 포함된 Plan', userId: HONG, network: 'INTERNAL', path: fixed('/requests/new/r-forbidden') },
-      { label: '실행기 검증 실패와 실패 항목', userId: HONG, network: 'INTERNAL', path: fixed('/requests/r-verify-failed') },
+      { label: '웹쉘 검증 실패와 실패 항목', userId: HONG, network: 'INTERNAL', path: fixed('/requests/r-verify-failed') },
       { label: 'Plan이 변조되어 서명이 잠긴 화면', userId: KIM, network: 'INTERNAL', path: fixed('/approvals/r-tampered-hash') },
-      { label: '실행기 서명이 가짜인 화면', userId: KIM, network: 'INTERNAL', path: fixed('/approvals/r-impostor-sign') },
+      { label: '화면 내용이 서명 대상과 다른 경우', userId: KIM, network: 'INTERNAL', path: fixed('/approvals/r-display-mismatch') },
     ],
   },
   {

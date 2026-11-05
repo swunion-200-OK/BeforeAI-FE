@@ -50,6 +50,7 @@ import type {
   TaskType,
   TokenResponse,
   User,
+  WebshellPublicKey,
 } from './types'
 
 export const authApi = {
@@ -68,7 +69,7 @@ export const meApi = {
   enrollOtp: (code?: string) => http<{ secret: string; enrolled: boolean }>('POST', '/me/otp', { body: { code } }),
   submitSigningKey: (publicKey: string) => http<SigningKey>('POST', '/me/signing-keys', { body: { publicKey } }),
   signingKeys: () => http<Page<SigningKey>>('GET', '/me/signing-keys'),
-  executorPublicKey: () => http<{ publicKey: string }>('GET', '/executor/public-key'),
+  webshellPublicKey: () => http<WebshellPublicKey>('GET', '/webshell/public-key'),
   notificationSettings: () => http<NotificationSettings>('GET', '/me/notification-settings'),
   updateNotificationSettings: (body: NotificationSettings) =>
     http<NotificationSettings>('PUT', '/me/notification-settings', { body }),

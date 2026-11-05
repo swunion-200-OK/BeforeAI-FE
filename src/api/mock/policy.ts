@@ -1,8 +1,9 @@
 import type {
+  ApprovalMatrixRow,
   ApproverRequirement,
   ApproverRule,
+  PolicyPreset,
   Project,
-  RequiredApprovers,
   Risk,
   Task,
   TaskApprovalStatus,
@@ -11,66 +12,67 @@ import type {
 } from '../types'
 import { db, requireProject, type StoredRequest, type StoredUser } from './store'
 
-/** 기능 명세서 5.2 승인 기준표 + 5.5 규모별 프리셋 */
+/**
+ * 승인 기준표(기능 명세서 5.2)와 규모별 프리셋(5.5)으로 필요한 승인 규칙을 정한다.
+ * 규칙마다 1명이다. 웹 서비스는 서비스 정책으로, 웹쉘은 웹쉘 정책의 사본으로 각자 계산한다.
+ */
+export function requiredRules(
+  type: TaskType,
+  risk: Risk,
+  preset: PolicyPreset,
+  matrix: ApprovalMatrixRow[],
+): ApproverRule[] {
+  if (risk === 'FORBIDDEN') return []
+  const row = matrix.find((m) => m.taskType === type)
+  // 위험도는 기준표의 기본값보다 내릴 수 없다 (5.2). 기준표에 없는 유형은 가장 엄격하게 본다.
+  if (risk === 'HIGH' || (row?.defaultRisk ?? 'HIGH') === 'HIGH') {
+    const rules: ApproverRule[] = ['PROJECT_OWNER']
+    if (preset !== 'SMALL') rules.push('DEPT_MANAGER')
+    if (preset === 'LARGE') rules.push('ADMIN')
+    return rules
+  }
+  if (row?.approverRule === 'PROJECT_OWNER') return ['PROJECT_OWNER']
+  return [preset === 'LARGE' ? 'SAME_DEPT_OTHER' : 'ANYONE']
+}
+
+function candidatesOf(rule: ApproverRule, project: Project, requester: UserRef): string[] | undefined {
+  const active = db().users.filter((u) => u.active)
+  const ids = (users: typeof active) => users.map((u) => u.id)
+  switch (rule) {
+    case 'ANYONE':
+      return undefined
+    case 'PROJECT_OWNER':
+      return project.owners.map((o) => o.id)
+    case 'DEPT_MANAGER':
+      return ids(active.filter((u) => u.role === 'DEPT_MANAGER' && u.departmentId === project.departmentId))
+    case 'ADMIN':
+      return ids(active.filter((u) => u.role === 'ADMIN'))
+    case 'SAME_DEPT_OTHER':
+      return ids(active.filter((u) => u.departmentId === requester.departmentId && u.id !== requester.id))
+  }
+}
+
 export function buildRequiredApprovers(
   project: Project,
   requester: UserRef,
   type: TaskType,
   risk: Risk,
-): RequiredApprovers {
-  if (risk === 'FORBIDDEN') return { rule: 'ANYONE', count: 0 }
-  const { policy, matrix, users } = db()
-
-  if (risk === 'HIGH') {
-    const list: ApproverRequirement[] = [
-      { rule: 'PROJECT_OWNER', count: 1, candidates: project.owners.map((o) => o.id) },
-    ]
-    if (policy.preset !== 'SMALL') {
-      list.push({
-        rule: 'DEPT_MANAGER',
-        count: 1,
-        candidates: users
-          .filter((u) => u.role === 'DEPT_MANAGER' && u.departmentId === project.departmentId && u.active)
-          .map((u) => u.id),
-      })
-    }
-    if (policy.preset === 'LARGE') {
-      list.push({
-        rule: 'ADMIN',
-        count: 1,
-        candidates: users.filter((u) => u.role === 'ADMIN' && u.active).map((u) => u.id),
-      })
-    }
-    const [first, ...additional] = list
-    return additional.length ? { ...first, additional } : first
-  }
-
-  const row = matrix.find((m) => m.taskType === type)
-  const rule: ApproverRule = row?.approverRule ?? 'ANYONE'
-  if (rule === 'PROJECT_OWNER') {
-    return { rule, count: 1, candidates: project.owners.map((o) => o.id) }
-  }
-  if (policy.preset === 'LARGE') {
-    return {
-      rule: 'SAME_DEPT_OTHER',
-      count: 1,
-      candidates: users
-        .filter((u) => u.departmentId === requester.departmentId && u.id !== requester.id && u.active)
-        .map((u) => u.id),
-    }
-  }
-  return { rule: 'ANYONE', count: 1 }
+): ApproverRequirement[] {
+  const { policy, matrix } = db()
+  return requiredRules(type, risk, policy.preset, matrix).map((rule) => {
+    const candidates = candidatesOf(rule, project, requester)
+    return candidates ? { rule, count: 1, candidates } : { rule, count: 1 }
+  })
 }
 
-export function requirementsOf(task: Task): ApproverRequirement[] {
-  const { additional, ...first } = task.requiredApprovers
-  return [first, ...(additional ?? [])]
-}
-
-export function qualifies(user: StoredUser, requirement: ApproverRequirement, request: StoredRequest): boolean {
+export function qualifies(
+  user: StoredUser,
+  rule: ApproverRule,
+  request: Pick<StoredRequest, 'projectId' | 'requester'>,
+): boolean {
   if (!user.active) return false
   const project = requireProject(request.projectId)
-  switch (requirement.rule) {
+  switch (rule) {
     case 'ANYONE':
       return true
     case 'SAME_DEPT_OTHER':
@@ -100,15 +102,18 @@ export function matchRequirement(
     (a) => a.planId === request.currentPlanId && a.taskId === task.id && a.userId === user.id,
   )
   if (signed) return null
-  for (const requirement of requirementsOf(task)) {
-    const filled = approvalsFor(request, task.id, requirement.rule).length >= requirement.count
-    if (!filled && qualifies(user, requirement, request)) return requirement
-  }
-  return null
+  const open = task.requiredApprovers.filter(
+    (requirement) =>
+      approvalsFor(request, task.id, requirement.rule).length < requirement.count &&
+      qualifies(user, requirement.rule, request),
+  )
+  // 두 규칙에 다 해당하면 대신할 사람이 적은 쪽에 센다. 담당자를 겸한 부서 관리자가 먼저 서명해도 부서 관리자 칸이 막히지 않는다.
+  const rivals = (requirement: ApproverRequirement) => requirement.candidates?.length ?? Number.MAX_SAFE_INTEGER
+  return open.sort((a, b) => rivals(a) - rivals(b))[0] ?? null
 }
 
 export function isTaskFullyApproved(task: Task, request: StoredRequest): boolean {
-  return requirementsOf(task).every(
+  return task.requiredApprovers.every(
     (requirement) => approvalsFor(request, task.id, requirement.rule).length >= requirement.count,
   )
 }
@@ -127,7 +132,7 @@ export function isSelfApprovable(task: Task): boolean {
     task.status === 'PENDING' &&
     task.type !== 'DOC' &&
     (task.risk === 'LOW' || task.risk === 'MEDIUM') &&
-    requirementsOf(task).every((r) => r.rule === 'ANYONE')
+    task.requiredApprovers.every((r) => r.rule === 'ANYONE')
   )
 }
 
@@ -138,7 +143,7 @@ export function toApprovalStatus(request: StoredRequest): TaskApprovalStatus[] {
     .filter((task) => task.status !== 'BLOCKED')
     .map((task) => ({
       taskId: task.id,
-      requirements: requirementsOf(task).map((requirement) => {
+      requirements: task.requiredApprovers.map((requirement) => {
         const approvedBy = approvalsFor(request, task.id, requirement.rule).map((a) => ({
           userId: a.userId,
           name: a.name,
@@ -165,7 +170,7 @@ export function isCandidate(user: StoredUser, request: StoredRequest): boolean {
   return request.plan.tasks.some(
     (task) =>
       task.status !== 'BLOCKED' &&
-      requirementsOf(task).some((requirement) => qualifies(user, requirement, request)),
+      task.requiredApprovers.some((requirement) => qualifies(user, requirement.rule, request)),
   )
 }
 

@@ -12,9 +12,10 @@ import { useSubmitRequest } from './useRequestActions'
  * 문서 작업은 완성본을 보고 적용 여부를 정해야 하므로 자동 승인에서 뺀다 (기능 명세서 5.4).
  */
 function isSelfApprovable(task: Task) {
-  const { rule, additional } = task.requiredApprovers
   return (
-    task.type !== 'DOC' && (task.risk === 'LOW' || task.risk === 'MEDIUM') && rule === 'ANYONE' && !additional?.length
+    task.type !== 'DOC' &&
+    (task.risk === 'LOW' || task.risk === 'MEDIUM') &&
+    task.requiredApprovers.every((requirement) => requirement.rule === 'ANYONE')
   )
 }
 

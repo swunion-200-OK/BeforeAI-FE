@@ -14,7 +14,7 @@ export const ERROR_MESSAGES: Partial<Record<ErrorCode, string>> = {
   OWNER_MINIMUM: '담당자는 2명 이상이어야 합니다',
   RETRY_LIMIT: '분석 재시도 횟수(3회)를 넘었습니다',
   FORBIDDEN_TASK: '금지 작업이 포함되어 있습니다',
-  EXECUTOR_UNAVAILABLE: '실행기에 연결할 수 없습니다',
+  WEBSHELL_UNAVAILABLE: '웹쉘에 연결할 수 없습니다',
 }
 
 export class ApiError extends Error {

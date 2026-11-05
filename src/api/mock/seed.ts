@@ -7,6 +7,7 @@ import { sha256 } from '@noble/hashes/sha2.js'
 import { cryptoService } from '../../crypto/cryptoService'
 import { deviceStore } from '../../crypto/deviceStore'
 import { bytesToBase64 } from '../../crypto/encoding'
+import { hashService, toHashTarget } from '../../crypto/hashService'
 import { signingService } from '../../crypto/signingService'
 import { makeUnifiedDiff } from '../../lib/diff'
 import { explainTask } from '../../lib/explain'
@@ -26,7 +27,6 @@ import type {
   TaskType,
 } from '../types'
 import { defaultRisk, makePlan } from './analysis'
-import { EXECUTOR_PUBLIC_KEY, impostorSignature, registerPlan } from './executor'
 import {
   AUTH_BASE_COMMIT,
   AUTH_FILES,
@@ -37,8 +37,9 @@ import {
   DEPLOY_FILES,
   DEPLOY_SPEC,
 } from './fixtures'
-import { buildRequiredApprovers, requirementsOf } from './policy'
-import { SCHEMA_VERSION, db, ipFor, setDb, type MockDb, type StoredRequest, type StoredUser } from './store'
+import { buildRequiredApprovers } from './policy'
+import { SCHEMA_VERSION, SYSTEM_ACTOR, db, ipFor, setDb, type MockDb, type StoredRequest, type StoredUser } from './store'
+import { WEBSHELL_PUBLIC_KEY, signLogLine, signedExecution } from './webshell'
 
 const DEMO_PASSWORD = 'demo1234!'
 const encoder = new TextEncoder()
@@ -98,7 +99,15 @@ function emptyDb(): MockDb {
     auditLogs: [],
     slackOutbox: [],
     notificationSettings: {},
-    executor: { plans: {}, usedNonces: [], keys: [], localRules: [] },
+    webshell: {
+      usedNonces: [],
+      policy: {
+        keys: [],
+        forbiddenRules: [],
+        preset: 'SMALL',
+        matrix: DEFAULT_MATRIX.map((row) => ({ ...row })),
+      },
+    },
   }
 }
 
@@ -129,7 +138,7 @@ function seedPeople() {
       keyId: seed.key.keyId,
       secretKey: pair.secret,
       publicKey: pair.publicKey,
-      pinnedExecutorKey: EXECUTOR_PUBLIC_KEY,
+      pinnedWebshellKey: WEBSHELL_PUBLIC_KEY,
     })
     database.signingKeys.push({
       keyId: seed.key.keyId,
@@ -141,7 +150,7 @@ function seedPeople() {
       registeredAt: seed.key.status === 'REGISTERED' ? minutesAgo(60 * 24 * 6) : null,
     })
     if (seed.key.status === 'REGISTERED') {
-      database.executor.keys.push({ keyId: seed.key.keyId, userId: seed.id, publicKey: pair.publicKey })
+      database.webshell.policy.keys.push({ keyId: seed.key.keyId, userId: seed.id, publicKey: pair.publicKey })
     }
   }
 }
@@ -205,7 +214,11 @@ function seedProjects() {
     { id: 'rule-2', departmentId: 'd-infra', taskType: 'DEPLOY', target: 'production', reason: '운영 배포는 변경 관리 절차로만 합니다', status: 'ACTIVE', createdAt: minutesAgo(60 * 24 * 14) },
   )
   for (const rule of database.forbiddenRules) {
-    database.executor.localRules.push({ departmentId: rule.departmentId, taskType: rule.taskType, target: rule.target })
+    database.webshell.policy.forbiddenRules.push({
+      departmentId: rule.departmentId,
+      taskType: rule.taskType,
+      target: rule.target,
+    })
   }
   database.proposals.push({
     id: 'fp-1',
@@ -312,7 +325,8 @@ function addRequest(seed: SeedRequest): StoredRequest {
     updatedAt: events[events.length - 1].at,
     plan: null,
     approvals: [],
-    envelopes: [],
+    approvalRecords: [],
+    webshellEvents: [],
     pendingAnalysis: null,
     submittedAt: path.includes('PENDING_APPROVAL') ? events[path.indexOf('PENDING_APPROVAL')].at : null,
     clarification: null,
@@ -328,7 +342,8 @@ function addRequest(seed: SeedRequest): StoredRequest {
   if (tasks.length > 0) {
     request.plan = makePlan(request.id, project, tasks, seed.kind ?? 'NORMAL')
     request.currentPlanId = request.plan.id
-    if (path.includes('PENDING_APPROVAL')) registerPlan(request.plan)
+    if (path.includes('PENDING_APPROVAL')) request.plan.planHash = hashService.computePlanHash(request.plan)
+    if (path.includes('RUNNING')) request.execution = signedExecution(request, crypto.randomUUID())
   }
   database.requests.push(request)
   return request
@@ -351,14 +366,21 @@ function signFor(request: StoredRequest, userId: string, taskIds: string[], netw
     nonce: crypto.randomUUID(),
     network,
   })
-  request.envelopes.push({
+  request.approvalRecords.push({
+    id: crypto.randomUUID(),
+    requestId: request.id,
     planId: plan.id,
+    planHash: plan.planHash as string,
+    taskIds,
+    approverId: userId,
     keyId: device.keyId as string,
-    envelope: cryptoService.encryptForExecutor(signed, EXECUTOR_PUBLIC_KEY),
+    network,
+    envelope: cryptoService.encryptForWebshell(signed, WEBSHELL_PUBLIC_KEY.encryptionKey),
+    createdAt: at,
   })
   for (const taskId of taskIds) {
     const task = plan.tasks.find((t) => t.id === taskId) as Task
-    const requirement = requirementsOf(task)[0]
+    const requirement = task.requiredApprovers[0]
     request.approvals.push({
       planId: plan.id,
       taskId,
@@ -373,13 +395,15 @@ function signFor(request: StoredRequest, userId: string, taskIds: string[], netw
 }
 
 function addLogs(requestId: string, lines: Array<[LogLine['level'], string | null, string]>, ageMinutes: number) {
-  db().logs[requestId] = lines.map(([level, taskId, text], index) => ({
-    seq: index + 1,
-    at: minutesAgo(ageMinutes - index * 0.1),
-    level,
-    taskId,
-    text,
-  }))
+  db().logs[requestId] = lines.map(([level, taskId, text], index) =>
+    signLogLine(requestId, {
+      seq: index + 1,
+      at: minutesAgo(ageMinutes - index * 0.1),
+      level,
+      taskId,
+      text,
+    }),
+  )
 }
 
 function auditEntry(
@@ -391,7 +415,7 @@ function auditEntry(
   detail: Record<string, unknown> = {},
 ) {
   const database = db()
-  const actor = actorId === 'system' ? { id: 'system', name: '실행기' } : ref(actorId)
+  const actor = actorId === 'system' ? SYSTEM_ACTOR : ref(actorId)
   database.seq += 1
   database.auditLogs.push({
     id: `log-${database.seq}`,
@@ -592,7 +616,7 @@ function seedRequests() {
   addLogs(
     running.id,
     [
-      ['INFO', null, '[실행기] 승인 서명 검증 통과. 1회용 ID 소진, 웹쉘 세션을 엽니다'],
+      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
       ['INFO', 't-1', '[t-1] 로그인 테스트 보강 시작'],
       ['CMD', 't-1', '$ git apply tests_login.test.ts.patch'],
       ['SUCCESS', 't-1', '[t-1] 성공'],
@@ -615,7 +639,7 @@ function seedRequests() {
   addLogs(
     completed.id,
     [
-      ['INFO', null, '[실행기] 승인 서명 검증 통과. 1회용 ID 소진, 웹쉘 세션을 엽니다'],
+      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
       ['INFO', 't-1', '[t-1] README 장애 대응 절차 추가 시작'],
       ['INFO', 't-1', '문서 새 버전 저장'],
       ['SUCCESS', 't-1', '[t-1] 성공'],
@@ -623,7 +647,7 @@ function seedRequests() {
       ['CMD', 't-2', '$ npm test'],
       ['INFO', 't-2', 'Tests  43 passed (43)'],
       ['SUCCESS', 't-2', '[t-2] 성공'],
-      ['INFO', null, '[실행기] 웹쉘 세션을 닫습니다'],
+      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     600,
   )
@@ -641,14 +665,14 @@ function seedRequests() {
   addLogs(
     partial.id,
     [
-      ['INFO', null, '[실행기] 승인 서명 검증 통과. 1회용 ID 소진, 웹쉘 세션을 엽니다'],
+      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
       ['INFO', 't-1', '[t-1] 로그인 실패 메시지 변경 시작'],
       ['SUCCESS', 't-1', '[t-1] 성공'],
       ['INFO', 't-2', '[t-2] 스테이징 배포 시작'],
       ['CMD', 't-2', '$ ./deploy.sh staging'],
       ['ERROR', 't-2', 'error: rollout timed out after 300s'],
       ['ERROR', 't-2', '[t-2] 실패: 종료 코드 1'],
-      ['INFO', null, '[실행기] 웹쉘 세션을 닫습니다'],
+      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     320,
   )
@@ -667,10 +691,10 @@ function seedRequests() {
   addLogs(
     killed.id,
     [
-      ['INFO', null, '[실행기] 승인 서명 검증 통과. 1회용 ID 소진, 웹쉘 세션을 엽니다'],
+      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
       ['INFO', 't-1', '[t-1] 로그인 실패 메시지 변경 시작'],
       ['SUCCESS', 't-1', '[t-1] 성공'],
-      ['ERROR', null, '[실행기] 킬 스위치로 중단했습니다'],
+      ['ERROR', null, '[웹쉘] 킬 스위치로 중단했습니다'],
     ],
     471,
   )
@@ -708,11 +732,11 @@ function seedRequests() {
   addLogs(
     failed.id,
     [
-      ['INFO', null, '[실행기] 승인 서명 검증 통과. 1회용 ID 소진, 웹쉘 세션을 엽니다'],
+      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
       ['CMD', 't-1', '$ ./deploy.sh staging'],
       ['ERROR', 't-1', 'error: cluster unreachable'],
       ['ERROR', 't-1', '[t-1] 실패: 종료 코드 1'],
-      ['INFO', null, '[실행기] 웹쉘 세션을 닫습니다'],
+      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     990,
   )
@@ -743,11 +767,11 @@ function seedRequests() {
   addLogs(
     kimDone.id,
     [
-      ['INFO', null, '[실행기] 승인 서명 검증 통과. 1회용 ID 소진, 웹쉘 세션을 엽니다'],
+      ['INFO', null, '[웹쉘] 승인 서명 검증 통과. 1회용 ID 소진, 전용 세션을 엽니다'],
       ['CMD', 't-1', '$ npm test'],
       ['INFO', 't-1', 'Tests  43 passed (43)'],
       ['SUCCESS', 't-1', '[t-1] 성공'],
-      ['INFO', null, '[실행기] 웹쉘 세션을 닫습니다'],
+      ['INFO', null, '[웹쉘] 전용 세션을 닫습니다'],
     ],
     290,
   )
@@ -814,16 +838,19 @@ function seedRequests() {
   })
   tamperedHash.plan!.tasks[0].content = { command: './deploy.sh production --force' }
 
-  // 실행기가 만들지 않은 서명: 고정된 공개키로 확인되지 않는다.
-  const impostor = addRequest({
-    id: 'r-impostor-sign',
+  // 웹 서비스가 화면과 다른 내용에 서명받으려는 경우: 해시는 해시 대상과 맞지만, 화면의 Plan은 해시 대상과 다르다.
+  const displayMismatch = addRequest({
+    id: 'r-display-mismatch',
     requesterId: 'u-21',
     prompt: '스테이징 재배포해줘',
     status: 'PENDING_APPROVAL',
     ageMinutes: 16,
     tasks: [{ ...deployTask('PENDING'), title: '스테이징 재배포' }],
   })
-  impostor.plan!.executorSignature = impostorSignature(impostor.plan!.planHash as string)
+  const forged = toHashTarget(displayMismatch.plan!)
+  forged.tasks[0] = { ...forged.tasks[0], target: 'production', content: { command: './deploy.sh production --force' } }
+  displayMismatch.forgedHashTarget = forged
+  displayMismatch.plan!.planHash = hashService.computeTargetHash(forged)
 }
 
 function seedAudit() {
