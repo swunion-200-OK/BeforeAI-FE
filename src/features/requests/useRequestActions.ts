@@ -76,8 +76,10 @@ export function useStartExecution(requestId: string) {
   const refresh = useRefreshAll()
   return useMutation({
     mutationFn: () => requestsApi.startExecution(requestId),
-    onSuccess: async () => {
-      toast.success('실행을 다시 요청했습니다')
+    onSuccess: async ({ executionRequested }) => {
+      // 웹쉘이 서명 검증을 거부하면 200으로 온다. 상세의 검증 실패 안내가 이유를 말한다.
+      if (executionRequested) toast.success('실행을 다시 요청했습니다')
+      else toast.error('웹쉘이 검증을 거부해 실행하지 못했습니다')
       await refresh()
     },
     onError: async () => {

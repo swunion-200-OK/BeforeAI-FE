@@ -438,6 +438,8 @@ export interface RequestDetail extends RequestSummary {
   /** 변조 시연 전용: 평문 approvals와 달리 실제 서명 봉투가 있는 기록의 개수. 없으면 approvals 개수로 본다 */
   approvalRecordCount?: number
   rejection?: { by: string; reason: string; at: string; taskIds: string[] } | null
+  /** 승인자의 수정 요청. 요청이 REVIEWING으로 돌아간 이유다 */
+  changeRequest?: { by: string; reason: string; at: string; taskIds: string[] } | null
   kill?: { by: string; reason: string; at: string } | null
   events?: RequestEvent[]
 }
@@ -458,6 +460,12 @@ export interface PatchPlanBody {
   changes?: PlanChange[]
   /** AI 확인 질문(clarification)의 답 */
   answer?: string
+}
+
+export interface StartExecutionResponse {
+  requestId: string
+  status: RequestStatus
+  executionRequested: boolean
 }
 
 export interface AcceptedRequest {
