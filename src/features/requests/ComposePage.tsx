@@ -5,6 +5,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-r
 import { useMe } from '../../app/AuthProvider'
 import { requestsApi } from '../../api/endpoints'
 import type { RequestDetail } from '../../api/types'
+import { ClarificationText } from '../../components/ClarificationText'
 import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { Button, ErrorState, Field, PageHeader, Select, Sheet, Spinner, TextArea } from '../../components/ui'
 import { useAnalysisOverdue } from '../../lib/analysisWait'
@@ -148,7 +149,7 @@ function ClarificationForm({ request }: { request: RequestDetail }) {
           if (answer.trim() && !patch.isPending) patch.mutate({ basePlanId: request.currentPlanId ?? undefined, answer: answer.trim() })
         }}
       >
-        <p className="text-base text-ink">{request.clarification}</p>
+        <ClarificationText text={request.clarification ?? ''} />
         <Field label="답변">
           {(id) => <TextArea id={id} rows={4} value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={sendOnEnter} />}
         </Field>
