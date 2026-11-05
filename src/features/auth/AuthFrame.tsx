@@ -110,8 +110,8 @@ function ApprovalDocument() {
 function BrandPanel() {
   return (
     <aside className="flex min-w-0 flex-1 flex-col overflow-hidden bg-login-panel px-[clamp(3.5rem,5.6vw,5.3rem)] pt-[clamp(2.5rem,6.8vh,4rem)] max-lg:hidden">
-      <p className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-white">
-        <BrandMark size={36} className="text-white" />
+      <p className="flex items-baseline gap-2.5 text-2xl font-bold tracking-tight text-white">
+        <BrandMark height={28} className="text-white" />
         BeforeAI
       </p>
       <div className="flex min-h-0 flex-1 items-center py-8">

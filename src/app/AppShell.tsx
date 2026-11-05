@@ -59,8 +59,8 @@ function Sidebar() {
   return (
     <aside className="flex w-[15rem] shrink-0 flex-col border-r border-rule bg-nav text-nav-ink">
       <div className="flex h-14 shrink-0 items-center px-5">
-        <Link to="/" aria-label="BeforeAI 홈으로" className="flex items-center gap-2 rounded-sm text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink hover:text-seal">
-          <BrandMark size={28} className="text-[#152040]" />
+        <Link to="/" aria-label="BeforeAI 홈으로" className="flex items-baseline gap-2 rounded-sm text-[1.0625rem] font-semibold tracking-[-0.01em] text-ink hover:text-seal">
+          <BrandMark height={22} className="text-[#152040]" />
           BeforeAI
         </Link>
       </div>
@@ -179,8 +179,8 @@ function MobileNavigation() {
   return (
     <div className="relative z-30 border-b border-rule bg-sheet xl:hidden">
       <div className="flex h-12 items-center justify-between px-4">
-        <Link to="/" aria-label="BeforeAI 홈으로" className="flex items-center gap-2 rounded-sm text-base font-semibold tracking-tight text-ink hover:text-seal">
-          <BrandMark size={26} className="text-[#152040]" />
+        <Link to="/" aria-label="BeforeAI 홈으로" className="flex items-baseline gap-2 rounded-sm text-base font-semibold tracking-tight text-ink hover:text-seal">
+          <BrandMark height={20} className="text-[#152040]" />
           BeforeAI
         </Link>
         <details ref={menuRef} className="group relative">
