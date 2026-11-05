@@ -57,8 +57,8 @@ function WaitingFor({ rows }: { rows: ReturnType<typeof waitingRows> }) {
 /** 지금 이 사람이 할 수 있는 다음 행동. 주된 버튼 하나와, 요청자에게만 보이는 취소. */
 function NextActions({ request, isRequester, canKill }: { request: RequestDetail; isRequester: boolean; canKill: boolean }) {
   const navigate = useNavigate()
-  const resubmit = useSubmitRequest(request.id)
-  const retry = useRetryFailed(request.id)
+  const resubmit = useSubmitRequest(request)
+  const retry = useRetryFailed(request)
   const { status } = request
 
   const actions: ReactNode[] = []

@@ -27,10 +27,11 @@ import {
 } from '../endpoints'
 import type { Me, RequestStatus, Task } from '../types'
 import { devControls, initMock, mockFetch } from './index'
-import { requiredRules } from './policy'
+import { toTask } from './analysis'
+import { findForbiddenReason, hitsForbiddenTarget, requiredRules } from './policy'
 import { buildSeed } from './seed'
 import { db, mockConfig } from './store'
-import { WEBSHELL_PUBLIC_KEY, isAwaitingExecution, requestExecution, verifyExecution } from './webshell'
+import { WEBSHELL_PUBLIC_KEY, contentFitsType, isAwaitingExecution, requestExecution, scheduleExecution, verifyExecution } from './webshell'
 
 class MemoryStorage {
   private map = new Map<string, string>()
@@ -67,6 +68,11 @@ async function approveAs(userId: string, requestId: string, taskIds: string[]) {
   asUser(userId)
   const approver = await me()
   return signAndSubmitApproval({ me: approver, context: await approvalsApi.context(requestId), taskIds })
+}
+
+const reviewedPlan = async (requestId: string) => {
+  const detail = await requestsApi.get(requestId)
+  return { projectId: detail.projectId, tasks: detail.plan!.tasks }
 }
 
 async function registerKeyFor(userId: string) {
@@ -153,7 +159,7 @@ describe('시연 시나리오', () => {
       ['DEPLOY', 'HIGH'],
     ])
     const hong = await me()
-    const outcome = await submitWithSelfApproval(hong, id)
+    const outcome = await submitWithSelfApproval(hong, id, await reviewedPlan(id))
     expect(outcome.selfApprovalError).toBeNull()
     expect(outcome.selfApprovedTaskIds).toEqual(['t-1'])
     expect(outcome.executionRequested).toBe(false)
@@ -229,7 +235,7 @@ describe('시연 시나리오', () => {
     expect(after.changedTaskIds).toEqual(['t-1'])
     expect(after.approvalStatus.flatMap((s) => s.requirements.flatMap((r) => r.approvedBy))).toEqual([])
     const hong = await me()
-    const outcome = await submitWithSelfApproval(hong, 'r-main')
+    const outcome = await submitWithSelfApproval(hong, 'r-main', await reviewedPlan('r-main'))
     expect(outcome.submit.planHash).not.toBe(hashBefore)
     expect(outcome.selfApprovedTaskIds).toEqual(['t-1'])
   })
@@ -245,7 +251,7 @@ describe('시연 시나리오', () => {
       changes: [{ op: 'UPDATE', taskId: 't-1', instruction: '문구 수정' }],
     })
     await waitForStatus('r-main', notAnalyzing)
-    await submitWithSelfApproval(await me(), 'r-main')
+    await submitWithSelfApproval(await me(), 'r-main', await reviewedPlan('r-main'))
     asUser('u-07')
     await expectError(signAndSubmitApproval({ me: kim, context: stale, taskIds: ['t-2'] }), 'PLAN_HASH_MISMATCH')
   })
@@ -259,7 +265,7 @@ describe('시연 시나리오', () => {
 
     // 금지 작업이 섞여 있으면 나머지는 제출되고 실행까지 간다.
     const hong = await me()
-    const outcome = await submitWithSelfApproval(hong, 'r-forbidden')
+    const outcome = await submitWithSelfApproval(hong, 'r-forbidden', await reviewedPlan('r-forbidden'))
     expect(outcome.selfApprovedTaskIds).toEqual(['t-2'])
     expect(outcome.executionRequested).toBe(true)
   })
@@ -344,7 +350,7 @@ describe('규칙', () => {
     const low = await waitForStatus(large.id, notAnalyzing)
     expect(low.plan!.tasks[0].requiredApprovers.map((r) => r.rule)).toEqual(['SAME_DEPT_OTHER'])
     // 대규모에서 낮음·중간은 요청자 외 같은 부서 1인이라 본인 승인이 없다.
-    const outcome = await submitWithSelfApproval(await me(), large.id)
+    const outcome = await submitWithSelfApproval(await me(), large.id, await reviewedPlan(large.id))
     expect(outcome.selfApprovedTaskIds).toEqual([])
   })
 
@@ -558,6 +564,18 @@ describe('승인 화면의 무결성 확인 (명세 4.4)', () => {
     expect(request.approvalRecords).toEqual([])
   })
 
+  it('본인 승인은 사용자가 검토한 Plan과 서명할 내용이 다르면 서명하지 않는다', async () => {
+    const { id } = await requestsApi.create({ projectId: 'prj-auth', prompt: '로그인 테스트를 보강해줘' })
+    await waitForStatus(id, notAnalyzing)
+    const reviewed = await reviewedPlan(id)
+    const request = storedRequest(id)
+    request.plan!.tasks[0].target = 'src/auth/token.ts'
+    const outcome = await submitWithSelfApproval(await me(), id, reviewed)
+    expect(outcome.selfApprovedTaskIds).toEqual([])
+    expect(outcome.selfApprovalError).toContain('검토한 Plan')
+    expect(request.approvalRecords).toEqual([])
+  })
+
   it('6-1: 해시가 재계산 값과 다르면 서명을 거부하고 서버에 아무것도 보내지 않는다', async () => {
     asUser('u-07')
     const kim = await me()
@@ -623,7 +641,7 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     asUser('u-07')
     const kim = await me()
     const context = await approvalsApi.context('r-main')
-    storedRequest('r-main').plan!.tasks[1].content = { command: './deploy.sh production --force' }
+    storedRequest('r-main').plan!.tasks[1].content = { command: './deploy.sh staging --force' }
     const result = await signAndSubmitApproval({ me: kim, context, taskIds: ['t-2'] })
     expect(result).toMatchObject({ executionRequested: true, status: 'VERIFICATION_FAILED' })
     expect(await failedChecksOf('r-main')).toEqual(['PLAN_HASH_MISMATCH'])
@@ -814,6 +832,98 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     it('기준표에 없는 유형은 가장 엄격한 규칙을 쓴다', () => {
       expect(requiredRules('DOC', 'LOW', 'SMALL', [])).toEqual(['PROJECT_OWNER'])
     })
+
+    it('대상은 스테이징인데 명령이 금지 대상이면 막는다', async () => {
+      asUser('u-admin')
+      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'production', reason: '동결' })
+      const request = storedRequest('r-main')
+      request.plan!.tasks[1].content = { command: './deploy.sh production --force' }
+      expect(request.plan!.tasks[1].target).toBe('staging')
+      const checked = verifyExecution({ plan: toHashTarget(request.plan!), approvals: [] }, request)
+      expect(checked.failed).toContain('FORBIDDEN_TASK')
+      expect(checked.forbiddenTaskIds).toEqual(['t-2'])
+    })
+
+    it('금지 대상 낱말은 명령과 쿼리에서 낱말 단위로 본다', () => {
+      expect(hitsForbiddenTarget('prod', 'staging', { query: 'SELECT * FROM products' })).toBe(false)
+      expect(hitsForbiddenTarget('prod', 'staging', { query: 'SELECT * FROM prod.users' })).toBe(true)
+      expect(hitsForbiddenTarget('production', 'staging', { command: './deploy.sh production --force' })).toBe(true)
+      expect(hitsForbiddenTarget('production', 'staging', { command: './deploy.sh staging' })).toBe(false)
+      expect(hitsForbiddenTarget('prod', 'prod-db', {})).toBe(true)
+      expect(hitsForbiddenTarget('*', 'staging', {})).toBe(true)
+    })
+
+    it('명령에 금지 대상이 있으면 서비스도 Plan 단계에서 금지로 표시해, 서명한 뒤 위변조 경보가 나지 않는다', async () => {
+      asUser('u-admin')
+      await forbiddenApi.addRule({ departmentId: 'd-backend', taskType: 'DEPLOY', target: 'canary', reason: '동결' })
+      expect(findForbiddenReason('DEPLOY', 'staging', ['d-backend'], { command: './deploy.sh canary' })).not.toBeNull()
+      expect(findForbiddenReason('DEPLOY', 'staging', ['d-backend'], { command: './deploy.sh staging' })).toBeNull()
+      const project = db().projects.find((p) => p.id === 'prj-auth')!
+      const task = toTask(
+        { type: 'DEPLOY', title: '배포', description: '배포', target: 'staging', content: { command: './deploy.sh canary' } },
+        1,
+        project,
+        (await me()) as never,
+      )
+      expect(task).toMatchObject({ risk: 'FORBIDDEN', status: 'BLOCKED' })
+    })
+
+    it('실행이 끝나면 세션을 닫아, 실행중으로 되돌려도 다시 실행하지 않는다', async () => {
+      const { id } = await requestsApi.create({ projectId: 'prj-auth', prompt: '로그인 테스트를 보강해줘' })
+      await waitForStatus(id, notAnalyzing)
+      await submitWithSelfApproval(await me(), id, await reviewedPlan(id))
+      await waitForStatus(id, (s) => s === 'COMPLETED')
+      expect(db().webshell.sessions[id]).toBeUndefined()
+      const request = storedRequest(id)
+      const logged = db().logs[id].length
+      request.status = 'RUNNING'
+      request.plan!.tasks[0].status = 'APPROVED'
+      scheduleExecution(id)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(db().logs[id]).toHaveLength(logged)
+    })
+
+    it('배포 명령을 코드 수정으로 표시해 승인 규칙을 낮추지 못한다', async () => {
+      const request = storedRequest('r-external')
+      const deploy = request.plan!.tasks[1]
+      expect(deploy.content.command).toBeTruthy()
+      deploy.type = 'CODE_MINOR'
+      deploy.risk = 'LOW'
+      request.plan!.planHash = hashService.computePlanHash(request.plan!)
+      expect((await approveAs('u-07', 'r-external', ['t-1', 't-2'])).status).toBe('VERIFICATION_FAILED')
+      expect(await failedChecksOf('r-external')).toEqual(['FORBIDDEN_TASK'])
+    })
+
+    it('시드의 작업은 모두 유형에 맞는 내용을 가진다', () => {
+      const mismatched = db().requests.flatMap((r) =>
+        (r.plan?.tasks ?? []).filter((task) => !contentFitsType(task)).map((task) => `${r.id}/${task.id}`),
+      )
+      expect(mismatched).toEqual([])
+    })
+
+    it('검증 뒤에 서비스가 작업 상태를 바꿔도 세션에 없는 작업은 실행하지 않는다', async () => {
+      const request = storedRequest('r-forbidden')
+      asUser('u-01')
+      await submitWithSelfApproval(await me(), 'r-forbidden', await reviewedPlan('r-forbidden'))
+      const blocked = request.plan!.tasks.find((t) => t.status === 'BLOCKED')!
+      expect(db().webshell.sessions['r-forbidden']).not.toContain(blocked.id)
+      blocked.status = 'APPROVED'
+      await waitForStatus('r-forbidden', (s) => s !== 'RUNNING')
+      expect((db().logs['r-forbidden'] ?? []).some((line) => line.taskId === blocked.id)).toBe(false)
+    })
+
+    it('시드의 실행 중 요청은 세션이 열려 있어 계속 실행된다', () => {
+      expect(db().webshell.sessions['r-running']).toContain('t-long')
+    })
+
+    it('검증을 거친 세션이 없으면 실행중으로 표시해도 아무것도 실행하지 않는다', async () => {
+      const request = storedRequest('r-external')
+      request.status = 'RUNNING'
+      scheduleExecution(request.id)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(request.status).toBe('RUNNING')
+      expect(db().logs['r-external']).toBeUndefined()
+    })
   })
 
   describe('규칙마다 다른 사람의 서명', () => {
@@ -853,6 +963,12 @@ describe('웹쉘 실행 직전 검증 (명세 5.1)', () => {
     it('프리셋: 사본만 따른다', async () => {
       db().policy.preset = 'LARGE'
       expect((await approveAs('u-07', 'r-main', ['t-2'])).status).toBe('RUNNING')
+    })
+
+    it('기준표: 사본이 담당자를 요구하면 서비스 기준표가 누구나여도 막는다', async () => {
+      db().webshell.policy.matrix = db().webshell.policy.matrix.map((row) => ({ ...row, approverRule: 'PROJECT_OWNER' as const }))
+      expect((await approveAs('u-07', 'r-main', ['t-2'])).status).toBe('VERIFICATION_FAILED')
+      expect(await failedChecksOf('r-main')).toEqual(['MISSING_REQUIRED_APPROVER'])
     })
 
     it('프리셋: 사본이 높으면 서비스가 낮아도 막는다', async () => {
@@ -902,7 +1018,7 @@ describe('웹쉘 연결 불가', () => {
     mockConfig.webshellReachable = false
     const { id } = await requestsApi.create({ projectId: 'prj-auth', prompt: '로그인 테스트를 보강해줘' })
     await waitForStatus(id, notAnalyzing)
-    const outcome = await submitWithSelfApproval(await me(), id)
+    const outcome = await submitWithSelfApproval(await me(), id, await reviewedPlan(id))
     expect(outcome.submit.status).toBe('PENDING_APPROVAL')
     expect(outcome.submit.planHash).toMatch(/^sha256:/)
     expect(outcome.selfApprovedTaskIds).toEqual(['t-1'])

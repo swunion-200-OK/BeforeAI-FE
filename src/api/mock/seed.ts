@@ -101,6 +101,7 @@ function emptyDb(): MockDb {
     notificationSettings: {},
     webshell: {
       usedNonces: [],
+      sessions: {},
       policy: {
         keys: [],
         forbiddenRules: [],
@@ -889,6 +890,12 @@ export function buildSeed() {
   seedProjects()
   seedRequests()
   seedAudit()
+  // 실행 중인 시드는 검증을 통과해 전용 세션이 열린 상태다.
+  for (const request of db().requests) {
+    if (request.status === 'RUNNING' || request.status === 'ROLLING_BACK') {
+      db().webshell.sessions[request.id] = (request.plan?.tasks ?? []).map((task) => task.id)
+    }
+  }
 }
 
 export { DEMO_PASSWORD }

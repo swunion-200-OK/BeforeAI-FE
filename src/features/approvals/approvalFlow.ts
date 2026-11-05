@@ -1,6 +1,6 @@
 /** 승인 서명 흐름 (명세 2.4, 4.3~4.5). 승인 상세와 제출 직후 본인 승인이 같은 코드를 쓴다. */
 import { approvalsApi, requestsApi } from '../../api/endpoints'
-import type { ApprovalContext, Me, SubmitApprovalResponse, SubmitResponse } from '../../api/types'
+import type { ApprovalContext, Me, SubmitApprovalResponse, SubmitResponse, Task } from '../../api/types'
 import { cryptoService } from '../../crypto/cryptoService'
 import { deviceStore } from '../../crypto/deviceStore'
 import { hashService } from '../../crypto/hashService'
@@ -110,6 +110,22 @@ export interface SubmitOutcome {
   selfApprovalError: string | null
 }
 
+/** 사용자가 화면에서 본 프로젝트와 작업 */
+export interface ReviewedPlan {
+  projectId: string
+  tasks: Task[]
+}
+
+/** 본인 승인은 승인 화면 없이 바로 서명하므로, 제출 전에 사용자가 본 Plan과 서명할 내용이 같은지 본다. */
+function matchesReviewed(context: ApprovalContext, reviewed: ReviewedPlan | null): reviewed is ReviewedPlan {
+  const target = context.hashTarget
+  return (
+    reviewed !== null &&
+    reviewed.projectId === target.projectId &&
+    hashService.matchesHashTarget({ id: target.planId, tasks: reviewed.tasks }, target)
+  )
+}
+
 /**
  * 제출(1차 확인). 본인 승인이 허용된 작업은 응답을 받은 뒤 바로 승인까지 끝낸다.
  * 재시도·재제출처럼 이미 받은 SubmitResponse가 있으면 submitted로 넘긴다.
@@ -117,6 +133,7 @@ export interface SubmitOutcome {
 export async function submitWithSelfApproval(
   me: Pick<Me, 'id' | 'network'>,
   requestId: string,
+  reviewed: ReviewedPlan | null,
   submitted?: SubmitResponse,
 ): Promise<SubmitOutcome> {
   const submit = submitted ?? (await requestsApi.submit(requestId))
@@ -132,7 +149,11 @@ export async function submitWithSelfApproval(
     const context = await approvalsApi.context(requestId)
     const taskIds = submit.selfApprovableTaskIds.filter((id) => context.approvableTaskIds.includes(id))
     if (taskIds.length === 0) return outcome
-    const result = await signAndSubmitApproval({ me, context, taskIds })
+    if (!matchesReviewed(context, reviewed)) {
+      outcome.selfApprovalError = '검토한 Plan과 서명할 내용이 달라 서명하지 않았습니다'
+      return outcome
+    }
+    const result = await signAndSubmitApproval({ me, context, taskIds, shownProjectId: reviewed.projectId })
     outcome.selfApprovedTaskIds = taskIds
     outcome.executionRequested = result.executionRequested
     outcome.executionDeferred = !result.executionRequested && result.remainingTaskIds.length === 0

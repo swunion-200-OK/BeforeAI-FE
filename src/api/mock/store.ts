@@ -122,6 +122,8 @@ export interface MockDb {
   /** 웹쉘 쪽 저장소. 서비스 DB와 별개라는 점을 코드에서도 나눠 둔다 */
   webshell: {
     usedNonces: string[]
+    /** 요청별 전용 세션: 검증을 통과해 이 세션에서 실행할 작업 (API 명세 5.1) */
+    sessions: Record<string, string[]>
     /**
      * 웹쉘 정책 (기능 명세서 5.7, 5.9): 승인자 공개키 목록, 금지 규칙, 승인 기준표·규모 프리셋 사본.
      * MOCK: 관리자 서명 확인은 흉내 내지 않고 배포하는 쪽에서 바로 고친다.
@@ -138,7 +140,7 @@ export interface MockDb {
 // ── 싱글턴 상태 ────────────────────────────────────────────
 
 const STORAGE_KEY = 'beforeai.mock.db.v1'
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8
 
 export const mockConfig = {
   latencyMs: 180,

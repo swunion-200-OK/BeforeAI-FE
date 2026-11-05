@@ -37,7 +37,7 @@ export function useDepartmentNames(): (id: string | null | undefined) => string 
 
 const LIVE_STATUSES: RequestStatus[] = ['ANALYZING', 'RUNNING', 'ROLLING_BACK']
 /** 다른 사람의 승인·수정으로 바뀔 수 있는 상태 */
-const WAITING_STATUSES: RequestStatus[] = ['PENDING_APPROVAL', 'REAPPROVAL_REQUIRED']
+const WAITING_STATUSES: RequestStatus[] = ['PENDING_APPROVAL', 'REAPPROVAL_REQUIRED', 'VERIFICATION_FAILED']
 
 /** 분석·실행 중에는 1초, 승인을 기다리는 동안에는 3초마다 다시 읽어 상태 변화를 따라간다. */
 export function useRequest(requestId: string | undefined) {

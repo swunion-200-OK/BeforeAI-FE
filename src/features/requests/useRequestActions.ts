@@ -1,10 +1,10 @@
 import { useMutation } from '@tanstack/react-query'
 import { useMe } from '../../app/AuthProvider'
 import { requestsApi } from '../../api/endpoints'
-import type { PlanChange, SubmitResponse } from '../../api/types'
+import type { PlanChange, RequestDetail, SubmitResponse } from '../../api/types'
 import { toast } from '../../components/toast'
 import { useRefreshAll } from '../../lib/queries'
-import { submitWithSelfApproval, type SubmitOutcome } from '../approvals/approvalFlow'
+import { submitWithSelfApproval, type ReviewedPlan, type SubmitOutcome } from '../approvals/approvalFlow'
 
 /**
  * 제출 결과를 문구로 알린다. 제출(1차 확인)과 승인(2차)을 섞어 쓰지 않는다.
@@ -35,12 +35,18 @@ async function announceSubmit(requestId: string, outcome: SubmitOutcome) {
   }
 }
 
+/** 지금 화면에 보여 준 내용. 본인 승인은 이것과 서명할 내용이 같을 때만 한다. */
+function reviewedOf(request: Pick<RequestDetail, 'projectId' | 'plan'>): ReviewedPlan | null {
+  return request.plan ? { projectId: request.projectId, tasks: request.plan.tasks } : null
+}
+
 /** 제출·다시 제출. 본인 승인이 허용된 작업은 제출과 함께 승인까지 끝낸다. */
-export function useSubmitRequest(requestId: string, onDone?: () => void) {
+export function useSubmitRequest(request: RequestDetail, onDone?: () => void) {
+  const requestId = request.id
   const me = useMe()
   const refresh = useRefreshAll()
   return useMutation({
-    mutationFn: () => submitWithSelfApproval(me, requestId),
+    mutationFn: () => submitWithSelfApproval(me, requestId, reviewedOf(request)),
     onSuccess: async (outcome) => {
       await announceSubmit(requestId, outcome)
       await refresh()
@@ -50,13 +56,14 @@ export function useSubmitRequest(requestId: string, onDone?: () => void) {
 }
 
 /** 부분완료의 실패 작업 재시도. 서명은 1회용이라 새 해시에 새 서명을 받는다. */
-export function useRetryFailed(requestId: string) {
+export function useRetryFailed(request: RequestDetail) {
+  const requestId = request.id
   const me = useMe()
   const refresh = useRefreshAll()
   return useMutation({
     mutationFn: async () => {
       const submitted: SubmitResponse = await requestsApi.retryFailed(requestId)
-      return submitWithSelfApproval(me, requestId, submitted)
+      return submitWithSelfApproval(me, requestId, reviewedOf(request), submitted)
     },
     onSuccess: async (outcome) => {
       await announceSubmit(requestId, outcome)

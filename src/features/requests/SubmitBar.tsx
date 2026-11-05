@@ -60,7 +60,7 @@ function describeSubmit(request: RequestDetail, self: Task[], others: Task[], fo
 export function SubmitBar({ request }: { request: RequestDetail }) {
   const me = useMe()
   const navigate = useNavigate()
-  const submit = useSubmitRequest(request.id, () => navigate(`/requests/${request.id}`))
+  const submit = useSubmitRequest(request, () => navigate(`/requests/${request.id}`))
   const tasks = request.plan?.tasks ?? []
   const forbidden = tasks.filter((task) => task.status === 'BLOCKED')
   const runnable = tasks.filter((task) => task.status !== 'BLOCKED')

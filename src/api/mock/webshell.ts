@@ -20,12 +20,14 @@ import type {
   RequestStatus,
   SignedApproval,
   Task,
+  TaskContent,
   TaskStatus,
+  TaskType,
   WebshellEvent,
   WebshellExecution,
   WebshellPublicKey,
 } from '../types'
-import { qualifies, requiredRules } from './policy'
+import { hitsForbiddenTarget, qualifies, requiredRules } from './policy'
 import {
   HttpError,
   SYSTEM_ACTOR,
@@ -97,6 +99,8 @@ function emitEvent(request: StoredRequest, event: Pick<WebshellEvent, 'type' | '
 
 /** 최종 상태를 서명해 알린다. 킬 스위치로 끝날 때도 같다. */
 export function reportFinalStatus(request: StoredRequest) {
+  // 실행이 끝나면 전용 세션도 닫는다. 다시 실행하려면 새 검증이 필요하다.
+  delete db().webshell.sessions[request.id]
   request.execution = signedExecution(request, request.execution?.executionId ?? crypto.randomUUID())
   emitEvent(request, { type: 'FINAL_STATUS', status: request.status })
 }
@@ -113,6 +117,21 @@ export function assertWebshellReachable() {
  * 목에서는 서비스의 작업 상태를 쓴다. 검증과 실행이 이 목록을 함께 쓰므로, 검증을 건너뛴 작업은 실행되지 않는다.
  */
 const WILL_RUN: TaskStatus[] = ['APPROVED', 'RUNNING', 'PENDING']
+
+/** 유형별 내용 (API 명세 2.2): diff(코드) · command(배포) · query(DB·데이터) · body(문서) */
+const CONTENT_OF_TYPE: Record<TaskType, keyof TaskContent> = {
+  CODE_MINOR: 'diff',
+  CODE_FEATURE: 'diff',
+  DEPLOY: 'command',
+  DB: 'query',
+  DATA_READ: 'query',
+  DATA_WRITE: 'query',
+  DOC: 'body',
+}
+
+export function contentFitsType(task: Pick<Task, 'type' | 'content'>): boolean {
+  return Object.entries(task.content).every(([key, value]) => value === undefined || key === CONTENT_OF_TYPE[task.type])
+}
 
 /** 규칙마다 서로 다른 한 사람이 서명해야 한다 (기능 명세서 5.5의 담당자 + 부서 관리자). */
 function everyRuleHasOwnSigner(
@@ -136,6 +155,8 @@ function everyRuleHasOwnSigner(
 export interface VerificationResult {
   failed: FailedCheck[]
   forbiddenTaskIds: string[]
+  /** 검증을 통과하면 전용 세션에서 실행할 작업 */
+  taskIds: string[]
   /** 서명 단위 검사에서 처음 실패한 키 */
   keyId?: string
 }
@@ -187,11 +208,11 @@ export function verifyExecution(body: ExecutionRequestBody, request: StoredReque
   // 담당자는 서명으로 확인한 Plan의 프로젝트로 판단한다.
   // TODO(spec): 요청자는 해시 대상이 아니고, 웹쉘 정책에 승인자의 역할·부서·담당 관계를 담는 방법도 명세에 없어 목에서는 서비스 값을 같이 쓴다.
   const scope = { projectId: body.plan.projectId, requester: request.requester }
-  let willRunCount = 0
+  const taskIds: string[] = []
   for (const task of body.plan.tasks) {
     const stored = request.plan?.tasks.find((t) => t.id === task.id)
     if (!stored || !WILL_RUN.includes(stored.status)) continue
-    willRunCount += 1
+    taskIds.push(task.id)
     // 서비스가 정한 requiredApprovers는 해시 대상이 아니므로 쓰지 않고, 해시로 확인한 유형·위험도와 웹쉘 정책으로 다시 정한다.
     const taskSigners = database.users.filter((user) =>
       signers.some((signer) => signer.userId === user.id && signer.taskIds.includes(task.id)),
@@ -205,19 +226,20 @@ export function verifyExecution(body: ExecutionRequestBody, request: StoredReque
       (rule) =>
         departments.includes(rule.departmentId) &&
         rule.taskType === task.type &&
-        (rule.target === '*' || task.target.toLowerCase().includes(rule.target.toLowerCase())),
+        hitsForbiddenTarget(rule.target, task.target, task.content),
     )
-    if (hitsPolicyRule || task.risk === 'FORBIDDEN') {
+    // TODO(spec): 유형과 내용이 어긋난 작업의 실패 코드가 명세에 없어 금지 작업으로 막는다.
+    if (hitsPolicyRule || task.risk === 'FORBIDDEN' || !contentFitsType(task)) {
       failed.add('FORBIDDEN_TASK')
       forbiddenTaskIds.push(task.id)
     }
   }
   // 실행할 작업이 없으면 서명으로 확인할 것도 없다. 빈 실행을 성공으로 끝내지 않는다.
-  if (willRunCount === 0) failed.add('MISSING_REQUIRED_APPROVER')
+  if (taskIds.length === 0) failed.add('MISSING_REQUIRED_APPROVER')
 
   // 통과하면 1회용 ID를 한 번에 소진한다. 같은 서명으로 요청이 두 번 와도 하나만 통과한다.
   if (failed.size === 0) usedNonces.push(...nonces)
-  return { failed: [...failed], forbiddenTaskIds, keyId: failedKeyId }
+  return { failed: [...failed], forbiddenTaskIds, taskIds, keyId: failedKeyId }
 }
 
 /** 승인이 다 모였지만 아직 실행을 요청하지 못한 상태 */
@@ -247,7 +269,7 @@ export function requestExecution(request: StoredRequest): boolean {
     return false
   }
   const plan = request.plan as Plan
-  const { failed, forbiddenTaskIds, keyId } = verifyExecution(
+  const { failed, forbiddenTaskIds, taskIds, keyId } = verifyExecution(
     {
       plan: toHashTarget(plan),
       approvals: request.approvalRecords
@@ -276,6 +298,8 @@ export function requestExecution(request: StoredRequest): boolean {
     )
     return true
   }
+  // 검증한 작업을 세션에 고정한다. 그 뒤 서비스 쪽 작업 상태가 바뀌어도 다른 작업은 실행하지 않는다.
+  db().webshell.sessions[request.id] = taskIds
   const rollingBack = plan.kind === 'ROLLBACK'
   setStatus(request, rollingBack ? 'ROLLING_BACK' : 'RUNNING', SYSTEM_ACTOR.name)
   request.execution = signedExecution(request, crypto.randomUUID())
@@ -332,8 +356,9 @@ function scriptFor(task: Task, requestId: string): Line[] {
 
 function buildScript(request: StoredRequest): Array<Line & { taskId: string | null; endOf?: Task }> {
   const plan = request.plan as Plan
+  const session = db().webshell.sessions[request.id]
   const script: Array<Line & { taskId: string | null; endOf?: Task }> = []
-  for (const task of plan.tasks.filter((t) => WILL_RUN.includes(t.status))) {
+  for (const task of plan.tasks.filter((t) => session.includes(t.id) && WILL_RUN.includes(t.status))) {
     script.push({ level: 'INFO', text: `[${task.id}] ${task.title} 시작`, taskId: task.id })
     for (const line of scriptFor(task, request.id)) script.push({ ...line, taskId: task.id })
     script[script.length - 1].endOf = task
@@ -347,6 +372,8 @@ export function scheduleExecution(requestId: string) {
     if (startedGeneration !== generation) return
     const request = db().requests.find((r) => r.id === requestId)
     if (!request || (request.status !== 'RUNNING' && request.status !== 'ROLLING_BACK')) return
+    // 검증을 거쳐 열린 세션이 없으면 웹쉘은 아무것도 실행하지 않는다.
+    if (!db().webshell.sessions[request.id]) return
     const script = buildScript(request)
     const line = script[0]
     if (!line) {

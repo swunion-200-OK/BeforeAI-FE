@@ -7,6 +7,7 @@ import type {
   Risk,
   Task,
   TaskApprovalStatus,
+  TaskContent,
   TaskType,
   UserRef,
 } from '../types'
@@ -174,16 +175,26 @@ export function isCandidate(user: StoredUser, request: StoredRequest): boolean {
   )
 }
 
+/**
+ * 금지 규칙의 대상이 작업 대상이나 실제로 돌아갈 명령·쿼리에 들어 있는지 본다. 서비스와 웹쉘이 같은 기준을 쓴다.
+ * 명령과 쿼리는 낱말 단위로 봐서 prod가 products에 걸리지 않게 한다.
+ */
+export function hitsForbiddenTarget(ruleTarget: string, target: string, content: TaskContent): boolean {
+  if (ruleTarget === '*') return true
+  const word = ruleTarget.toLowerCase()
+  if (target.toLowerCase().includes(word)) return true
+  const pattern = new RegExp(`(^|[^a-z0-9_-])${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^a-z0-9_-])`)
+  return [content.command, content.query].some((text) => text !== undefined && pattern.test(text.toLowerCase()))
+}
+
 export function findForbiddenReason(
   type: TaskType,
   target: string,
   departmentIds: string[],
+  content: TaskContent,
 ): string | null {
   const rule = db().forbiddenRules.find(
-    (r) =>
-      departmentIds.includes(r.departmentId) &&
-      r.taskType === type &&
-      (r.target === '*' || target.toLowerCase().includes(r.target.toLowerCase())),
+    (r) => departmentIds.includes(r.departmentId) && r.taskType === type && hitsForbiddenTarget(r.target, target, content),
   )
   return rule ? rule.reason : null
 }

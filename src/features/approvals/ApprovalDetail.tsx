@@ -333,10 +333,11 @@ export function ApprovalDetail({
       setStampedBy(undefined);
     },
     onSuccess: async (response) => {
+      // 요청 상태를 먼저 새로 받아 결과와 상태가 어긋나 보이지 않게 한다.
+      await refreshAll();
       setRunState("done");
       setResult({ response, doc: docMode });
       setStampedBy(me.id);
-      await refreshAll();
     },
     onError: async (error) => {
       setRunState("failed");
@@ -478,8 +479,13 @@ export function ApprovalDetail({
       : request.plan;
   const nothingLeft = result?.response.remainingTaskIds.length === 0;
   // 제출 결과는 그 순간의 값이다. 웹쉘 연결이 돌아와 다시 시도된 결과는 요청 상태로 따라간다.
+  // 실패한 뒤 상태가 바뀌었으면(다시 제출, 취소 등) 지난 실패 결과는 치운다.
+  const staleFailure =
+    result?.response.status === "VERIFICATION_FAILED" &&
+    request.status !== "VERIFICATION_FAILED";
   const verificationFailed =
     Boolean(result) &&
+    !staleFailure &&
     (result?.response.status === "VERIFICATION_FAILED" ||
       request.status === "VERIFICATION_FAILED");
   const executionRequested =
@@ -678,7 +684,7 @@ export function ApprovalDetail({
                 </Link>
               </Banner>
             )}
-            {result && !verificationFailed && (
+            {result && !staleFailure && !verificationFailed && (
               <div className="flex items-center gap-3.5 rounded-lg bg-seal-soft p-3.5">
                 <ResultSeal label={result.doc ? "적용" : "승인"} />
                 <div className="min-w-0 text-sm break-keep text-seal-dark">
