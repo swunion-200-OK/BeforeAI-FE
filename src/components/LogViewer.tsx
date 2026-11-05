@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { USE_MOCK } from '../api/client'
 import { errorMessage } from '../api/errors'
 import { useMe } from '../app/AuthProvider'
 import { deviceStore } from '../crypto/deviceStore'
@@ -35,7 +36,10 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
   const me = useMe()
   const [received, setLines] = useState<LogLine[]>([])
   const lines = range ? received.filter((l) => l.sequence >= range.from && (range.to === null || l.sequence <= range.to)) : received
-  const signingKey = deviceStore.get(me.id).pinnedWebshellKey?.signing.publicKey
+  // The mock signs { requestId, sequence, at, taskId, message }. The live API
+  // does not define the signed bytes, so a failed local assumption must not be
+  // presented as a tampered server log.
+  const signingKey = USE_MOCK ? deviceStore.get(me.id).pinnedWebshellKey?.signing.publicKey : undefined
   const checkedLines = lines.map((line) => ({
     line,
     verified: signingKey ? verifyLogLine(requestId, line, signingKey) : null,
@@ -82,20 +86,27 @@ export function LogViewer({ requestId, live, range }: { requestId: string; live:
       <div className="flex items-center justify-between border-b border-terminal-2 px-4 py-2 text-sm text-terminal-dim">
         <span>실행 로그 (읽기 전용)</span>
         <div className="flex items-center gap-3">
-          <span className={!signingKey || hasInvalidSignature ? 'text-[#ffca85]' : lines.length === 0 ? 'text-terminal-dim' : 'text-[#7ddc9f]'}>
-            {!signingKey
-              ? '서명 미검증'
-              : hasInvalidSignature
-                ? `서명 확인 실패 ${failedLines}줄`
-                : lines.length === 0
-                  ? '서명 확인 대기'
-                  : '표시된 줄의 서명 확인됨'}
+          <span className={!USE_MOCK || !signingKey || hasInvalidSignature ? 'text-[#ffca85]' : lines.length === 0 ? 'text-terminal-dim' : 'text-[#7ddc9f]'}>
+            {!USE_MOCK
+              ? '서명 규칙 미정'
+              : !signingKey
+                ? '서명 미검증'
+                : hasInvalidSignature
+                  ? `서명 확인 실패 ${failedLines}줄`
+                  : lines.length === 0
+                    ? '서명 확인 대기'
+                    : '표시된 줄의 서명 확인됨'}
           </span>
           {live && connection === 'open' && <span className="text-[#7ddc9f]">실시간 수신 중</span>}
           {live && connection === 'dropped' && <span>연결이 끊겨 다시 연결하는 중</span>}
         </div>
       </div>
-      {!signingKey && lines.length > 0 && (
+      {!USE_MOCK && lines.length > 0 && (
+        <p role="status" className="border-b border-terminal-2 px-4 py-2 text-sm text-[#ffca85]">
+          백엔드가 서명 대상 형식을 정의하지 않아 로그 서명을 확인할 수 없습니다. 로그 내용은 미검증 상태입니다.
+        </p>
+      )}
+      {USE_MOCK && !signingKey && lines.length > 0 && (
         <p role="status" className="border-b border-terminal-2 px-4 py-2 text-sm text-[#ffca85]">
           이 기기에 고정된 웹쉘 공개키가 없어 서명을 확인하지 못했습니다. 로그 내용은 검증되지 않았습니다.
         </p>

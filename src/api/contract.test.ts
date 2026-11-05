@@ -232,6 +232,11 @@ const ROWS: Row[] = [
     call: () => approvalsApi.reject('request-1', { planId: 'plan-1', taskIds: ['task-1'], reason: '사유' }),
     body: { planId: 'plan-1', taskIds: ['task-1'], reason: '사유' },
   },
+  {
+    spec: 'POST /requests/{requestId}/rejections (빈 사유)',
+    call: () => approvalsApi.reject('request-1', { planId: 'plan-1', taskIds: ['task-1'], reason: '' }),
+    body: { planId: 'plan-1', taskIds: ['task-1'], reason: '' },
+  },
 
   // 3.7 문서·문서 롤백
   { spec: 'GET /requests/{requestId}/tasks/{taskId}/document', call: () => requestsApi.taskDocument('request-1', 'task-1') },
