@@ -175,7 +175,7 @@ function MobileNavigation() {
   return (
     <div className="relative z-30 border-b border-rule bg-sheet xl:hidden">
       <div className="flex h-12 items-center justify-between px-4">
-        <span className="text-base font-semibold tracking-tight text-ink">AI 작업 승인</span>
+        <span className="text-base font-semibold tracking-tight text-ink">BeforeAI</span>
         <details ref={menuRef} className="group relative">
           <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-md px-3 text-sm font-medium text-ink hover:bg-sheet-alt [&::-webkit-details-marker]:hidden">
             <Menu size={18} aria-hidden />

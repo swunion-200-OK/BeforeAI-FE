@@ -723,6 +723,7 @@ export function ApprovalDetail({
                   statuses={approvalStatuses}
                   tasks={tasks}
                   stamped={stamped}
+                  requestStatus={request.status}
                 />
               </section>
             )}
