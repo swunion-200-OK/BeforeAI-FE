@@ -17,3 +17,13 @@ describe('정책 변경 관리자 서명 자리 표시', () => {
     expect(() => policyAdminProof('admin')).toThrow('이 기기에 관리자 승인 키가 없습니다')
   })
 })
+
+describe('시연 데이터의 관리자', () => {
+  it('처음부터 이 기기에 승인 키가 있어 정책·금지 작업 변경이 막히지 않는다', async () => {
+    const { initMock } = await import('../api/mock')
+    const { buildSeed } = await import('../api/mock/seed')
+    initMock()
+    buildSeed()
+    expect(policyAdminProof('u-admin').keyId).toBe('k-admin-a')
+  })
+})

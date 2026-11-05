@@ -401,6 +401,8 @@ function linksOf(root: ProgressRequestNode, expanded: ReadonlySet<string>, gateC
       }
       if (gateClosed && !blocked && !hasStep) links.push({ from: GATE_ID, to: `${task.id}#cut`, kind: 'gateCut', task: task.id })
       for (const dependency of task.dependsOn) {
+        // 서버는 금지 작업도 다음 작업의 선행으로 준다. 실행되지 않는 작업에서 이어지는 화살표는 그리지 않는다.
+        if (child.children.some((other) => other.id === dependency && other.type === 'TASK' && other.status === 'BLOCKED')) continue
         // 바로 옆 작업이 아니면 사이의 작업을 지나지 않도록 위로 돌아간다.
         const adjacent = order.indexOf(task.id) - order.indexOf(dependency) === 1
         links.push({ from: dependency, to: task.id, kind: adjacent ? 'arrow' : 'arrowOver' })
