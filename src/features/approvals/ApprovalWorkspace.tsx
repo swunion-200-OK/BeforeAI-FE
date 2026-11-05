@@ -1,6 +1,7 @@
 import { ArrowLeft } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link } from 'react-router'
+import { USE_MOCK } from '../../api/client'
 import { EmptyState } from '../../components/ui'
 import { usePendingApprovals } from '../../lib/queries'
 import { ApprovalDetail } from './ApprovalDetail'
@@ -21,7 +22,10 @@ export function ApprovalWorkspace({ requestId }: { requestId?: string }) {
     return (
       <div className="flex h-full items-center justify-center bg-paper">
         <h1 className="sr-only">승인 대기</h1>
-        <EmptyState title="지금 승인할 작업이 없습니다">새 요청이 승인 대기에 들어오면 여기에 표시됩니다.</EmptyState>
+        {/* 배포된 서버에는 Slack 알림이 없다. 목에서만 알림이 간다고 말한다. */}
+        <EmptyState title="지금 승인할 작업이 없습니다">
+          {USE_MOCK ? '새 승인 요청이 오면 Slack으로 알려 드립니다.' : '새 승인 요청이 승인 대기에 들어오면 여기에 표시됩니다.'}
+        </EmptyState>
       </div>
     )
   }
