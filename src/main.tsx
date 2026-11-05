@@ -2,14 +2,15 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@ta
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router'
-import { setTransport, USE_MOCK } from './api/client'
+import { setTransport } from './api/client'
 import { ApiError, errorMessage } from './api/errors'
 import { toast } from './components/toast'
 import './index.css'
 
 async function bootstrap() {
   // 실제 백엔드를 쓰면(VITE_API_BASE_URL) 목 코드는 번들에 불러오지 않는다.
-  if (USE_MOCK) {
+  // 환경 변수를 직접 검사해야 빌드할 때 이 import가 지워져 목 파일이 dist에 생기지 않는다.
+  if (!import.meta.env.VITE_API_BASE_URL) {
     const { mockFetch, initMock } = await import('./api/mock')
     initMock()
     setTransport(mockFetch)

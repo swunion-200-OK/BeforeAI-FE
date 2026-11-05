@@ -10,7 +10,7 @@ function Seal({ name, animate }: { name: string; animate?: boolean }) {
   return (
     <span
       className={`inline-flex size-16 -rotate-6 items-center justify-center rounded-full border-2 border-seal text-seal outline-1 outline-offset-2 outline-seal/60 ${
-        animate ? 'animate-stamp' : ''
+        animate ? 'animate-stamp-late' : ''
       }`}
     >
       <span className="text-sm leading-tight font-bold tracking-tight">{name}</span>

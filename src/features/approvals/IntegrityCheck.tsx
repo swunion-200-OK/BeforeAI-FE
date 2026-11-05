@@ -52,7 +52,7 @@ export function IntegrityCheck({
   }
   if (result.ok) {
     return (
-      <details className="group">
+      <details data-integrity-check className="group">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-base font-medium text-low [&::-webkit-details-marker]:hidden">
           Plan 무결성 확인됨
           <ChevronDown size={14} className="transition-transform group-open:rotate-180" aria-hidden />
@@ -64,7 +64,7 @@ export function IntegrityCheck({
     )
   }
   return (
-    <div className="flex flex-col gap-2.5">
+    <div data-integrity-check className="flex flex-col gap-2.5">
       <CheckDetails result={result} receivedHash={receivedHash} />
       <Banner tone="danger" title="Plan 무결성 확인 실패">
         {!result.hashOk && '받은 내용으로 직접 계산한 해시가 웹 서비스가 보낸 해시와 다릅니다. '}

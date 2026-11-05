@@ -1151,7 +1151,7 @@ describe('웹쉘 서명 (명세 5장)', () => {
     expect(finalBody.taskResults.every((t) => t.status === 'SUCCEEDED')).toBe(true)
     expect(verify(finalBody, finalSignature, key)).toBe(true)
 
-    expect(request.webshellEvents.map((e) => [e.type, e.taskId])).toEqual([
+    expect(request.webshellEvents.filter((e) => e.type !== 'STEP').map((e) => [e.type, e.taskId])).toEqual([
       ['TASK_STARTED', 't-1'],
       ['TASK_SUCCEEDED', 't-1'],
       ['TASK_STARTED', 't-2'],

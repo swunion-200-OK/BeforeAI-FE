@@ -1,6 +1,8 @@
 import type {
   ApproverRule,
   AuditAction,
+  ExportFormat,
+  ExportStatus,
   FailedCheck,
   Network,
   PolicyPreset,
@@ -110,4 +112,33 @@ export const AUDIT_ACTION_LABEL: Record<AuditAction, string> = {
   LOGIN: '로그인',
   ACCOUNT_CHANGED: '계정 변경',
   POLICY_CHANGED: '정책 변경',
+  AUDIT_EXPORTED: '감사 로그 내보내기',
+}
+
+/** 감사 로그 detail 항목의 이름. 상세 화면과 내보낸 파일이 함께 쓴다. */
+export const AUDIT_DETAIL_LABEL: Record<string, string> = {
+  reason: '사유',
+  keyId: '승인 키',
+  self: '본인 승인',
+  planHash: 'Plan 해시',
+  source: '요청 경로',
+  retry: '재시도',
+  changes: 'Plan 변경',
+  answer: '확인 질문 답변',
+  direct: '관리자 직접 추가',
+  documentId: '문서',
+  version: '문서 버전',
+  ownerIds: '담당자',
+  failedChecks: '실패 항목',
+  format: '형식',
+  filters: '조건',
+  rowCount: '건수',
+}
+
+export const EXPORT_FORMAT_LABEL: Record<ExportFormat, string> = { XLSX: '엑셀', CSV: 'CSV' }
+export const EXPORT_STATUS_LABEL: Record<ExportStatus, string> = {
+  PROCESSING: '만드는 중',
+  READY: '준비됨',
+  FAILED: '실패',
+  EXPIRED: '만료됨',
 }

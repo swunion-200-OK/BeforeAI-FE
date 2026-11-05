@@ -55,6 +55,18 @@
   --color-terminal-ink: #c9d4e3;
   --color-terminal-dim: #7f8ea6;
 
+  /* 진행 상황 트리의 상태 색 (기능 명세서 5.12). 승인됨·성공·실패는 seal·low·high를 쓴다 */
+  --color-flow-wait: #667085;
+  --color-flow-wait-soft: #eef0f4;
+  --color-flow-wait-ink: #475060;
+  --color-flow-run: #e6b800;
+  --color-flow-run-band: #ffd93b;
+  --color-flow-run-soft: #fff8cc;
+  --color-flow-run-ink: #453700;
+  --color-flow-skip: #d3d8e0;
+  --color-flow-skip-soft: #f6f7f9;
+  --color-flow-skip-ink: #4a5261;
+
   /* 작은 글자도 편하게 읽히도록 기본 크기를 한 단계씩 올린다 */
   --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
@@ -68,18 +80,27 @@
   --shadow-card: 0 1px 2px rgb(16 26 46 / 0.05), 0 1px 1px rgb(16 26 46 / 0.03);
   --shadow-raised: 0 8px 24px rgb(16 26 46 / 0.12);
 
-  --animate-stamp: stamp 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-stamp: stamp 220ms ease-out;
+  /* 큰 도장이 찍힌 다음에 결재란 칸이 채워진다 */
+  --animate-stamp-late: stamp 220ms ease-out 220ms backwards;
   --animate-toast: toast 180ms ease-out;
 }
 
+/* 도장의 기울기는 rotate 속성이 맡으므로 여기서는 그 위에 더하는 움직임만 쓴다. 닿는 순간 인주가 진했다가 스며든다. */
 @keyframes stamp {
-  from {
-    transform: rotate(-6deg) scale(1.5);
+  0% {
+    transform: rotate(-9deg) scale(1.6);
     opacity: 0;
   }
-  to {
-    transform: rotate(-6deg) scale(1);
+  55% {
+    transform: rotate(1deg) scale(0.96);
     opacity: 1;
+    background-color: color-mix(in srgb, var(--color-seal) 30%, transparent);
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+    background-color: transparent;
   }
 }
 
@@ -91,6 +112,19 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+
+@keyframes flow-pulse {
+  to {
+    stroke-dashoffset: -36;
+  }
+}
+
+/* 사선 한 칸(20px)의 가로 폭만큼 밀면 끊김 없이 이어진다 */
+@keyframes flow-running {
+  to {
+    background-position-x: 28.284px;
   }
 }
 
@@ -211,6 +245,38 @@
     scrollbar-color: var(--color-rule-strong) transparent;
   }
 
+  /* 진행 상황 트리: 지금 실행 중인 단계에만 붙는 움직이는 얇은 띠. 작업과 요청의 머리띠는 움직이지 않는 노랑이다 */
+  .flow-running {
+    background-color: #ffd93b;
+    background-image: repeating-linear-gradient(-45deg, transparent 0 10px, rgb(255 255 255 / 0.5) 10px 20px);
+    background-size: 28.284px 28.284px;
+    animation: flow-running 1.1s linear infinite;
+  }
+
+  /* 진행 상황 트리: 지금 진행 중인 경로 위로 작업 방향으로 흐르는 점선 */
+  .flow-pulse {
+    stroke-dasharray: 10 26;
+    animation: flow-pulse 1s linear infinite;
+  }
+  .flow-pulse-wait {
+    animation-duration: 2.2s;
+  }
+
+  /* 진행 상황 트리는 발표 화면에서도 읽히도록 옅은 바탕 위 글자를 AA 대비에 맞춰 조금 진하게 쓴다 */
+  .flow-tree {
+    --color-high: #c8281e;
+    --color-medium: #a85400;
+    --color-external: #a84d08;
+  }
+
+  /* 진행 상황 트리의 도면 바탕. 가로로 스크롤해도 점이 내용과 함께 움직인다 */
+  .flow-canvas {
+    background-color: var(--color-sheet);
+    background-image: radial-gradient(var(--color-rule) 1px, transparent 1.2px);
+    background-size: 18px 18px;
+    background-attachment: local;
+  }
+
   /* 외부망 띠 */
   .band-external {
     background: repeating-linear-gradient(
@@ -227,5 +293,18 @@
   *::after {
     animation-duration: 1ms !important;
     transition-duration: 1ms !important;
+  }
+  /* 무한 반복이라 짧게 줄이면 깜빡인다. 멈춘 띠로 둔다 */
+  .flow-running {
+    animation: none !important;
+  }
+  /* 경로는 굵은 선으로 그대로 남고 흐르는 점선만 없앤다 */
+  .flow-pulse {
+    display: none;
+  }
+  /* 도장은 움직임 없이 바로 찍혀 있다 */
+  .animate-stamp,
+  .animate-stamp-late {
+    animation: none !important;
   }
 }

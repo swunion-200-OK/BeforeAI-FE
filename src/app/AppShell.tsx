@@ -175,6 +175,7 @@ function TopBar() {
 export function AppShell() {
   const network = useNetwork()
   const fullBleed = useMatches().some((match) => (match.handle as RouteHandle | undefined)?.fullBleed)
+  // main의 relative: 안쪽의 absolute 요소(sr-only 등)가 스크롤 영역 밖으로 나가 문서 전체를 늘리지 않게 한다.
   return (
     <div className="flex h-dvh">
       <Sidebar />
@@ -183,11 +184,11 @@ export function AppShell() {
         {network === 'EXTERNAL' && <div className="band-external h-1 shrink-0" role="presentation" />}
         <TopBar />
         {fullBleed ? (
-          <main className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <main className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <Outlet />
           </main>
         ) : (
-          <main className="quiet-scroll min-w-0 flex-1 overflow-y-auto">
+          <main className="quiet-scroll relative min-w-0 flex-1 overflow-y-auto">
             <div className="mx-auto max-w-[80rem] px-8 py-8 pb-20">
               <Outlet />
             </div>

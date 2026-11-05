@@ -33,6 +33,7 @@ import {
 } from './policy'
 import {
   HttpError,
+  archivePlan,
   audit,
   db,
   endLogs,
@@ -47,6 +48,7 @@ import {
   type StoredRequest,
   type StoredUser,
 } from './store'
+import { resumeAuditExports } from './auditExport'
 import {
   assertWebshellReachable,
   isAwaitingExecution,
@@ -89,6 +91,7 @@ export function toDetail(request: StoredRequest): RequestDetail {
     changedTaskIds: request.changedTaskIds,
     removedTaskTitles: request.removedTaskTitles,
     failedChecks: request.failedChecks,
+    approvalRecordCount: request.approvalRecords.filter((record) => record.planId === request.currentPlanId).length,
     rejection: request.rejection,
     kill: request.kill,
     events: request.events,
@@ -251,6 +254,7 @@ function applyPlanChanges(
     status: (task.status === 'BLOCKED' || task.status === 'SUCCEEDED' ? task.status : 'PENDING') as Task['status'],
   }))
 
+  archivePlan(request)
   request.plan = makePlan(request.id, project, nextTasks, previous.kind)
   request.currentPlanId = request.plan.id
   request.approvals = []
@@ -492,6 +496,7 @@ export function retryFailedTasks(request: StoredRequest, user: StoredUser): Subm
     status: (task.status === 'FAILED' || task.status === 'SKIPPED' ? 'PENDING' : task.status) as Task['status'],
     requiredApprovers: buildRequiredApprovers(project, request.requester, task.type, task.risk),
   }))
+  archivePlan(request)
   request.plan = makePlan(request.id, project, tasks, previous.kind)
   request.currentPlanId = request.plan.id
   request.approvals = []
@@ -540,6 +545,7 @@ export function requestRollback(
   if (task.status === 'BLOCKED') throw new HttpError(422, 'FORBIDDEN_TASK', '금지 작업이라 이 문서를 되돌릴 수 없습니다')
   // TODO(spec): 롤백 Plan이 같은 요청에 붙는지 새 요청인지 명세가 갈린다(source: ROLLBACK vs 상태 흐름표).
   // 상태 흐름표를 따라 같은 요청에서 PENDING_APPROVAL → ROLLING_BACK으로 진행한다.
+  archivePlan(request)
   request.plan = makePlan(request.id, project, [task], 'ROLLBACK')
   request.currentPlanId = request.plan.id
   request.approvals = []
@@ -589,6 +595,7 @@ export function resumeTimers() {
     if (request.status === 'RUNNING' || request.status === 'ROLLING_BACK') scheduleExecution(request.id)
     if (isAwaitingExecution(request)) scheduleExecutionRetry(request.id)
   }
+  resumeAuditExports()
 }
 
 export function taskDocument(request: StoredRequest, taskId: string) {

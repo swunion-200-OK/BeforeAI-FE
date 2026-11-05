@@ -44,6 +44,7 @@ import {
   verifyIntegrity,
   type SignStep,
 } from "./approvalFlow";
+import { ProgressSection } from "../progress/ProgressTree";
 import { IntegrityCheck } from "./IntegrityCheck";
 import { SignProgress, type SignRunState } from "./SignProgress";
 
@@ -187,14 +188,20 @@ function ResultSeal({ label }: { label: string }) {
   );
 }
 
+/** 이번에 실제로 제출한 서명. 이 작업의 칸에만 도장이 찍히고, 이미 있던 도장은 움직이지 않는다. */
+interface JustStamped {
+  userId: string;
+  taskIds: string[];
+}
+
 function StampSheet({
   statuses,
   tasks,
-  stampedBy,
+  stamped,
 }: {
   statuses: TaskApprovalStatus[];
   tasks: Task[];
-  stampedBy?: string;
+  stamped?: JustStamped;
 }) {
   return (
     <ul className="flex flex-col gap-4">
@@ -211,7 +218,14 @@ function StampSheet({
               </p>
             )}
             <div className="overflow-x-auto">
-              <ApprovalStamps status={status} justStampedBy={stampedBy} />
+              <ApprovalStamps
+                status={status}
+                justStampedBy={
+                  stamped?.taskIds.includes(status.taskId)
+                    ? stamped.userId
+                    : undefined
+                }
+              />
             </div>
           </li>
         );
@@ -224,11 +238,14 @@ export function ApprovalDetail({
   requestId,
   nextRequestId,
   otherCount = 0,
+  progressDefaultOpen = false,
 }: {
   requestId: string;
   nextRequestId?: string;
   /** 이 요청 말고 큐에 남은 요청 수 */
   otherCount?: number;
+  /** 진행 상황을 펼친 채로 보여 준다 (변조 시연) */
+  progressDefaultOpen?: boolean;
 }) {
   const me = useMe();
   const refreshAll = useRefreshAll();
@@ -260,7 +277,7 @@ export function ApprovalDetail({
     response: SubmitApprovalResponse;
     doc: boolean;
   } | null>(null);
-  const [stampedBy, setStampedBy] = useState<string | undefined>();
+  const [stamped, setStamped] = useState<JustStamped | undefined>();
   const [decision, setDecision] = useState<DecisionKind | null>(null);
 
   // 다시 받기에 실패하면 이전 자료를 믿지 않는다. 옛 Plan에 무결성 ✅와 활성 버튼이 남으면 안 된다.
@@ -330,14 +347,15 @@ export function ApprovalDetail({
       setRunState("running");
       setSignError(null);
       setResult(null);
-      setStampedBy(undefined);
+      setStamped(undefined);
     },
-    onSuccess: async (response) => {
+    onSuccess: async (response, taskIds) => {
+      // 결재란의 도장은 새 요청 상태와 함께 처음 그려질 때 한 번 찍힌다. 그래서 다시 받기 전에 정해 둔다.
+      setStamped({ userId: me.id, taskIds });
       // 요청 상태를 먼저 새로 받아 결과와 상태가 어긋나 보이지 않게 한다.
       await refreshAll();
       setRunState("done");
       setResult({ response, doc: docMode });
-      setStampedBy(me.id);
     },
     onError: async (error) => {
       setRunState("failed");
@@ -584,6 +602,11 @@ export function ApprovalDetail({
 
           {notice}
 
+          <ProgressSection
+            requestId={requestId}
+            defaultOpen={progressDefaultOpen}
+          />
+
           {tasks.map((task) => {
             const canApprove = approvable.includes(task.id);
             const isBlocked = blocked.includes(task.id);
@@ -654,7 +677,7 @@ export function ApprovalDetail({
               <StampSheet
                 statuses={request.approvalStatus}
                 tasks={tasks}
-                stampedBy={stampedBy}
+                stamped={stamped}
               />
             </section>
           )}
