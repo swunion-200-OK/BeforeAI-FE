@@ -93,6 +93,7 @@ VITE_API_BASE_URL=https://service.example.com/api/v1 npm run build
 
 배포할 때 주의할 점이 있습니다.
 
+- **Cloudflare Pages에서는 같은 출처 프록시를 씁니다.** 환경 변수에 `VITE_API_BASE_URL=/api/v1`과 `API_PROXY_TARGET`(백엔드 주소)을 넣으면 `functions/api`가 `/api` 요청을 백엔드로 넘깁니다. refresh 쿠키가 `SameSite=Strict`라 API를 다른 사이트로 직접 부르면 새로고침할 때 로그아웃됩니다.
 - **HTTP 서버는 HTTPS 페이지에서 부를 수 없습니다.** 브라우저가 혼합 콘텐츠로 막습니다. 페이지를 HTTPS로 배포하면 API도 HTTPS여야 합니다.
 - **페이지와 API의 사이트가 다르면** 리프레시 쿠키에 `SameSite=None; Secure`가 필요하고, `Secure` 쿠키는 HTTPS에서만 저장됩니다. HTTP 서버에서는 새로고침할 때 로그인이 풀립니다. 같은 사이트로 묶어 프록시하면 이 문제가 없습니다.
 - **CORS를 쓰면** 서버가 정확한 출처와 `Access-Control-Allow-Credentials: true`를 주고, `Authorization`, `Last-Event-ID` 요청 헤더를 허용하고, `Access-Control-Expose-Headers: X-Network`로 망 헤더를 열어 줘야 합니다.
