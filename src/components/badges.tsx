@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Network, RequestStatus, Risk, TaskStatus } from '../api/types'
-import { NETWORK_LABEL, REQUEST_STATUS_LABEL, RISK_LABEL, TASK_STATUS_LABEL } from '../lib/labels'
+import { NETWORK_LABEL, REQUEST_STATUS_LABEL, RISK_LABEL, TASK_STATUS_LABEL, labelOf } from '../lib/labels'
 
 /**
  * 상태는 작은 모양 하나와 색 있는 낱말로 쓴다. 바탕을 칠하지 않는다.
@@ -82,16 +82,23 @@ const RISK_STYLE: Record<Risk, { word: string; dot: string }> = {
   FORBIDDEN: { word: 'font-semibold text-forbidden', dot: 'bg-forbidden' },
 }
 
+/** 표에 없는 위험도. 높다고도 낮다고도 말하지 않는다. */
+const UNKNOWN_RISK_STYLE = { word: 'font-normal text-ink-2', dot: 'rounded-full bg-rule-strong' }
+
 /** 위험도: 점 + 낱말. 금지만 네모 점이라 색 없이도 구분된다. 승인 판단 정보이므로 낮음도 숨기지 않는다. */
 export function RiskBadge({ risk }: { risk: Risk }) {
-  const { word, dot } = RISK_STYLE[risk]
+  // 서버가 표에 없는 값을 보내도 화면이 깨지지 않게 한다.
+  const { word, dot } = RISK_STYLE[risk] ?? UNKNOWN_RISK_STYLE
   return (
     <span className={`inline-flex items-center gap-1.5 text-[0.875rem] leading-5 whitespace-nowrap ${word}`}>
       <span aria-hidden className={`size-2 shrink-0 ${dot}`} />
-      {RISK_LABEL[risk]}
+      {labelOf(RISK_LABEL, risk)}
     </span>
   )
 }
+
+/** 표에 없는 상태. 잘 됐다고도 실패했다고도 말하지 않는다. */
+const UNKNOWN_STATUS_STYLE: { tone: StatusTone; shape: StatusShape } = { tone: 'neutral', shape: 'wait' }
 
 const REQUEST_STATUS_STYLE: Record<RequestStatus, { tone: StatusTone; shape: StatusShape }> = {
   ANALYZING: { tone: 'neutral', shape: 'run' },
@@ -113,10 +120,10 @@ const REQUEST_STATUS_STYLE: Record<RequestStatus, { tone: StatusTone; shape: Sta
 }
 
 export function RequestStatusBadge({ status }: { status: RequestStatus }) {
-  const { tone, shape } = REQUEST_STATUS_STYLE[status]
+  const { tone, shape } = REQUEST_STATUS_STYLE[status] ?? UNKNOWN_STATUS_STYLE
   return (
     <StatusText tone={tone} shape={shape}>
-      {REQUEST_STATUS_LABEL[status]}
+      {labelOf(REQUEST_STATUS_LABEL, status)}
     </StatusText>
   )
 }
@@ -135,10 +142,10 @@ const TASK_STATUS_STYLE: Record<TaskStatus, { tone: StatusTone; shape: StatusSha
 }
 
 export function TaskStatusBadge({ status }: { status: TaskStatus }) {
-  const { tone, shape } = TASK_STATUS_STYLE[status]
+  const { tone, shape } = TASK_STATUS_STYLE[status] ?? UNKNOWN_STATUS_STYLE
   return (
     <StatusText tone={tone} shape={shape}>
-      {TASK_STATUS_LABEL[status]}
+      {labelOf(TASK_STATUS_LABEL, status)}
     </StatusText>
   )
 }

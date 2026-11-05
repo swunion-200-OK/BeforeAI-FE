@@ -1,15 +1,20 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { adminApi } from '../../api/endpoints'
+import { ApiError } from '../../api/errors'
 import type { AdminSigningKey, SigningKeyStatus } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { toast } from '../../components/toast'
 import { Button, ConfirmModal, EmptyState, ErrorState, Mono, Sheet, Spinner } from '../../components/ui'
+import { UNSIGNED_POLICY_NOTICE, adminKeyMissingReason, revokeAdminProof } from '../../crypto/adminProof'
 import { deviceStore } from '../../crypto/deviceStore'
 import { signingService } from '../../crypto/signingService'
 import { formatDateTime } from '../../lib/format'
 import { useRefreshAll } from '../../lib/queries'
-import { signingKeysQuery, usersQuery } from './adminQueries'
+import { AdminKeyNotice } from './AdminKeyNotice'
+import { policyQuery, signingKeysQuery, usersQuery } from './adminQueries'
+import { revokeConfirmText, revokedToast, type PolicyState } from './keyRevokeText'
+import { onPolicyError } from './policyChange'
 
 const STATUS: Record<SigningKeyStatus, { label: string; className: string }> = {
   PENDING: { label: '등록 대기', className: 'text-medium' },
@@ -36,6 +41,7 @@ function KeyTable({
   onRegister,
   blockedReason,
   onRevoke,
+  revokeBlockedReason,
   registeringId,
 }: {
   keys: AdminSigningKey[]
@@ -43,6 +49,7 @@ function KeyTable({
   onRegister?: (key: AdminSigningKey) => void
   blockedReason?: (key: AdminSigningKey) => string | null
   onRevoke: (key: AdminSigningKey) => void
+  revokeBlockedReason: (key: AdminSigningKey) => string | null
   registeringId?: string
 }) {
   return (
@@ -68,7 +75,7 @@ function KeyTable({
               <td title={key.publicKey}>
                 <Mono className="text-ink-3">{key.publicKey.slice(0, 16)}…</Mono>
               </td>
-              {!onRegister && <td className={`whitespace-nowrap ${STATUS[key.status].className}`}>{STATUS[key.status].label}</td>}
+              {!onRegister && <td className={`whitespace-nowrap ${STATUS[key.status]?.className ?? 'text-ink-2'}`}>{STATUS[key.status]?.label ?? key.status}</td>}
               <td className="whitespace-nowrap text-ink-2">{formatDateTime(key.createdAt)}</td>
               <td>
                 <div className="flex justify-end gap-1.5">
@@ -85,7 +92,12 @@ function KeyTable({
                     </Button>
                   )}
                   {key.status !== 'REVOKED' && (
-                    <Button size="sm" onClick={() => onRevoke(key)}>
+                    <Button
+                      size="sm"
+                      disabled={Boolean(revokeBlockedReason(key))}
+                      disabledReason={revokeBlockedReason(key)}
+                      onClick={() => onRevoke(key)}
+                    >
                       폐기
                     </Button>
                   )}
@@ -106,6 +118,13 @@ export function KeysTab() {
   const keys = useQuery(signingKeysQuery)
   // 키 응답에는 userId만 있어 이름은 계정 목록에서 찾는다.
   const users = useQuery(usersQuery)
+  // 프리셋을 적용하기 전이면 정책 조회가 404다. 그때 폐기는 키 상태만 바꾼다.
+  const policy = useQuery(policyQuery)
+  const policyState: PolicyState = policy.data
+    ? 'exists'
+    : policy.error instanceof ApiError && policy.error.code === 'NOT_FOUND'
+      ? 'none'
+      : 'unknown'
   const ownerName = (key: AdminSigningKey) =>
     users.data?.find((user) => user.id === key.userId)?.name ?? `사용자 ${key.userId.slice(0, 8)}`
   const register = useMutation({
@@ -115,18 +134,25 @@ export function KeysTab() {
       await refresh()
     },
   })
+  const finishRevoke = async () => {
+    setRevoking(null)
+    await refresh()
+  }
   const revoke = useMutation({
-    mutationFn: (key: AdminSigningKey) => adminApi.revokeKey(key.id),
+    mutationFn: (key: AdminSigningKey) => adminApi.revokeKey(key.id, revokeAdminProof(key.status, me.id)),
+    meta: { silent: true },
     onSuccess: async (_result, key) => {
-      toast.success(`${ownerName(key)}님의 승인 키를 폐기했습니다`)
-      setRevoking(null)
-      await refresh()
+      toast.success(revokedToast(ownerName(key), key.status, policyState))
+      await finishRevoke()
     },
+    // 웹쉘 배포만 실패한 502는 폐기가 이미 저장된 것이다. 서버가 자동으로 다시 보낸다.
+    onError: onPolicyError(finishRevoke),
   })
 
   if (keys.isPending) return <Spinner />
   if (keys.isError) return <ErrorState error={keys.error} onRetry={() => keys.refetch()} />
 
+  const revokeBlockedReason = (key: AdminSigningKey) => (key.status === 'REGISTERED' ? adminKeyMissingReason(me.id) : null)
   const pending = keys.data.filter((key) => key.status === 'PENDING')
   const others = keys.data.filter((key) => key.status !== 'PENDING')
   const deviceKeyId = deviceStore.get(me.id).keyId
@@ -136,6 +162,7 @@ export function KeysTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      <AdminKeyNotice />
       {pending.length > 0 && (
         <Sheet
           title={`등록 대기 ${pending.length}건`}
@@ -148,6 +175,7 @@ export function KeysTab() {
             onRegister={(key) => register.mutate(key)}
             blockedReason={(key) => registerBlockedReason(key, adminKey)}
             onRevoke={setRevoking}
+            revokeBlockedReason={revokeBlockedReason}
             registeringId={register.isPending ? register.variables?.id : undefined}
           />
         </Sheet>
@@ -157,7 +185,7 @@ export function KeysTab() {
           {others.length === 0 ? (
             <EmptyState title="아직 등록된 키가 없습니다">사용자가 내 정보에서 이 기기의 키를 만들면 여기에 나타납니다.</EmptyState>
           ) : (
-            <KeyTable keys={others} ownerName={ownerName} onRevoke={setRevoking} />
+            <KeyTable keys={others} ownerName={ownerName} onRevoke={setRevoking} revokeBlockedReason={revokeBlockedReason} />
           )}
         </Sheet>
       )}
@@ -170,8 +198,9 @@ export function KeysTab() {
         onClose={() => setRevoking(null)}
         onConfirm={() => revoking && revoke.mutate(revoking)}
       >
-        {revoking && ownerName(revoking)}님의 키 <Mono>{revoking?.id ?? ''}</Mono>를 폐기합니다. 웹쉘에 바로 반영되어 이 키의 서명은
-        더 이상 검증을 통과하지 못합니다.
+        {revoking && ownerName(revoking)}님의 키 <Mono>{revoking?.id ?? ''}</Mono>를 폐기합니다.{' '}
+        {revokeConfirmText(revoking?.status, policyState)}
+        {revoking?.status === 'REGISTERED' && ` ${UNSIGNED_POLICY_NOTICE}`}
       </ConfirmModal>
     </div>
   )

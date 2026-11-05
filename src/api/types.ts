@@ -183,8 +183,8 @@ export interface ProjectSpec {
   createdAt: string
   /** 저장한 사람의 ID. 서버는 이름을 주지 않는다 */
   createdBy: string
-  /** 복원으로 만든 버전이면 원본 버전 */
-  restoredFromVersion: number | null
+  /** 복원으로 만든 버전이면 원본 버전. 아니면 서버는 이 필드를 내려 주지 않는다 */
+  restoredFromVersion?: number | null
 }
 
 export type ChangeRequestStatus = 'OPEN' | 'ACCEPTED' | 'REJECTED'
@@ -553,7 +553,7 @@ export interface SubmitApprovalResponse {
   status: RequestStatus
   approvedTaskIds: string[]
   remainingTaskIds: string[]
-  /** false면 승인이 덜 모였거나 웹쉘에 연결할 수 없는 것. 뒤의 경우 상태는 PENDING_APPROVAL로 남고 웹 서비스가 다시 시도한다 */
+  /** false면 승인이 덜 모였거나 웹쉘에 연결할 수 없는 것. 뒤의 경우 서명은 저장되고 상태는 PENDING_APPROVAL로 남는다. 실제 서버는 자동으로 다시 시도하지 않는다 */
   executionRequested: boolean
 }
 
@@ -753,31 +753,53 @@ export interface DocumentSummary {
   updatedAt: string
 }
 
+/** 작성자는 서버가 주지 않는다 (서버 DocumentVersionResponse) */
 export interface DocumentVersion {
   documentId: string
   version: number
   body: string
   createdAt: string
-  createdBy: { id: string; name: string }
-  /** 이 버전을 적용한 요청. 시드 초기 버전이면 null */
-  requestId: string | null
 }
 
-export type DocumentVersionSummary = Omit<DocumentVersion, 'body'>
-
-export interface TaskDocument {
-  documentId: string | null
-  title: string
-  currentVersion: number | null
-  currentBody: string
-  proposedBody: string
-  diff: string
-}
-
-// TODO(spec): 롤백 요청 본문은 명세에 없다. 되돌릴 문서와 버전을 지정하게 했다.
-export interface RollbackBody {
+export interface DocumentVersionSummary {
   documentId: string
   version: number
+  /** 이 버전을 적용한 요청. 목의 시드 초기 버전이면 null이다 */
+  requestId: string | null
+  createdAt: string
+  /** 서버에 없는 목 전용 값이다. 있으면 작성자를 보여 준다 */
+  createdBy?: { id: string; name: string }
+}
+
+/**
+ * 문서 작업의 비교 자료 (서버 TaskDocumentResponse).
+ * body는 작업의 content.body, diff는 기존 문서와의 unified diff다. 바뀐 줄이 없으면 빈 문자열이다.
+ * 기준 문서: 이 요청이 만든 버전이 있으면 그 직전 버전, 없으면 현재 버전, 문서가 없으면 빈 문서.
+ */
+export interface TaskDocument {
+  /** 아직 없는 문서를 새로 만드는 작업이면 null이다 */
+  documentId: string | null
+  taskId: string
+  body: string
+  diff: string
+  /** 서버에 없는 목 전용 값이다. 있으면 "기존 문서 vN"이라고 쓴다 */
+  baseVersion?: number | null
+}
+
+/** 서버 RollbackRequest. taskIds는 이 요청의 문서 작업이고, 그 target 경로의 문서를 targetVersion으로 되돌린다 */
+export interface RollbackBody {
+  taskIds: string[]
+  targetVersion: number
+  reason?: string
+}
+
+/** 서버 RollbackResponse. 같은 요청에 새 Plan이 붙고 승인대기가 된다 */
+export interface RollbackResponse {
+  requestId: string
+  source: RequestSource
+  status: RequestStatus
+  plan: { id: string; kind: PlanKind }
+  planHash: string
 }
 
 // ── 에디터 ─────────────────────────────────────────────────
@@ -825,14 +847,14 @@ export interface DepartmentStat {
   running: number
 }
 
-// TODO(spec): 응답 필드 이름은 명세의 "요청 수, 승인 대기, 위험도 분포, 상태별 건수"에서 정했다.
 // null은 서버가 주지 않아 모른다는 뜻이다. 0건과 구별해서 화면에 "-"로 보여 준다.
 export interface Dashboard {
   scope: DashboardScope
   requestCount: number | null
   pendingApprovalCount: number | null
-  riskDistribution: Record<Risk, number> | null
+  riskCounts: Record<Risk, number> | null
   statusCounts: Partial<Record<RequestStatus, number>> | null
+  /** 서버 DashboardResponse에 없는 목 전용 값이다. 없으면 부서 비교를 그리지 않는다 */
   byDepartment?: DepartmentStat[]
 }
 
@@ -864,14 +886,23 @@ export type AuditAction =
   | 'POLICY_CHANGED'
   | 'AUDIT_EXPORTED'
 
+/** 서버 Target은 requestId와 taskIds뿐이다. projectId와 label은 목 전용이라 서버 응답이면 없다 */
+export interface AuditTarget {
+  requestId?: string | null
+  taskIds?: string[] | null
+  projectId?: string
+  label?: string
+}
+
+/** 웹쉘 이벤트처럼 사람이 아닌 행위는 actor, network, ip가 비어 있다 (서버 AuditLog) */
 export interface AuditLog {
   id: string
   at: string
-  actor: { id: string; name: string }
+  actor: { id: string; name: string } | null
   action: AuditAction
-  target: { requestId?: string; taskIds?: string[]; projectId?: string; label?: string }
-  network: Network
-  ip: string
+  target: AuditTarget
+  network: Network | null
+  ip: string | null
   detail: Record<string, unknown>
 }
 
@@ -908,16 +939,15 @@ export interface AuditExportAccepted {
   rowCount: number
 }
 
-// TODO(spec): 명세의 상태 조회 예시는 READY뿐이고 목록 응답 모양은 없다. 목록도 같은 모양으로 두되 exportId·status 밖의 값은 없을 수 있다고 본다. createdAt은 명세에 없다.
+/** 서버 AuditExportResponse. fileName, expiresAt, downloadUrl은 READY일 때만 값이 있다 */
 export interface AuditExport {
+  /** 서버에 없는 목 전용 값이다. 있으면 만든 시각을 보여 준다 */
+  createdAt?: string
   exportId: string
   status: ExportStatus
   format?: ExportFormat
   rowCount?: number
-  fileName?: string
-  createdAt?: string
-  /** 준비된 뒤에만 값이 있다 */
+  fileName?: string | null
   expiresAt?: string | null
-  /** READY일 때만 값이 있다 */
   downloadUrl?: string | null
 }

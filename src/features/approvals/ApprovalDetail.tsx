@@ -35,6 +35,9 @@ import { deviceStore } from "../../crypto/deviceStore";
 import { signingService } from "../../crypto/signingService";
 import { useApprovalStatuses } from "../../lib/approvalStatus";
 import { formatDateTime } from "../../lib/format";
+import { isRequestEnded } from "../../lib/settledTask";
+import { taskNumber } from "../../lib/taskLabel";
+import { executionDeferredText } from "../requests/statusBannerText";
 import { REQUEST_STATUS_LABEL, SOURCE_LABEL } from "../../lib/labels";
 import {
   useDepartmentNames,
@@ -187,10 +190,12 @@ function StampSheet({
   statuses,
   tasks,
   stamped,
+  requestStatus,
 }: {
   statuses: TaskApprovalStatus[];
   tasks: Task[];
   stamped?: JustStamped;
+  requestStatus: RequestStatus;
 }) {
   return (
     <ul className="flex flex-col gap-4">
@@ -209,6 +214,7 @@ function StampSheet({
             <div className="overflow-x-auto">
               <ApprovalStamps
                 status={status}
+                requestStatus={requestStatus}
                 justStampedBy={
                   stamped?.taskIds.includes(status.taskId)
                     ? stamped.userId
@@ -654,12 +660,16 @@ export function ApprovalDetail({
                   <TaskCard
                     key={task.id}
                     task={task}
+                    number={taskNumber(task, tasks)}
                     requestId={requestId}
-                    defaultOpen={task.risk === "HIGH" || integrityFailed}
+                    requestStatus={request.status}
+                    planKind={context?.plan.kind ?? request.currentPlan?.kind}
+                    defaultOpen={task.risk === "HIGH" || task.type === "DOC" || integrityFailed}
                     highlighted={request.changedTaskIds?.includes(task.id)}
                     leading={
                       !context ? undefined : task.risk !== "FORBIDDEN" &&
-                        task.status === "PENDING" ? (
+                        task.status === "PENDING" &&
+                        !isRequestEnded(request.status) ? (
                         <input
                           type="checkbox"
                           className="size-4 accent-seal disabled:cursor-not-allowed"
@@ -681,7 +691,7 @@ export function ApprovalDetail({
                       )
                     }
                     footer={
-                      task.risk === "FORBIDDEN"
+                      task.risk === "FORBIDDEN" || isRequestEnded(request.status)
                         ? undefined
                         : taskNote(
                             task,
@@ -720,6 +730,7 @@ export function ApprovalDetail({
                 statuses={approvalStatuses}
                 tasks={tasks}
                 stamped={stamped}
+                requestStatus={request.status}
               />
             </section>
           )}
@@ -775,7 +786,7 @@ export function ApprovalDetail({
                       {request.status === "PENDING_APPROVAL" && (
                         <p>
                           {nothingLeft
-                            ? "웹쉘에 연결할 수 없어 실행 요청을 다시 시도합니다."
+                            ? `${executionDeferredText()}.`
                             : "다른 작업의 승인이 모이면 실행을 요청합니다."}
                         </p>
                       )}

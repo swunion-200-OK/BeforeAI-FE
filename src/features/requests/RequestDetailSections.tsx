@@ -8,6 +8,7 @@ import { Mono } from '../../components/ui'
 import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { formatDateTime, shortHash } from '../../lib/format'
 import { REQUEST_STATUS_LABEL, SOURCE_LABEL } from '../../lib/labels'
+import { taskNumber } from '../../lib/taskLabel'
 import { approvalToShow } from './requestPaths'
 
 const IN_PROGRESS: RequestStatus[] = [
@@ -125,10 +126,10 @@ export function MoreDetails({ request }: { request: RequestDetail }) {
               {stamps.map(({ task, status }) => (
                 <li key={task.id}>
                   <p className="mb-1.5 text-sm font-medium">
-                    <span className="mr-1.5 font-mono text-xs text-ink-3">{task.id}</span>
+                    <span className="mr-1.5 font-mono text-xs text-ink-3">#{taskNumber(task, plan?.tasks ?? [])}</span>
                     {task.title}
                   </p>
-                  <ApprovalStamps status={status} />
+                  <ApprovalStamps status={status} requestStatus={request.status} />
                 </li>
               ))}
             </ul>

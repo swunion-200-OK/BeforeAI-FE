@@ -5,6 +5,7 @@ import type { ApprovalContext, ApprovalEnvelope, Me, SubmitApprovalResponse, Sub
 import { cryptoService } from '../../crypto/cryptoService'
 import { deviceStore } from '../../crypto/deviceStore'
 import { hashService } from '../../crypto/hashService'
+import { randomUuid } from '../../crypto/randomUuid'
 import { signingService } from '../../crypto/signingService'
 
 export interface IntegrityResult {
@@ -103,7 +104,7 @@ export async function signAndSubmitApproval({
     approverId: me.id,
     keyId: device.keyId,
     issuedAt: new Date().toISOString(),
-    nonce: crypto.randomUUID(),
+    nonce: randomUuid(),
     network: context.network,
   })
 
@@ -131,7 +132,7 @@ export interface SubmitOutcome {
   /** 제출과 함께 본인 승인이 끝난 작업 */
   selfApprovedTaskIds: string[]
   executionRequested: boolean
-  /** 승인은 다 모였지만 웹쉘에 연결할 수 없어 웹 서비스가 실행 요청을 다시 시도하는 중 */
+  /** 승인은 다 모였지만 웹쉘에 연결할 수 없어 실행을 시작하지 못했다. 서명은 저장되어 있다 */
   executionDeferred: boolean
   /** 본인 승인을 못 했을 때의 이유. 제출 자체는 끝난 상태다. */
   selfApprovalError: string | null

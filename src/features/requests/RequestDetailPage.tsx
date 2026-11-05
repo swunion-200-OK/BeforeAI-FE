@@ -6,6 +6,7 @@ import { TaskCard, TaskRows } from '../../components/TaskCard'
 import { ErrorState, PageHeader, Spinner } from '../../components/ui'
 import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { useProjects, useRequest } from '../../lib/queries'
+import { taskNumber } from '../../lib/taskLabel'
 import { ProgressSection } from '../progress/ProgressTree'
 import { MoreDetails, RunLog, TaskApprovalLine } from './RequestDetailSections'
 import { approvalToShow } from './requestPaths'
@@ -34,7 +35,10 @@ function TaskList({ request, canEditPlan }: { request: RequestDetail; canEditPla
             <TaskCard
               key={task.id}
               task={task}
+              number={taskNumber(task, tasks)}
               requestId={request.id}
+              requestStatus={request.status}
+              planKind={request.currentPlan?.kind}
               highlighted={request.status === 'REAPPROVAL_REQUIRED' && request.changedTaskIds?.includes(task.id)}
               spotlight={
                 request.status === 'RUNNING' && task.status === 'RUNNING'

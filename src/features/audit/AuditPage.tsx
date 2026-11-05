@@ -3,7 +3,6 @@ import { Download, ListFilter } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { auditApi } from '../../api/endpoints'
-import { MISSING_ON_SERVER_MESSAGE, isMissingOnServer } from '../../api/missingOnServer'
 import type { AuditLog, Role } from '../../api/types'
 import { useMe } from '../../app/AuthProvider'
 import { NetworkBadge } from '../../components/badges'
@@ -14,6 +13,7 @@ import { AuditActionLabel } from './AuditActionLabel'
 import { AuditDetailDrawer } from './AuditDetailDrawer'
 import { AuditExportModal } from './AuditExportModal'
 import { AuditFilters } from './AuditFilters'
+import { actorName, actorOptions } from './auditLogView'
 import {
   QUICK_FILTERS,
   countFilters,
@@ -33,6 +33,7 @@ const SCOPE_DESCRIPTION: Record<Role, string> = {
 
 function TargetCell({ log }: { log: AuditLog }) {
   const { requestId, taskIds, label } = log.target
+  const hasTasks = Boolean(taskIds && taskIds.length > 0)
   return (
     <div className="flex flex-wrap items-center gap-x-2">
       {requestId && (
@@ -46,7 +47,7 @@ function TargetCell({ log }: { log: AuditLog }) {
       )}
       {taskIds && taskIds.length > 0 && <span className="font-mono text-xs text-ink-3">{taskIds.join(', ')}</span>}
       {label && <span className="text-sm text-ink-2">{label}</span>}
-      {!requestId && !label && <span className="text-ink-3">-</span>}
+      {!requestId && !hasTasks && !label && <span className="text-ink-3">-</span>}
     </div>
   )
 }
@@ -74,11 +75,7 @@ export default function AuditPage() {
 
   const items = useMemo(() => logs.data?.pages.flatMap((page) => page.items) ?? [], [logs.data])
 
-  const actors = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const log of [...(recent.data?.items ?? []), ...items]) seen.set(log.actor.id, log.actor.name)
-    return [...seen].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
-  }, [recent.data, items])
+  const actors = useMemo(() => actorOptions([...(recent.data?.items ?? []), ...items]), [recent.data, items])
 
   const changeFilter = (key: FilterKey, value: string) => {
     if ((params.get(key) ?? '') === value) return
@@ -88,7 +85,12 @@ export default function AuditPage() {
     setParams(next, { replace: true })
   }
 
-  const clearFilters = () => setParams(new URLSearchParams(), { replace: true })
+  // 입력칸에만 남은 잘못된 요청 ID와 그 오류도 함께 지우도록 필터 칸을 새로 그린다.
+  const [filterResets, setFilterResets] = useState(0)
+  const clearFilters = () => {
+    setParams(new URLSearchParams(), { replace: true })
+    setFilterResets((count) => count + 1)
+  }
 
   const activeFilters = countFilters(params)
 
@@ -100,8 +102,6 @@ export default function AuditPage() {
         actions={
           <Button
             internalOnly
-            disabled={isMissingOnServer(logs.error)}
-            disabledReason={MISSING_ON_SERVER_MESSAGE}
             onClick={() => setExportOpen(true)}
           >
             <Download size={15} aria-hidden />
@@ -150,7 +150,7 @@ export default function AuditPage() {
             </span>
           )}
         </div>
-        {filtersOpen && <AuditFilters params={params} actors={actors} onChange={changeFilter} />}
+        {filtersOpen && <AuditFilters key={filterResets} params={params} actors={actors} onChange={changeFilter} />}
 
         {logs.isPending && <Spinner />}
         {logs.isError && <ErrorState error={logs.error} onRetry={() => logs.refetch()} />}
@@ -177,7 +177,7 @@ export default function AuditPage() {
                     key={log.id}
                     data-clickable="true"
                     tabIndex={0}
-                    aria-label={`${log.actor.name} ${AUDIT_ACTION_LABEL[log.action] ?? log.action} 상세 열기`}
+                    aria-label={`${actorName(log)} ${AUDIT_ACTION_LABEL[log.action] ?? log.action} 상세 열기`}
                     onClick={() => setSelectedId(log.id)}
                     onKeyDown={(event) => {
                       if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
@@ -187,7 +187,7 @@ export default function AuditPage() {
                     }}
                   >
                     <td className="whitespace-nowrap text-ink-2 tabular-nums">{formatDateTime(log.at)}</td>
-                    <td className="whitespace-nowrap text-ink">{log.actor.name}</td>
+                    <td className="whitespace-nowrap text-ink">{actorName(log)}</td>
                     <td>
                       <AuditActionLabel action={log.action} />
                     </td>
@@ -200,7 +200,7 @@ export default function AuditPage() {
                         {log.network === 'EXTERNAL' ? (
                           <NetworkBadge network={log.network} />
                         ) : (
-                          <span className="text-ink-3">내부망</span>
+                          <span className="text-ink-3">{log.network === 'INTERNAL' ? '내부망' : '-'}</span>
                         )}
                         <span className="font-mono text-xs text-ink-3">{log.ip}</span>
                       </span>

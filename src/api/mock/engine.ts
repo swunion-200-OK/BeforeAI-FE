@@ -1,5 +1,6 @@
 /** 요청의 상태 전이 (기능 명세서 6장, API 명세서 6장). 라우트는 이 함수들만 부른다. */
 import { hashService, toHashTarget } from '../../crypto/hashService'
+import { randomUuid } from '../../crypto/randomUuid'
 import { makeUnifiedDiff } from '../../lib/diff'
 import type {
   ApprovalContext,
@@ -11,9 +12,12 @@ import type {
   RequestApproval,
   RequestDetail,
   RequestStatus,
+  RollbackBody,
+  RollbackResponse,
   SubmitApprovalResponse,
   SubmitResponse,
   Task,
+  TaskDocument,
 } from '../types'
 import {
   CLARIFICATION_QUESTION,
@@ -128,7 +132,7 @@ export function createRequest(
   requireProject(projectId)
   const now = nowIso()
   const request: StoredRequest = {
-    id: `r-${crypto.randomUUID().slice(0, 8)}`,
+    id: `r-${randomUuid().slice(0, 8)}`,
     projectId,
     requester: { id: user.id, name: user.name, departmentId: user.departmentId },
     prompt,
@@ -398,7 +402,7 @@ export function submitApproval(
   }
 
   const at = nowIso()
-  const recordId = crypto.randomUUID()
+  const recordId = randomUuid()
   request.approvalRecords.push({
     id: recordId,
     requestId: request.id,
@@ -536,52 +540,68 @@ export function retryFailedTasks(request: StoredRequest, user: StoredUser): Plan
   return { id: request.id, status: request.status, planId: request.plan.id, planHash: request.plan.planHash }
 }
 
-export function requestRollback(
-  request: StoredRequest,
-  user: StoredUser,
-  body: { documentId: string; version: number },
-): SubmitResponse {
-  assertStatus(request, ['COMPLETED', 'PARTIALLY_COMPLETED', 'KILLED', 'ROLLBACK_FAILED'])
+/** 지금 Plan과 지난 Plan의 작업 (서버는 문서 조회와 롤백에서 지난 Plan의 작업도 받는다) */
+function planTasks(request: StoredRequest): Task[] {
+  return [request.plan, ...(request.planHistory ?? []).map((entry) => entry.plan)].flatMap((plan) => plan?.tasks ?? [])
+}
+
+/** 검사 순서와 오류는 서버 RequestRollbackService와 같다. 지난 Plan의 작업도 받는다. */
+export function requestRollback(request: StoredRequest, user: StoredUser, body: RollbackBody): RollbackResponse {
   const database = db()
-  const hasDocTask = request.plan?.tasks.some((t) => t.type === 'DOC')
-  const document = database.documents.find((d) => d.id === body.documentId)
-  if (!hasDocTask || !document) {
-    throw new HttpError(400, 'VALIDATION_ERROR', '문서 작업이 아니어서 되돌릴 수 없습니다')
-  }
-  const version = database.docVersions.find((v) => v.documentId === document.id && v.version === body.version)
-  if (!version) throw new HttpError(404, 'NOT_FOUND', '해당 문서 버전이 없습니다')
+  const known = planTasks(request)
+  if (!body?.taskIds?.length) throw new HttpError(400, 'VALIDATION_ERROR', '롤백할 작업을 지정해 주세요')
+  const sources = [...new Set(body.taskIds)].map((id) => {
+    const source = known.find((task) => task.id === id)
+    if (!source) throw new HttpError(404, 'NOT_FOUND', '작업을 찾을 수 없습니다')
+    return source
+  })
   if (request.requester.id !== user.id && !isCandidate(user, request)) {
-    throw new HttpError(403, 'FORBIDDEN_ROLE', '롤백 권한이 없습니다')
+    throw new HttpError(403, 'FORBIDDEN_ROLE', '요청자 또는 해당 문서 작업의 승인권자만 할 수 있습니다')
+  }
+  assertStatus(request, ['COMPLETED', 'PARTIALLY_COMPLETED', 'KILLED', 'ROLLBACK_FAILED'])
+  if (sources.some((task) => task.type !== 'DOC')) throw new HttpError(400, 'VALIDATION_ERROR', '문서가 아닌 작업은 롤백할 수 없습니다')
+  if (new Set(sources.map((task) => task.target)).size !== sources.length) {
+    throw new HttpError(400, 'VALIDATION_ERROR', '같은 문서를 가리키는 작업을 함께 롤백할 수 없습니다')
   }
   const project = requireProject(request.projectId)
-  const task = toTask(
-    {
-      type: 'DOC',
-      title: `문서 롤백: ${document.title} v${document.currentVersion} → v${version.version}`,
-      description: '적용된 문서를 이전 버전으로 되돌립니다.',
-      target: document.path,
-      content: { body: version.body },
-    },
-    1,
-    project,
-    request.requester,
+  const targets = sources.map((source) => {
+    const document = database.documents.find((d) => d.projectId === request.projectId && d.path === source.target)
+    if (!document) throw new HttpError(400, 'VALIDATION_ERROR', '롤백할 문서가 없습니다')
+    const version = database.docVersions.find((v) => v.documentId === document.id && v.version === body.targetVersion)
+    if (!version) throw new HttpError(400, 'VALIDATION_ERROR', '문서에 targetVersion 버전이 없습니다')
+    return { document, version }
+  })
+  const tasks = targets.map(({ document, version }, index) =>
+    toTask(
+      {
+        type: 'DOC',
+        title: `문서 롤백: ${document.title} v${document.currentVersion} → v${version.version}`,
+        description: '적용된 문서를 이전 버전으로 되돌립니다.',
+        target: document.path,
+        content: { body: version.body },
+      },
+      index + 1,
+      project,
+      request.requester,
+    ),
   )
   // 제출과 같다 (명세 4.2): 금지 작업만 있는 Plan은 승인대기로 보내지 않는다.
-  if (task.status === 'BLOCKED') throw new HttpError(422, 'FORBIDDEN_TASK', '금지 작업이라 이 문서를 되돌릴 수 없습니다')
-  // TODO(spec): 롤백 Plan이 같은 요청에 붙는지 새 요청인지 명세가 갈린다(source: ROLLBACK vs 상태 흐름표).
-  // 상태 흐름표를 따라 같은 요청에서 PENDING_APPROVAL → ROLLING_BACK으로 진행한다.
+  if (tasks.some((task) => task.status === 'BLOCKED')) throw new HttpError(422, 'FORBIDDEN_TASK', '금지 작업이라 이 문서를 되돌릴 수 없습니다')
+  // 서버처럼 같은 요청에 롤백 Plan을 붙여 PENDING_APPROVAL → ROLLING_BACK으로 진행한다.
   archivePlan(request)
-  request.plan = makePlan(request.id, project, [task], 'ROLLBACK')
-  request.currentPlanId = request.plan.id
+  const plan = makePlan(request.id, project, tasks, 'ROLLBACK')
+  request.plan = plan
+  request.currentPlanId = plan.id
   request.approvals = []
   request.approvalRecords = []
-  request.rollback = body
-  request.plan.planHash = hashService.computePlanHash(request.plan, request.projectId)
+  request.rollback = { documentId: targets[0].document.id, version: body.targetVersion }
+  const planHash = hashService.computePlanHash(plan, request.projectId)
+  plan.planHash = planHash
   request.submittedAt = nowIso()
   setStatus(request, 'PENDING_APPROVAL', user.name)
-  audit(user, 'ROLLBACK_REQUESTED', { requestId: request.id, taskIds: [task.id] }, { ...body })
+  audit(user, 'ROLLBACK_REQUESTED', { requestId: request.id, taskIds: tasks.map((task) => task.id) }, { ...request.rollback })
   notifyApprovers(request)
-  return submitResponse(request)
+  return { requestId: request.id, source: request.source, status: request.status, plan: { id: plan.id, kind: plan.kind }, planHash }
 }
 
 /** 담당자 변경 (5.8): 빠진 담당자의 서명이 필요한 승인 대기 작업은 재승인필요로 바뀐다. */
@@ -623,23 +643,27 @@ export function resumeTimers() {
   resumeAuditExports()
 }
 
-export function taskDocument(request: StoredRequest, taskId: string) {
-  const task = request.plan?.tasks.find((t) => t.id === taskId)
+/**
+ * 기준 문서는 서버 DocumentService.taskDocument와 같다: 이 요청이 만든 버전이 있으면 그 첫 버전의 직전,
+ * 없으면 현재 버전, 문서가 없으면 빈 문서. 그래서 v2를 만든 요청에서 v1로 되돌리는 롤백은 비교가 비어 있고, 화면이 현재 문서와 따로 비교한다.
+ */
+export function taskDocument(request: StoredRequest, taskId: string): TaskDocument {
+  const task = planTasks(request).find((t) => t.id === taskId)
   if (!task) throw new HttpError(404, 'NOT_FOUND', '작업을 찾을 수 없습니다')
   if (task.type !== 'DOC') throw new HttpError(400, 'VALIDATION_ERROR', '문서 작업이 아닙니다')
   const database = db()
   const document = database.documents.find((d) => d.projectId === request.projectId && d.path === task.target)
-  const current = document
-    ? database.docVersions.find((v) => v.documentId === document.id && v.version === document.currentVersion)
-    : undefined
-  const currentBody = current?.body ?? ''
-  const proposedBody = task.content.body ?? ''
+  const versions = document ? database.docVersions.filter((v) => v.documentId === document.id).sort((a, b) => a.version - b.version) : []
+  const applied = versions.find((v) => v.requestId === request.id)
+  const base = applied ? versions.findLast((v) => v.version < applied.version) : versions.find((v) => v.version === document?.currentVersion)
+  const baseBody = base?.body ?? ''
+  const body = task.content.body ?? ''
   return {
     documentId: document?.id ?? null,
-    title: document?.title ?? task.target,
-    currentVersion: document?.currentVersion ?? null,
-    currentBody,
-    proposedBody,
-    diff: makeUnifiedDiff(task.target, currentBody, proposedBody),
+    taskId: task.id,
+    body,
+    // 서버처럼 바뀐 내용이 없으면 빈 문자열이다.
+    diff: baseBody === body ? '' : makeUnifiedDiff(task.target, baseBody, body),
+    baseVersion: base?.version ?? null,
   }
 }

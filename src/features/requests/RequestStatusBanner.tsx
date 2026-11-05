@@ -6,6 +6,7 @@ import { useAnalysisOverdue } from '../../lib/analysisWait'
 import { useApprovalStatuses } from '../../lib/approvalStatus'
 import { Banner, Button, Mono, ReasonModal } from '../../components/ui'
 import { allApprovalsCollected, approvalToShow } from './requestPaths'
+import { executionDeferredBanner, rollbackFailedText, verificationFailedTitle } from './statusBannerText'
 import { AnalysisFailedPanel, AnalysisOverdueBanner, CancelRequestButton } from './RequestParts'
 import { useKillRequest, useRetryFailed, useSubmitRequest } from './useRequestActions'
 
@@ -116,6 +117,7 @@ export function RequestStatusBanner({
   const changedCount = request.changedTaskIds?.length ?? 0
   const removedTitles = request.removedTaskTitles ?? []
   const skippedTasks = (request.currentPlan?.tasks ?? []).filter((task) => task.status === 'SKIPPED')
+  const failedChecks = request.failedChecks ?? []
 
   switch (request.status) {
     case 'ANALYZING':
@@ -135,11 +137,12 @@ export function RequestStatusBanner({
       )
     case 'PENDING_APPROVAL': {
       const waiting = waitingRows(request, statuses)
-      // 승인이 다 모였는데 승인대기면 웹쉘에 연결되지 않아 웹 서비스가 실행 요청을 다시 시도하는 중이다 (API 명세 4.5).
+      // 승인이 다 모였는데 승인대기면 웹쉘에 연결되지 않아 실행을 시작하지 못한 것이다.
       if (allApprovalsCollected(request) && waiting.length === 0) {
+        const deferred = executionDeferredBanner()
         return (
-          <Banner tone="warning" title="승인은 모두 모였지만 웹쉘에 연결할 수 없습니다" action={action}>
-            연결되면 실행을 자동으로 다시 요청합니다.
+          <Banner tone="warning" title={deferred.title} action={action}>
+            {deferred.body}
           </Banner>
         )
       }
@@ -164,13 +167,17 @@ export function RequestStatusBanner({
     case 'VERIFICATION_FAILED':
       return (
         // 무엇이 실패했는지는 바로 아래 트리의 검증 관문이 쉬운 말로 보여 준다. 배너는 다음 할 일과 기록용 코드만 둔다.
-        <Banner tone="danger" title="위변조 가능성이 있어 관리자와 부서 관리자에게 경보를 보냈습니다" action={action}>
+        <Banner tone="danger" title={verificationFailedTitle()} action={action}>
           <p>다시 제출하면 승인 서명을 새로 받습니다.</p>
-          <p className="mt-1 flex flex-wrap gap-x-3">
-            {(request.failedChecks ?? []).map((check) => (
-              <Mono key={check}>{check}</Mono>
-            ))}
-          </p>
+          {failedChecks.length > 0 ? (
+            <p className="mt-1 flex flex-wrap gap-x-3">
+              {failedChecks.map((check) => (
+                <Mono key={check}>{check}</Mono>
+              ))}
+            </p>
+          ) : (
+            <p className="mt-1">어떤 검사에서 실패했는지는 이 화면에 표시되지 않습니다.</p>
+          )}
         </Banner>
       )
     case 'RUNNING':
@@ -208,7 +215,7 @@ export function RequestStatusBanner({
     case 'ROLLBACK_FAILED':
       return (
         <Banner tone="danger" title="문서 롤백에 실패했습니다">
-          관리자와 담당자에게 경보를 보냈습니다. 문서 화면에서 다시 롤백을 요청할 수 있으며, 새 서명이 필요합니다.
+          {rollbackFailedText()}
         </Banner>
       )
     default:

@@ -156,7 +156,7 @@ function TopBar({ fullBleed }: { fullBleed: boolean }) {
       {/* 접속 위치는 서버가 판단한다. 평소에는 표시하지 않고, 쓸 수 있는 기능이 줄어드는 외부망일 때만 알린다. */}
       {external && (
         <>
-          <span className="text-sm text-external">승인과 조회 위주로 쓸 수 있습니다</span>
+          <span className="text-sm text-external">조회와 실행 중단 위주로 쓸 수 있습니다</span>
           <NetworkBadge network={network} />
         </>
       )}

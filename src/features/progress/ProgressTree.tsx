@@ -28,7 +28,7 @@ import { KeyValues } from '../../components/rich'
 import { TaskContentView } from '../../components/TaskCard'
 import { Button, ErrorState, Mono, Spinner } from '../../components/ui'
 import { formatDateTime, formatElapsed } from '../../lib/format'
-import { REQUEST_STATUS_LABEL, RULE_LABEL, TASK_STATUS_LABEL, TASK_TYPE_LABEL } from '../../lib/labels'
+import { REQUEST_STATUS_LABEL, RULE_LABEL, TASK_STATUS_LABEL, TASK_TYPE_LABEL, forbiddenReasonText, labelOf } from '../../lib/labels'
 import { findProgressNode } from '../../lib/progressTree'
 import { useRequest } from '../../lib/queries'
 import { GATE_ID, gateView, pathIds, pendingRule, progressNow, type GateView, type PathMode, type ProgressNow } from './progressStatus'
@@ -132,7 +132,7 @@ function RequestNode({ node }: { node: ProgressRequestNode }) {
   return (
     <div data-node-id={node.id} className={`${NODE} w-full max-w-[28rem] border-rule-strong py-2.5 pr-4 pl-4.5 [contain:inline-size]`}>
       <NodeEdge tone={tone} />
-      <StatusLine tone={tone} word={REQUEST_STATUS_LABEL[node.status]} />
+      <StatusLine tone={tone} word={labelOf(REQUEST_STATUS_LABEL, node.status)} />
       <p className="mt-1 line-clamp-2 leading-snug font-semibold" title={node.label}>
         {node.label}
       </p>
@@ -216,7 +216,7 @@ const TaskNode = memo(function TaskNode({
       className={`${NODE} block w-full py-2.5 pr-3 pl-4 ${frameOf(tone, selected, quiet, false)}`}
     >
       <NodeEdge tone={tone} />
-      <StatusLine tone={tone} word={TASK_STATUS_LABEL[node.status]} />
+      <StatusLine tone={tone} word={labelOf(TASK_STATUS_LABEL, node.status)} />
       <span className="mt-1 block leading-snug font-semibold">{node.label}</span>
       <span className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
         {TASK_TYPE_LABEL[node.taskType]}
@@ -260,13 +260,13 @@ const ApprovalNode = memo(function ApprovalNode({
       <ToneGlyph tone={tone} />
       {pending ? (
         <>
-          <span className={`font-semibold ${ink}`}>{APPROVAL_WORD[node.status]}</span>
+          <span className={`font-semibold ${ink}`}>{labelOf(APPROVAL_WORD, node.status)}</span>
           {rule && <span className="text-ink-2">{RULE_LABEL[rule]}</span>}
         </>
       ) : (
         <>
           <span className="font-semibold text-ink">{node.label}</span>
-          <span className={`font-semibold ${ink}`}>{APPROVAL_WORD[node.status]}</span>
+          <span className={`font-semibold ${ink}`}>{labelOf(APPROVAL_WORD, node.status)}</span>
         </>
       )}
       {node.network && <NetworkBadge network={node.network} />}
@@ -301,7 +301,7 @@ const StepNode = memo(function StepNode({
       className={`${NODE} block w-full py-1.5 pr-2.5 pl-3.5 ${frameOf(tone, selected, quiet, onPath)}`}
     >
       <NodeEdge tone={tone} moving={node.status === 'RUNNING'} />
-      <StatusLine tone={tone} word={STEP_WORD[node.status]} moving={node.status === 'RUNNING'} />
+      <StatusLine tone={tone} word={labelOf(STEP_WORD, node.status)} moving={node.status === 'RUNNING'} />
       <span className="mt-0.5 line-clamp-2 font-mono text-xs [overflow-wrap:anywhere] text-ink" title={node.label}>
         {node.label}
       </span>
@@ -680,8 +680,8 @@ function TaskDetail({ requestId, node }: { requestId: string; node: ProgressTask
       <p className="text-sm text-ink-3">
         {TASK_TYPE_LABEL[task.type]} 대상 <Mono>{task.target}</Mono>
       </p>
-      {task.forbiddenReason && <p className="text-sm font-medium text-ink">금지 사유: {task.forbiddenReason}</p>}
-      <TaskContentView task={task} requestId={requestId} />
+      {task.risk === 'FORBIDDEN' && <p className="text-sm font-medium text-ink">금지 사유: {forbiddenReasonText(task)}</p>}
+      <TaskContentView task={task} requestId={requestId} planKind={request.data?.currentPlan?.kind} />
     </div>
   )
 }
@@ -736,7 +736,7 @@ function ApprovalDetail({ requestId, root, node }: { requestId: string; root: Pr
 function nodeTitle(node: ProgressNode): string {
   if (node.type === 'APPROVAL') {
     if (node.status === 'PENDING') return '승인 대기'
-    return node.label ? `${APPROVAL_WORD[node.status]}: ${node.label}` : APPROVAL_WORD[node.status]
+    return node.label ? `${labelOf(APPROVAL_WORD, node.status)}: ${node.label}` : labelOf(APPROVAL_WORD, node.status)
   }
   if (node.type === 'STEP') return `실행 단계: ${node.label}`
   return node.label
@@ -798,7 +798,7 @@ function NowLine({ now, large }: { now: ProgressNow; large?: boolean }) {
 const LARGE_ZOOM = 1.3
 
 export function ProgressTree({ requestId }: { requestId: string }) {
-  const { query, retry } = useProgressTree(requestId)
+  const { query, retry, root } = useProgressTree(requestId)
   const request = useRequest(requestId)
   const client = useQueryClient()
   const panelId = useId()
@@ -842,7 +842,7 @@ export function ProgressTree({ requestId }: { requestId: string }) {
   if (query.isPending) return <Spinner label="진행 상황을 불러오는 중" />
   if (query.isError) return <ErrorState error={query.error} onRetry={retry} />
 
-  const { root } = query.data
+  if (!root) return null
   const selected = selectedId ? findProgressNode(root, selectedId) : null
   const now = progressNow(root, request.data, gateLit !== null)
   const path = { ids: pathIds(root, now.leaves), mode: now.mode }

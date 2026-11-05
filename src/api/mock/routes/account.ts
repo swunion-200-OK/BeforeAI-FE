@@ -371,11 +371,13 @@ export const accountRoutes: Route[] = [
   route(
     'DELETE',
     '/admin/signing-keys/:keyId',
-    ({ me, params }) => {
+    ({ me, params, body }) => {
       const database = db()
       const key = database.signingKeys.find((k) => k.id === params.keyId)
       if (!key) throw new HttpError(404, 'NOT_FOUND', '공개키를 찾을 수 없습니다')
       if (key.status === 'REVOKED') throw new HttpError(409, 'INVALID_STATE', '이미 폐기된 공개키입니다')
+      // 서버처럼 등록 대기 키는 본문 없이, 등록된 키는 adminProof가 있어야 폐기한다 (SigningKeyCommandService.revoke).
+      if (key.status === 'REGISTERED') assertAdminProof(body?.adminProof)
       key.status = 'REVOKED'
       database.webshell.policy.keys = database.webshell.policy.keys.filter((k) => k.keyId !== key.id)
       audit(me, 'KEY_REVOKED', { label: `${requireUser(key.userId).name} ${key.id}` })

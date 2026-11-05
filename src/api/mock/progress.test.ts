@@ -216,7 +216,7 @@ describe('트리 모양 (명세 2.6)', () => {
   })
 
   it('문서 롤백 Plan은 이전 Plan을 대체된 가지로 남긴다', async () => {
-    await requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 })
+    await requestsApi.rollback('r-completed', { taskIds: ['t-1'], targetVersion: 1 })
     const tree = await requestsApi.progress('r-completed')
     expect(tree.root.children.map((plan) => [plan.label, plan.status])).toEqual([
       ['Plan v2', 'CURRENT'],
@@ -483,7 +483,7 @@ describe('관문은 지금 Plan만 본다 (리뷰 회귀)', () => {
   })
 
   it('완료 요청을 롤백 요청한 뒤 거부해도 통과라고 하지 않는다', async () => {
-    await requestsApi.rollback('r-completed', { documentId: 'doc-readme', version: 1 })
+    await requestsApi.rollback('r-completed', { taskIds: ['t-1'], targetVersion: 1 })
     asUser('u-07')
     const taskIds = stored('r-completed').plan!.tasks.map((task) => task.id)
     await approvalsApi.reject('r-completed', { planId: stored('r-completed').plan!.id, taskIds, reason: '되돌리지 않습니다' })

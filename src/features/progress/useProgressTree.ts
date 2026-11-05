@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { requestsApi } from '../../api/endpoints'
 import type { ProgressTree } from '../../api/types'
+import { settleProgressRoot } from '../../lib/settledTask'
 import { createProgressSync } from './progressSync'
 
 /** 트리를 받고 스트림으로 이어 간다. retry는 트리를 다시 받고 끊긴 스트림도 다시 연다. */
@@ -33,5 +34,8 @@ export function useProgressTree(requestId: string) {
     return () => sync.stop()
   }, [client, requestId, ready, connection])
 
-  return { query, retry }
+  // 끝난 요청의 작업을 승인 대기로 그리지 않는다.
+  const root = useMemo(() => (query.data ? settleProgressRoot(query.data.root) : undefined), [query.data])
+
+  return { query, retry, root }
 }

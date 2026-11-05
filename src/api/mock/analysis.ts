@@ -2,7 +2,7 @@
  * AI 분석 흉내. 실제 모델 대신 프롬프트의 낱말로 작업을 나눈다.
  * 시연용 키워드는 README의 "목 동작 트리거"에 정리해 두었다.
  */
-import { makeUnifiedDiff } from '../../lib/diff'
+import { appendAddedLine, makeUnifiedDiff } from '../../lib/diff'
 import { explainTask } from '../../lib/explain'
 import type { Plan, Project, Risk, Task, TaskContent, TaskType, UserRef } from '../types'
 import { buildRequiredApprovers, findForbiddenReason } from './policy'
@@ -205,7 +205,7 @@ export function applyInstruction(task: Task, instruction: string, project: Proje
     description: `${task.description ?? ''} 수정 지시: ${instruction}`.trim(),
     content: { ...task.content },
   }
-  if (next.content.diff !== undefined) next.content.diff += `\n+// 수정 지시: ${instruction}`
+  if (next.content.diff !== undefined) next.content.diff = appendAddedLine(next.content.diff, `// 수정 지시: ${instruction}`)
   if (next.content.command !== undefined) next.content.command += ` # ${instruction}`
   if (next.content.query !== undefined) next.content.query += `\n-- ${instruction}`
   if (next.content.body !== undefined) next.content.body += `\n\n${instruction}\n`

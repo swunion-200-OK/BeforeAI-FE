@@ -171,7 +171,7 @@ const DEPARTMENT_MEASURES: Array<{ key: 'requests' | 'pendingApprovals' | 'runni
 
 const SUBTITLE = 'mb-3 text-sm font-semibold text-ink'
 
-function RiskDistribution({ distribution, total }: { distribution: NonNullable<Dashboard['riskDistribution']>; total: number }) {
+function RiskDistribution({ distribution, total }: { distribution: NonNullable<Dashboard['riskCounts']>; total: number }) {
   return (
     <section>
       <h3 className={SUBTITLE}>위험도 분포</h3>
@@ -268,8 +268,8 @@ export function DashboardDetails({
   data: Dashboard
   statusTo: (status: RequestStatus) => string
 }) {
-  const { riskDistribution, statusCounts } = data
-  const riskTotal = riskDistribution ? RISK_ORDER.reduce((sum, risk) => sum + riskDistribution[risk], 0) : 0
+  const { riskCounts, statusCounts } = data
+  const riskTotal = riskCounts ? RISK_ORDER.reduce((sum, risk) => sum + riskCounts[risk], 0) : 0
   const groups = STATUS_GROUPS.map((group) => ({
     ...group,
     statuses: group.statuses.filter((status) => (statusCounts?.[status] ?? 0) > 0),
@@ -285,9 +285,9 @@ export function DashboardDetails({
         <ChevronDown size={16} className="text-ink-3 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
       <div className="flex flex-wrap gap-x-16 gap-y-6 border-t border-rule p-5">
-        {riskDistribution && riskTotal > 0 && (
+        {riskCounts && riskTotal > 0 && (
           <div className="w-48 shrink-0">
-            <RiskDistribution distribution={riskDistribution} total={riskTotal} />
+            <RiskDistribution distribution={riskCounts} total={riskTotal} />
           </div>
         )}
         {statusCounts && groups.length > 0 && (

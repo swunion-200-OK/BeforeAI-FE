@@ -53,13 +53,17 @@ describe('보여 주는 조건 = 보내는 조건', () => {
 })
 
 describe('명세에 없는 값이 빠져도 화면이 깨지지 않는다', () => {
-  it('createdAt이 없거나 잘못돼도 예외를 던지지 않는다', () => {
+  it('expiresAt이 없거나 잘못돼도 예외를 던지지 않는다', () => {
     expect(timeText(undefined)).toBeNull()
     expect(timeText(null)).toBeNull()
     expect(timeText('not-a-date')).toBeNull()
     expect(exportMeta({ status: 'READY' })).toBe('준비됨')
+    expect(exportMeta({ status: 'READY', expiresAt: 'not-a-date' })).toBe('준비됨')
     expect(exportMeta({ status: 'READY', createdAt: 'not-a-date' })).toBe('준비됨')
+    // 목은 만든 시각을 예전처럼 보여 준다.
     expect(exportMeta({ status: 'READY', createdAt: new Date().toISOString() })).toMatch(/^오늘 .* · 준비됨$/)
+    expect(exportMeta({ status: 'PROCESSING', expiresAt: null })).toBe('만드는 중')
+    expect(exportMeta({ status: 'READY', expiresAt: new Date().toISOString() })).toMatch(/^준비됨 · 오늘 .*까지$/)
   })
 
   it('format과 rowCount가 없어도 있는 것만 보여 준다', () => {

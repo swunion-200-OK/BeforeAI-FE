@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState, type FormEvent, type ReactNode } from 'react'
+import { USE_MOCK } from '../../api/client'
 import { meApi } from '../../api/endpoints'
 import { ApiError, errorMessage } from '../../api/errors'
 import { isMissingOnServer, MISSING_ON_SERVER_MESSAGE } from '../../api/missingOnServer'
@@ -239,7 +240,8 @@ export default function MePage() {
           <ul className="divide-y divide-rule">
             <PasswordRow />
             <OtpRow />
-            <SlackRow />
+            {/* 실제 서버에는 Slack 연동이 없다 (api/missingOnServer.ts). */}
+            {USE_MOCK && <SlackRow />}
           </ul>
         </Sheet>
       </div>
