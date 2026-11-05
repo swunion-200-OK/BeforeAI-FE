@@ -384,13 +384,19 @@ export function ApprovalDetail({
   });
 
   const decide = useMutation({
-    mutationFn: ({ reason, kind }: { reason: string; kind: DecisionKind }) =>
-      approvalsApi.reject(requestId, {
-        planId: context?.plan.id as string,
+    mutationFn: async ({ reason, kind }: { reason: string; kind: DecisionKind }) => {
+      const planId = context?.plan.id as string;
+      if (kind === "change" && !USE_MOCK) {
+        await approvalsApi.requestChange(requestId, { planId, taskIds: selected, reason });
+        return;
+      }
+      // 목에는 수정 요청 API가 없어 거부에 표시를 붙여 전달한다.
+      await approvalsApi.reject(requestId, {
+        planId,
         taskIds: selected,
-        // TODO(spec): 기능 명세서 DEP-03에 "수정 요청"이 있지만 API가 없다. 거부 API에 표시를 붙여 사유로 전달한다.
         reason: kind === "change" ? `[수정 요청] ${reason}` : reason,
-      }),
+      });
+    },
     onSuccess: async (_data, { kind }) => {
       setDecision(null);
       toast.success(
@@ -888,8 +894,7 @@ export function ApprovalDetail({
                   >
                     {rejectLabel}
                   </Button>
-                  {USE_MOCK ? (
-                    <Button
+                  <Button
                       variant="ghost"
                       size="md"
                       disabled={!canDecide}
@@ -897,13 +902,6 @@ export function ApprovalDetail({
                     >
                       수정 요청
                     </Button>
-                  ) : (
-                    canDecide && approvable.length > 0 && (
-                      <p role="status" className="self-center text-xs text-ink-3">
-                        현재 서버는 수정 요청을 지원하지 않습니다.
-                      </p>
-                    )
-                  )}
                 </div>
               </>
             )}
@@ -923,9 +921,13 @@ export function ApprovalDetail({
         onClose={() => setDecision(null)}
       />
       <ReasonModal
-        open={USE_MOCK && decision === "change" && canDecide}
+        open={decision === "change" && canDecide}
         title="수정을 요청합니다"
-        description="요청은 거부 상태가 되고, 적은 내용이 요청자에게 전달됩니다."
+        description={
+          USE_MOCK
+            ? "요청은 거부 상태가 되고, 적은 내용이 요청자에게 전달됩니다."
+            : "요청은 요청자의 검토 단계로 돌아가고, 적은 내용이 요청자에게 전달됩니다."
+        }
         label="수정할 내용"
         placeholder="어떻게 고치면 되는지 적어 주세요"
         confirmLabel="수정 요청"

@@ -153,6 +153,13 @@ export function RequestStatusBanner({
           </Banner>
         )
       }
+      if (request.changeRequest) {
+        return (
+          <Banner tone="warning" title={`${request.changeRequest.by} 님이 수정을 요청했습니다`} action={action}>
+            {request.changeRequest.reason}
+          </Banner>
+        )
+      }
       return (
         <Banner tone="info" title={isRequester ? 'Plan을 확인하고 제출해 주세요' : '요청자가 Plan을 검토하는 중입니다'} action={action}>
           제출 전이라 아직 아무 승인도 없습니다.

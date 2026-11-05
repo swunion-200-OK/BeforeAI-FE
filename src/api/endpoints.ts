@@ -3,6 +3,7 @@ import { whenOnServer } from './missingOnServer'
 import { streamMessages } from './sse'
 import type {
   AcceptedRequest,
+  StartExecutionResponse,
   AdminProof,
   AdminSigningKey,
   ApprovalContext,
@@ -310,7 +311,7 @@ export const requestsApi = {
     http<KillResponse>('POST', `/requests/${requestId}/kill`, { body: { reason } }),
   retryFailed: (requestId: string) => http<PlanRetryResponse>('POST', `/requests/${requestId}/retry`),
   /** 승인이 다 모였는데 웹쉘 연결 실패로 멈춘 요청의 실행을 다시 요청한다. */
-  startExecution: (requestId: string) => http<AcceptedRequest>('POST', `/requests/${requestId}/execution`),
+  startExecution: (requestId: string) => http<StartExecutionResponse>('POST', `/requests/${requestId}/execution`),
   logs: (requestId: string, query?: { cursor?: string; limit?: number }) =>
     http<Page<LogLine>>('GET', `/requests/${requestId}/logs`, { query }),
   /** 이벤트 이름은 log이고 id가 없으며 지난 줄을 다시 보내지 않는다. 연결 유지는 SSE 주석이라 메시지로 오지 않는다 (RequestStreamService) */
@@ -356,6 +357,9 @@ export const approvalsApi = {
     http<SubmitApprovalResponse>('POST', `/requests/${requestId}/approvals`, { body }),
   reject: (requestId: string, body: RejectBody) =>
     http<RejectionResponse>('POST', `/requests/${requestId}/rejections`, { body }),
+  /** 승인 후보만 호출할 수 있다. 요청은 REVIEWING으로 돌아간다. */
+  requestChange: (requestId: string, body: { planId: string; taskIds: string[]; reason: string }) =>
+    http<AcceptedRequest>('POST', `/requests/${requestId}/change-requests`, { body }),
 }
 
 /**
