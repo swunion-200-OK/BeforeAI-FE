@@ -133,7 +133,7 @@ export default function DashboardPage() {
       {query.isError && <ErrorState error={query.error} onRetry={() => query.refetch()} />}
       {data && (
         <div className="flex flex-col gap-6">
-          <div role="group" aria-label="아래 목록 고르기" className="grid grid-cols-4 border-b border-rule">
+          <div role="group" aria-label="아래 목록 고르기" className="grid grid-cols-2 border-b border-rule sm:grid-cols-4">
             <Stat label="내 승인 대기" value={myPending} selected={view === 'todo'} onSelect={() => select('todo')} />
             <Stat label="실행 중" value={countsKnown ? count('RUNNING') : null} selected={view === 'running'} onSelect={() => select('running')} />
             <Stat

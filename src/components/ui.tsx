@@ -27,7 +27,7 @@ const BUTTON_VARIANT = {
 } as const
 
 const BUTTON_SIZE = {
-  sm: 'h-9 px-3 text-[0.875rem] gap-1.5',
+  sm: 'h-9 px-3 text-[0.875rem] gap-1.5 max-sm:h-10',
   md: 'h-10 px-4 text-sm gap-1.5',
   lg: 'h-12 px-6 text-base gap-2',
 } as const

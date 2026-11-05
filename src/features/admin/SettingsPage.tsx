@@ -38,7 +38,7 @@ function useTabBadges(): Partial<Record<TabId, { count: number; label: string }>
 function TabNav({ current, onSelect }: { current: TabId; onSelect: (id: TabId) => void }) {
   const badges = useTabBadges()
   return (
-    <div role="tablist" aria-orientation="vertical" aria-label="설정 항목" className="sticky top-4 flex flex-col gap-0.5">
+    <div role="tablist" aria-orientation="vertical" aria-label="설정 항목" className="flex flex-col gap-0.5 md:sticky md:top-4">
       {TABS.map(({ id, label }) => {
         const active = id === current
         const badge = badges[id]
@@ -85,7 +85,7 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader title="설정" />
-      <div className="grid grid-cols-[13.5rem_minmax(0,1fr)] items-start gap-6">
+      <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-[13.5rem_minmax(0,1fr)] md:gap-6">
         <TabNav current={current.id} onSelect={(id) => navigate(`/settings/${id}`)} />
         <div role="tabpanel" aria-label={current.label} className="min-w-0">
           <Panel />
