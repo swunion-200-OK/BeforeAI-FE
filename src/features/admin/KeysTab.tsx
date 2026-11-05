@@ -125,7 +125,7 @@ export function KeysTab() {
           title={`등록 대기 ${pending.length}건`}
           flush
           className="ring-2 ring-medium/25"
-          actions={<span className="text-sm text-ink-2">등록하면 실행기 로컬 정책에 반영되어 이 키로 승인할 수 있습니다.</span>}
+          actions={<span className="text-sm text-ink-2">등록하면 웹쉘 정책에 반영되어 이 키로 승인할 수 있습니다.</span>}
         >
           <KeyTable
             keys={pending}
@@ -153,7 +153,7 @@ export function KeysTab() {
         onClose={() => setRevoking(null)}
         onConfirm={() => revoking && revoke.mutate(revoking)}
       >
-        {revoking?.userName}님의 키 <Mono>{revoking?.keyId ?? ''}</Mono>를 폐기합니다. 실행기에 바로 반영되어 이 키의 서명은
+        {revoking?.userName}님의 키 <Mono>{revoking?.keyId ?? ''}</Mono>를 폐기합니다. 웹쉘에 바로 반영되어 이 키의 서명은
         더 이상 검증을 통과하지 못합니다.
       </ConfirmModal>
     </div>

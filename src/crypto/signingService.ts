@@ -31,9 +31,12 @@ export const signingService = {
     return verify(signed.signature, encoder.encode(canonicalize(signed.payload)), publicKey)
   },
 
-  /** 실행기 서명이 고정해 둔 실행기 공개키로 확인되는지 검사한다. */
-  verifyExecutorSignature(planHash: string, signature: string, pinnedKey: string): boolean {
-    return verify(signature, encoder.encode(planHash), pinnedKey)
+  /**
+   * 웹쉘이 보낸 실행 결과·로그의 서명을 고정해 둔 웹쉘 서명 공개키로 확인한다.
+   * TODO(spec): 확인 결과를 화면에 어떻게 보여 줄지는 명세에 없어 아직 화면에서 부르지 않는다.
+   */
+  verifyWebshellSignature(signedValue: unknown, signature: string, pinnedSigningKey: string): boolean {
+    return verify(signature, encoder.encode(canonicalize(signedValue)), pinnedSigningKey)
   },
 }
 

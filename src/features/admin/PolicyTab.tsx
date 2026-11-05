@@ -181,7 +181,8 @@ function PresetSection() {
         onClose={() => setConfirming(false)}
         onConfirm={() => apply.mutate()}
       >
-        실행기 로컬 정책에도 배포됩니다. 앞으로 제출하는 요청부터 새 승인 인원을 적용합니다.
+        {/* TODO(spec): 진행 중인 요청을 어떻게 다룰지 명세에 없다. 명세 5장대로 웹쉘은 실행 직전의 정책으로 검증한다. */}
+        관리자 서명된 웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 승인 인원으로 검증하므로, 인원이 늘면 진행 중인 요청은 검증에 실패할 수 있습니다.
       </ConfirmModal>
     </Sheet>
   )
@@ -310,7 +311,7 @@ function MatrixSection() {
         onClose={() => setConfirming(false)}
         onConfirm={() => save.mutate()}
       >
-        실행기 로컬 정책에도 배포됩니다.
+        관리자 서명된 웹쉘 정책으로 배포됩니다. 웹쉘은 실행 직전에 새 기준표로 검증하므로, 승인권자가 늘면 진행 중인 요청은 검증에 실패할 수 있습니다.
       </ConfirmModal>
     </Sheet>
   )

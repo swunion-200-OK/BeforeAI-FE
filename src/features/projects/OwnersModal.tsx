@@ -75,7 +75,7 @@ function OwnersEditor({ project, users, onClose }: { project: Project; users: Us
         ) : (
           changed && (
             <Banner tone="warning" title="영향받는 승인 대기 요청은 재승인필요로 바뀝니다">
-              관리자에게 알림이 가고, 새 담당자는 승인 키가 실행기에 등록되어야 승인할 수 있습니다.
+              관리자에게 알림이 가고, 새 담당자는 승인 키가 웹쉘 정책에 등록되어야 승인할 수 있습니다.
             </Banner>
           )
         )}

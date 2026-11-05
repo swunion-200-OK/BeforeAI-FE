@@ -46,7 +46,6 @@ export type SigningKeyStatus = 'PENDING' | 'REGISTERED' | 'REVOKED'
 export type FailedCheck =
   | 'DECRYPT_FAILED'
   | 'PLAN_HASH_MISMATCH'
-  | 'UNKNOWN_PLAN'
   | 'SIGNATURE_INVALID'
   | 'KEY_NOT_REGISTERED'
   | 'NONCE_ALREADY_USED'
@@ -68,7 +67,7 @@ export type ErrorCode =
   | 'OWNER_MINIMUM'
   | 'RETRY_LIMIT'
   | 'FORBIDDEN_TASK'
-  | 'EXECUTOR_UNAVAILABLE'
+  | 'WEBSHELL_UNAVAILABLE'
 
 export interface Page<T> {
   items: T[]
@@ -235,14 +234,6 @@ export interface ApproverRequirement {
   candidates?: string[]
 }
 
-/**
- * TODO(spec): 명세는 "여러 규칙이 함께 붙을 수 있음"이라고만 한다.
- * 예시 모양을 지키려고 첫 규칙은 그대로 두고 나머지를 additional에 담았다.
- */
-export interface RequiredApprovers extends ApproverRequirement {
-  additional?: ApproverRequirement[]
-}
-
 /** 어디가 무엇으로 바뀌는지 한 줄 */
 export interface TaskChangeItem {
   where: string
@@ -272,7 +263,7 @@ export interface Task {
   target: string
   content: TaskContent
   relatedDepartments: string[]
-  requiredApprovers: RequiredApprovers
+  requiredApprovers: ApproverRequirement[]
   status: TaskStatus
   /** AI가 기본 위험도보다 올렸을 때만 있음 */
   riskRaised?: { from: Risk; reason: string }
@@ -287,8 +278,8 @@ export interface Plan {
   kind: PlanKind
   repository: string
   baseCommit: string
+  /** 웹 서비스가 만든 표시용 값. 승인자 기기와 웹쉘은 믿지 않고 각자 다시 계산한다 (명세 2.2, 2.3) */
   planHash: string | null
-  executorSignature: string | null
   tasks: Task[]
 }
 
@@ -333,7 +324,8 @@ export interface RequestSummary {
   taskSummary?: RequestTaskSummary
 }
 
-export interface ApprovalRecord {
+/** 결재란에 찍는 한 사람의 승인. 2.5 승인 기록의 평문 항목으로 만든 화면용 값이다. */
+export interface ApproverStamp {
   userId: string
   name: string
   network: Network
@@ -345,7 +337,7 @@ export interface RequirementStatus {
   rule: ApproverRule
   count: number
   candidates: Array<{ id: string; name: string }>
-  approvedBy: ApprovalRecord[]
+  approvedBy: ApproverStamp[]
   satisfied: boolean
 }
 
@@ -403,18 +395,18 @@ export interface SubmitResponse {
   status: RequestStatus
   planId: string
   planHash: string
-  executorSignature: string
   selfApprovableTaskIds: string[]
 }
 
-// ── 승인 (명세 2.4, 4.4, 4.5) ───────────────────────────────
+// ── 승인 (명세 2.4, 2.5, 4.4, 4.5) ──────────────────────────
 
 export interface ApprovalContext {
   requestId: string
-  // TODO(spec): 명세 예시에는 없지만 클라이언트가 해시를 다시 계산하려면 projectId가 필요해 Plan에 담았다.
-  plan: Plan
+  /** 화면에 보여 줄 Plan. hashTarget과 내용이 같을 때만 서명한다 */
+  plan: Pick<Plan, 'id' | 'tasks'>
   planHash: string
-  executorSignature: string
+  /** 해시를 직접 다시 계산할 대상 (명세 2.3) */
+  hashTarget: PlanHashTarget
   approvableTaskIds: string[]
   blockedTaskIds: string[]
   blockedReason: 'INTERNAL_NETWORK_ONLY' | null
@@ -452,11 +444,32 @@ export interface SubmitApprovalBody {
   envelope: ApprovalEnvelope
 }
 
+/**
+ * 웹 서비스가 보관하는 승인 기록 (명세 2.5).
+ * 평문 항목은 화면 표시·사전 검사용이고 실행 판단에는 쓰지 않는다.
+ * nonce·issuedAt·signature는 envelope 안에만 있다.
+ */
+export interface ApprovalRecord {
+  id: string
+  requestId: string
+  planId: string
+  planHash: string
+  taskIds: string[]
+  /** 요청 본문이 아니라 로그인한 사용자로 채운다 */
+  approverId: string
+  keyId: string
+  /** 서버가 출발지 IP로 판별한 값 */
+  network: Network
+  envelope: ApprovalEnvelope
+  createdAt: string
+}
+
 export interface SubmitApprovalResponse {
   requestId: string
   status: RequestStatus
   approvedTaskIds: string[]
   remainingTaskIds: string[]
+  /** false면 승인이 덜 모였거나 웹쉘에 연결할 수 없는 것. 뒤의 경우 상태는 PENDING_APPROVAL로 남고 웹 서비스가 다시 시도한다 */
   executionRequested: boolean
 }
 
@@ -493,6 +506,46 @@ export interface LogLine {
   level: LogLevel
   taskId: string | null
   text: string
+  /** 웹쉘 서명: base64(Ed25519(JCS({ requestId, seq, at, level, taskId, text }))) (명세 3.5) */
+  webshellSignature: string
+}
+
+// ── 웹쉘 (명세 5장) ────────────────────────────────────────
+
+/** TODO(spec): 명세는 "X25519·Ed25519 공개키와 지문"이라고만 한다. 필드 이름과 지문 형식은 여기서 정했다. */
+export interface WebshellPublicKey {
+  /** 승인 서명 암호화용 X25519 */
+  encryptionKey: string
+  /** 실행 결과·로그 확인용 Ed25519 */
+  signingKey: string
+  fingerprint: string
+}
+
+/** POST /v1/executions 본문 (명세 5.1). 웹 서비스 서버만 호출한다 */
+export interface ExecutionRequestBody {
+  plan: PlanHashTarget
+  approvals: Array<Pick<ApprovalRecord, 'keyId' | 'envelope'>>
+}
+
+/** POST /v1/executions 응답과 GET /v1/executions/{id}. TODO(spec): 작업별 결과의 모양은 명세에 없다. */
+export interface WebshellExecution {
+  executionId: string
+  planHash: string
+  status: RequestStatus
+  taskResults: Array<{ taskId: string; status: TaskStatus }>
+  webshellSignature: string
+}
+
+/** 웹쉘 → 웹 서비스 콜백 이벤트. 로그 조각은 LogLine으로 따로 온다. TODO(spec): 이벤트 모양은 명세에 없다. */
+export interface WebshellEvent {
+  requestId: string
+  executionId: string | null
+  type: 'TASK_STARTED' | 'TASK_SUCCEEDED' | 'TASK_FAILED' | 'FINAL_STATUS' | 'VERIFICATION_FAILED'
+  at: string
+  taskId?: string
+  status?: RequestStatus
+  failedChecks?: FailedCheck[]
+  webshellSignature: string
 }
 
 // ── 문서 ───────────────────────────────────────────────────

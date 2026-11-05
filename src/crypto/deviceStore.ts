@@ -1,13 +1,16 @@
 /**
- * 이 기기에 보관하는 승인 키와 고정해 둔 실행기 공개키.
+ * 이 기기에 보관하는 승인 키와 고정해 둔 웹쉘 공개키.
  * TODO(spec): 저장 방식은 명세에 없다. 운영에서는 내보낼 수 없는 키(WebCrypto + IndexedDB)로 바꿔야 한다.
  */
+
+import type { WebshellPublicKey } from '../api/types'
 
 export interface DeviceEntry {
   keyId?: string
   secretKey?: string
   publicKey?: string
-  pinnedExecutorKey?: string
+  /** 내부망에서 키를 등록할 때 고정한 값. 웹 서비스가 나중에 내려 주는 키로 바꾸지 않는다 */
+  pinnedWebshellKey?: WebshellPublicKey
 }
 
 const STORAGE_KEY = 'beforeai.device.v1'

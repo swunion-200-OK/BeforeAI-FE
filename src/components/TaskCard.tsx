@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, Lock } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 import { requestsApi } from '../api/endpoints'
-import type { RequiredApprovers, Task } from '../api/types'
+import type { ApproverRequirement, Task } from '../api/types'
 import { makeUnifiedDiff } from '../lib/diff'
 import { RISK_LABEL, RULE_LABEL, TASK_TYPE_LABEL } from '../lib/labels'
 import { useDepartmentNames } from '../lib/queries'
@@ -11,9 +11,8 @@ import { ChangeDetails, ChangeStats, ChangeSummary, ImpactLine } from './ChangeE
 import { DiffViewer } from './DiffViewer'
 import { Banner, CodeBlock, Spinner } from './ui'
 
-export function approversText(required: RequiredApprovers): string {
-  const { additional, ...first } = required
-  return [first, ...(additional ?? [])].map((r) => RULE_LABEL[r.rule]).join(' + ')
+export function approversText(required: ApproverRequirement[]): string {
+  return required.map((r) => RULE_LABEL[r.rule]).join(' + ')
 }
 
 /**

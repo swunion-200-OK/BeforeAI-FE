@@ -149,7 +149,7 @@ export const CLARIFICATION_QUESTION = '어떤 동작을 어떻게 바꾸면 될�
 export function toTask(draft: Draft, order: number, project: Project, requester: UserRef): Task {
   const base = defaultRisk(draft.type)
   const relatedDepartments = draft.relatedDepartments ?? [project.departmentId]
-  const forbiddenReason = findForbiddenReason(draft.type, draft.target, [project.departmentId, ...relatedDepartments])
+  const forbiddenReason = findForbiddenReason(draft.type, draft.target, [project.departmentId, ...relatedDepartments], draft.content)
   let risk: Risk = base
   let riskRaised: Task['riskRaised']
   if (forbiddenReason) {
@@ -195,7 +195,6 @@ export function makePlan(
     repository: project.repository,
     baseCommit: project.baseCommit,
     planHash: null,
-    executorSignature: null,
     tasks,
   }
 }

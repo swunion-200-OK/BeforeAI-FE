@@ -1,7 +1,7 @@
-import type { Me, SigningKey } from '../../types'
-import { EXECUTOR_PUBLIC_KEY } from '../executor'
+import type { ApprovalMatrixRow, Me, SigningKey } from '../../types'
 import { paginate, route, type Route } from '../router'
 import { HttpError, audit, db, nextId, nowIso, requireUser, type StoredUser } from '../store'
+import { WEBSHELL_PUBLIC_KEY } from '../webshell'
 
 export const INITIAL_PASSWORD = 'welcome1!'
 export const DEMO_OTP = '123456'
@@ -149,7 +149,7 @@ export const accountRoutes: Route[] = [
       query,
     ),
   ),
-  route('GET', '/executor/public-key', () => ({ publicKey: EXECUTOR_PUBLIC_KEY }), { internal: true }),
+  route('GET', '/webshell/public-key', () => WEBSHELL_PUBLIC_KEY, { internal: true }),
   route('GET', '/me/notification-settings', ({ me }) => db().notificationSettings[me.id]),
   route('PUT', '/me/notification-settings', ({ me, body }) => {
     db().notificationSettings[me.id] = body
@@ -260,8 +260,9 @@ export const accountRoutes: Route[] = [
     'PUT',
     '/admin/policy/preset',
     ({ me, body }) => {
-      const policy = db().policy
+      const { policy, webshell } = db()
       policy.preset = body.preset
+      webshell.policy.preset = body.preset
       policy.slackNotifications = body.preset === 'SMALL' ? 'OPTIONAL' : 'ON'
       policy.auditRetention = { SMALL: '90일', MEDIUM: '1년', LARGE: '3년' }[body.preset as 'SMALL' | 'MEDIUM' | 'LARGE']
       audit(me, 'POLICY_CHANGED', { label: `규모 프리셋 ${body.preset}` })
@@ -274,9 +275,11 @@ export const accountRoutes: Route[] = [
     'PUT',
     '/admin/approval-matrix',
     ({ me, body }) => {
-      db().matrix = body.rows
+      const database = db()
+      database.matrix = body.rows
+      database.webshell.policy.matrix = body.rows.map((row: ApprovalMatrixRow) => ({ ...row }))
       audit(me, 'POLICY_CHANGED', { label: '승인 기준표 수정' })
-      return db().matrix
+      return database.matrix
     },
     { internal: true, roles: ['ADMIN'] },
   ),
@@ -294,7 +297,7 @@ export const accountRoutes: Route[] = [
       if (key.status !== 'PENDING') throw new HttpError(409, 'INVALID_STATE', '등록 대기 상태가 아닙니다')
       key.status = 'REGISTERED'
       key.registeredAt = nowIso()
-      database.executor.keys.push({ keyId: key.keyId, userId: key.userId, publicKey: key.publicKey })
+      database.webshell.policy.keys.push({ keyId: key.keyId, userId: key.userId, publicKey: key.publicKey })
       audit(me, 'KEY_REGISTERED', { label: `${key.userName} ${key.keyId}` })
       return key
     },
@@ -308,7 +311,7 @@ export const accountRoutes: Route[] = [
       const key = database.signingKeys.find((k) => k.keyId === params.keyId)
       if (!key) throw new HttpError(404, 'NOT_FOUND', '키를 찾을 수 없습니다')
       key.status = 'REVOKED'
-      database.executor.keys = database.executor.keys.filter((k) => k.keyId !== key.keyId)
+      database.webshell.policy.keys = database.webshell.policy.keys.filter((k) => k.keyId !== key.keyId)
       audit(me, 'KEY_REVOKED', { label: `${key.userName} ${key.keyId}` })
       return key
     },

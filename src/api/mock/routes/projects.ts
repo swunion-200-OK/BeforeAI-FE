@@ -72,8 +72,8 @@ function activateRule(input: Pick<ForbiddenRule, 'departmentId' | 'taskType' | '
     createdAt: nowIso(),
   }
   database.forbiddenRules.unshift(rule)
-  // 규칙 추가는 실행기 로컬 정책에도 바로 반영된다 (5.7).
-  database.executor.localRules.push({
+  // 규칙 추가는 웹쉘 정책에도 바로 반영된다 (5.7).
+  database.webshell.policy.forbiddenRules.push({
     departmentId: rule.departmentId,
     taskType: rule.taskType,
     target: rule.target,
