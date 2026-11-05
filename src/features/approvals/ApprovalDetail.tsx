@@ -620,10 +620,10 @@ export function ApprovalDetail({
   }
 
   return (
-    <>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
       {/* 가운데: 무엇이 바뀌는지 */}
-      <div className="quiet-scroll min-w-0 flex-1 overflow-y-auto bg-paper">
-        <div className="mx-auto flex max-w-[65rem] flex-col gap-5 px-7 py-7">
+      <div className="quiet-scroll min-h-0 min-w-0 flex-1 overflow-y-auto bg-paper">
+        <div className="mx-auto flex max-w-[65rem] flex-col gap-5 px-4 py-5 xl:px-7 xl:py-7">
           <header>
             <div className="flex items-start justify-between gap-4">
               <h2 className="text-[1.625rem] leading-snug font-semibold tracking-[-0.02em] whitespace-pre-wrap">
@@ -707,15 +707,35 @@ export function ApprovalDetail({
               })}
             </TaskRows>
           )}
+
+          <div className="flex flex-col gap-6 xl:hidden">
+            {integrity && context && (
+              <IntegrityCheck
+                result={integrity}
+                receivedHash={context.planHash}
+                awaitingKey={onlyAwaitingKey}
+              />
+            )}
+            {approvalStatuses.length > 0 && (
+              <section>
+                <h2 className="mb-3 text-base font-semibold">결재란</h2>
+                <StampSheet
+                  statuses={approvalStatuses}
+                  tasks={tasks}
+                  stamped={stamped}
+                />
+              </section>
+            )}
+          </div>
         </div>
       </div>
 
       {/* 오른쪽: 확인하고 결정한다 */}
       <aside
         aria-label="승인 결정"
-        className="flex w-[18rem] shrink-0 flex-col border-l border-rule bg-sheet"
+        className="flex w-full shrink-0 flex-col border-t border-rule bg-sheet xl:w-[18rem] xl:border-l xl:border-t-0"
       >
-        <div className="quiet-scroll flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5">
+        <div className="quiet-scroll hidden min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 xl:flex xl:p-5">
           {integrity && context && (
             <IntegrityCheck
               result={integrity}
@@ -737,7 +757,7 @@ export function ApprovalDetail({
         </div>
 
         {context && integrity && (
-          <div className="flex flex-col gap-3 border-t border-rule p-5">
+          <div className="flex shrink-0 flex-col gap-3 border-t border-rule p-4 xl:p-5">
             {runState && runState !== "done" && (
               <SignProgress step={step} state={runState} />
             )}
@@ -892,6 +912,6 @@ export function ApprovalDetail({
         onConfirm={(reason) => decide.mutate({ reason, kind: "change" })}
         onClose={() => setDecision(null)}
       />
-    </>
+    </div>
   );
 }
